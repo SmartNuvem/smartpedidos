@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  NEW
+  PRINTING
+  PRINTED
+}
+
+model Store {
+  id         String     @id @default(uuid())
+  name       String
+  slug       String     @unique
+  categories Category[]
+  orders     Order[]
+  agents     Agent[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id])
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Product {
+  id         String     @id @default(uuid())
+  name       String
+  price      Decimal    @db.Decimal(10, 2)
+  active     Boolean    @default(true)
+  categoryId String
+  category   Category   @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model Order {
+  id         String       @id @default(uuid())
+  storeId    String
+  store      Store        @relation(fields: [storeId], references: [id])
+  status     OrderStatus  @default(NEW)
+  total      Decimal      @db.Decimal(10, 2)
+  items      OrderItem[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  qty       Int
+  price     Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Agent {
+  id        String   @id @default(uuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  tokenHash String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

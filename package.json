@@ -1,0 +1,12 @@
+{
+  "name": "smartpedidos",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run dev",
+    "build:api": "npm --workspace apps/api run build"
+  }
+}
