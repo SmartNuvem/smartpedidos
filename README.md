@@ -6,10 +6,18 @@ Monorepo do SmartPedidos com API Fastify + Prisma e placeholders para Web Admin 
 
 ```bash
 cp .env.example .env
-docker-compose up --build
+docker compose up -d --build
 ```
 
 A API estará disponível em `http://localhost:3000`.
+
+> Dentro do Docker, o host do banco deve ser `db` (como está no `.env.example`). Para rodar na máquina host sem Docker, ajuste o `DATABASE_URL` para usar `localhost`.
+
+## Criando o schema do banco (Prisma)
+
+```bash
+docker compose exec api sh -lc "cd /app/apps/api && npx prisma db push"
+```
 
 ## Criando dados iniciais (PostgreSQL)
 
