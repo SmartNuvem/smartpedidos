@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import fastifyJwt from "@fastify/jwt";
+import bcrypt from "bcrypt";
 import { z } from "zod";
 import { prisma } from "./prisma";
 import {
@@ -11,6 +13,17 @@ import { buildOrderPdf } from "./pdf";
 const app = Fastify({
   logger: true,
 });
+
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  throw new Error("JWT_SECRET is required");
+}
+
+app.register(fastifyJwt, {
+  secret: jwtSecret,
+});
+
+app.decorateRequest("storeId", null);
 
 app.get("/health", async () => ({ status: "ok" }));
 
@@ -131,6 +144,93 @@ app.post("/public/:slug/orders", async (request, reply) => {
   });
 });
 
+app.post("/auth/store/login", async (request, reply) => {
+  const bodySchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(1),
+  });
+
+  const { email, password } = bodySchema.parse(request.body);
+
+  const store = await prisma.store.findUnique({
+    where: { email },
+  });
+
+  if (!store || !store.isActive || !store.passwordHash) {
+    return reply.status(401).send({ message: "Invalid credentials" });
+  }
+
+  const passwordMatches = await bcrypt.compare(password, store.passwordHash);
+  if (!passwordMatches) {
+    return reply.status(401).send({ message: "Invalid credentials" });
+  }
+
+  const token = app.jwt.sign(
+    { role: "store", storeId: store.id },
+    { sub: store.id }
+  );
+
+  return {
+    token,
+    store: {
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+    },
+  };
+});
+
+app.post("/admin/stores", async (request, reply) => {
+  const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
+  const headerToken = request.headers["x-bootstrap-token"];
+
+  if (!bootstrapToken || headerToken !== bootstrapToken) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const bodySchema = z.object({
+    name: z.string().min(1),
+    slug: z.string().min(1),
+    email: z.string().email(),
+    password: z.string().min(6),
+  });
+
+  const { name, slug, email, password } = bodySchema.parse(request.body);
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  try {
+    const store = await prisma.store.create({
+      data: {
+        name,
+        slug,
+        email,
+        passwordHash,
+        isActive: true,
+      },
+    });
+
+    return reply.status(201).send({
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+      email: store.email,
+      isActive: store.isActive,
+      createdAt: store.createdAt,
+      updatedAt: store.updatedAt,
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      return reply.status(409).send({ message: "Store already exists" });
+    }
+    throw error;
+  }
+});
+
 app.addHook("preHandler", async (request, reply) => {
   if (!request.url.startsWith("/agent")) {
     return;
@@ -142,6 +242,48 @@ app.addHook("preHandler", async (request, reply) => {
   }
 
   (request as typeof request & { agent: typeof agent }).agent = agent;
+});
+
+app.addHook("preHandler", async (request, reply) => {
+  if (!request.url.startsWith("/store")) {
+    return;
+  }
+
+  try {
+    const payload = await request.jwtVerify<{
+      role?: string;
+      storeId?: string;
+    }>();
+    if (payload.role !== "store" || !payload.storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+    request.storeId = payload.storeId;
+  } catch {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+});
+
+app.get("/store/me", async (request, reply) => {
+  const storeId = request.storeId;
+  if (!storeId) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const store = await prisma.store.findUnique({
+    where: { id: storeId },
+  });
+
+  if (!store) {
+    return reply.status(404).send({ message: "Store not found" });
+  }
+
+  return {
+    id: store.id,
+    name: store.name,
+    slug: store.slug,
+    email: store.email,
+    isActive: store.isActive,
+  };
 });
 
 app.get("/agent/orders", async (request) => {
