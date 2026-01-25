@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: smartpedidos-postgres
+    environment:
+      POSTGRES_USER: smartpedidos
+      POSTGRES_PASSWORD: smartpedidos
+      POSTGRES_DB: smartpedidos
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: smartpedidos-api
+    environment:
+      DATABASE_URL: postgresql://smartpedidos:smartpedidos@postgres:5432/smartpedidos
+      PORT: 3333
+      HOST: 0.0.0.0
+    depends_on:
+      - postgres
+    ports:
+      - "3333:3333"
+
+volumes:
+  postgres_data:

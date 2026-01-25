@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  NEW
+  PRINTING
+  PRINTED
+}
+
+model Store {
+  id         String     @id @default(uuid())
+  name       String
+  slug       String     @unique
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  categories Category[]
+  products   Product[]
+  orders     Order[]
+  agents     Agent[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id])
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Product {
+  id           String     @id @default(uuid())
+  name         String
+  description  String?
+  priceCents   Int
+  isActive     Boolean    @default(true)
+  storeId      String
+  categoryId   String?
+  store        Store      @relation(fields: [storeId], references: [id])
+  category     Category?  @relation(fields: [categoryId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  orderItems   OrderItem[]
+}
+
+model Order {
+  id           String       @id @default(uuid())
+  storeId      String
+  store        Store        @relation(fields: [storeId], references: [id])
+  customerName String
+  status       OrderStatus  @default(NEW)
+  totalCents   Int
+  notes        String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  items        OrderItem[]
+}
+
+model OrderItem {
+  id             String   @id @default(uuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id])
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id])
+  productName    String
+  quantity       Int
+  unitPriceCents Int
+  notes          String?
+}
+
+model Agent {
+  id        String   @id @default(uuid())
+  name      String
+  token     String   @unique
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,22 @@
+node_modules/
+.dist/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+coverage/
+*.tsbuildinfo
+*.log
+# prisma
+apps/api/prisma/migrations/
+# build outputs
+apps/api/dist/
+apps/web-admin/dist/
+apps/agent-win/dist/
+# windows agent
+apps/agent-win/config.json
+apps/agent-win/logs/
