@@ -10,7 +10,7 @@ const initialStoreForm = {
   slug: "",
   email: "",
   password: "",
-  active: true,
+  isActive: true,
 };
 
 const AdminStores = () => {
@@ -27,7 +27,7 @@ const AdminStores = () => {
   const [saving, setSaving] = useState(false);
 
   const activeCount = useMemo(
-    () => stores.filter((store) => store.active).length,
+    () => stores.filter((store) => store.isActive).length,
     [stores]
   );
 
@@ -68,8 +68,8 @@ const AdminStores = () => {
     if (!editState) return;
     setSaving(true);
     try {
-      const { id, name, slug, email, active } = editState;
-      await adminApi.updateStore(id, { name, slug, email, active });
+      const { id, name, slug, email, isActive } = editState;
+      await adminApi.updateStore(id, { name, slug, email, isActive });
       setEditOpen(false);
       setEditState(null);
       await loadStores();
@@ -100,7 +100,7 @@ const AdminStores = () => {
     setSaving(true);
     setError("");
     try {
-      await adminApi.updateStore(store.id, { active: !store.active });
+      await adminApi.updateStore(store.id, { isActive: !store.isActive });
       await loadStores();
     } catch (err) {
       setError(err.message || "Não foi possível atualizar o status.");
@@ -166,12 +166,12 @@ const AdminStores = () => {
                 <td className="px-4 py-4 text-sm">
                   <span
                     className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                      store.active
+                      store.isActive
                         ? "bg-emerald-100 text-emerald-700"
                         : "bg-slate-200 text-slate-600"
                     }`}
                   >
-                    {store.active ? "Ativa" : "Inativa"}
+                    {store.isActive ? "Ativa" : "Inativa"}
                   </span>
                 </td>
                 <td className="px-4 py-4 text-right text-sm">
@@ -185,7 +185,7 @@ const AdminStores = () => {
                           name: store.name,
                           slug: store.slug,
                           email: store.email ?? "",
-                          active: store.active,
+                          isActive: store.isActive,
                         });
                         setEditOpen(true);
                       }}
@@ -204,12 +204,12 @@ const AdminStores = () => {
                       Resetar senha
                     </Button>
                     <Button
-                      variant={store.active ? "ghost" : "primary"}
+                      variant={store.isActive ? "ghost" : "primary"}
                       size="sm"
                       disabled={saving}
                       onClick={() => handleToggleActive(store)}
                     >
-                      {store.active ? "Desativar" : "Ativar"}
+                      {store.isActive ? "Desativar" : "Ativar"}
                     </Button>
                   </div>
                 </td>
@@ -281,11 +281,11 @@ const AdminStores = () => {
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"
-              checked={formState.active}
+              checked={formState.isActive}
               onChange={(event) =>
                 setFormState((prev) => ({
                   ...prev,
-                  active: event.target.checked,
+                  isActive: event.target.checked,
                 }))
               }
             />
@@ -341,11 +341,11 @@ const AdminStores = () => {
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"
-              checked={Boolean(editState?.active)}
+              checked={Boolean(editState?.isActive)}
               onChange={(event) =>
                 setEditState((prev) => ({
                   ...prev,
-                  active: event.target.checked,
+                  isActive: event.target.checked,
                 }))
               }
             />
