@@ -32,6 +32,9 @@ const Orders = () => {
   const [error, setError] = useState("");
   const [newOrderIds, setNewOrderIds] = useState([]);
   const intervalRef = useRef(null);
+  const streamRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptRef = useRef(0);
   const knownOrderIdsRef = useRef(new Set());
   const statusRef = useRef(status);
   const audioRef = useRef(null);
@@ -130,45 +133,74 @@ const Orders = () => {
       };
     }
 
-    // TODO: migrate SSE auth to httpOnly cookie.
-    const streamUrl = `${API_URL}/store/orders/stream?token=${encodeURIComponent(
-      token
-    )}`;
-    const source = new EventSource(streamUrl);
+    const connectStream = () => {
+      const streamUrl = `${API_URL}/store/orders/stream?token=${encodeURIComponent(
+        token
+      )}`;
+      const source = new EventSource(streamUrl);
+      streamRef.current = source;
 
-    source.addEventListener("order:new", (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (!payload?.orderId) {
+      const handleOrderEvent = (event, { isCreated }) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (!payload?.id) {
+            return;
+          }
+          if (isCreated && knownOrderIdsRef.current.has(payload.id)) {
+            return;
+          }
+          if (isCreated) {
+            setNewOrderIds((prev) =>
+              prev.includes(payload.id) ? prev : [...prev, payload.id]
+            );
+            playNotification();
+          }
+          loadOrders(statusRef.current, { silent: true });
+        } catch {
+          // ignore malformed events
+        }
+      };
+
+      source.addEventListener("order.created", (event) =>
+        handleOrderEvent(event, { isCreated: true })
+      );
+      source.addEventListener("order.updated", (event) =>
+        handleOrderEvent(event, { isCreated: false })
+      );
+
+      source.onopen = () => {
+        reconnectAttemptRef.current = 0;
+        stopPolling();
+      };
+
+      source.onerror = () => {
+        source.close();
+        streamRef.current = null;
+        startPolling();
+        if (reconnectTimeoutRef.current) {
           return;
         }
-        if (knownOrderIdsRef.current.has(payload.orderId)) {
-          return;
-        }
-        setNewOrderIds((prev) =>
-          prev.includes(payload.orderId)
-            ? prev
-            : [...prev, payload.orderId]
-        );
-        playNotification();
-        loadOrders(statusRef.current, { silent: true });
-      } catch {
-        // ignore malformed events
-      }
-    });
-
-    source.onerror = () => {
-      source.close();
-      startPolling();
+        const nextAttempt = reconnectAttemptRef.current + 1;
+        reconnectAttemptRef.current = nextAttempt;
+        const delay = Math.min(30000, 2000 * nextAttempt);
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          reconnectTimeoutRef.current = null;
+          connectStream();
+        }, delay);
+      };
     };
 
-    source.onopen = () => {
-      stopPolling();
-    };
+    connectStream();
 
     return () => {
       stopPolling();
-      source.close();
+      if (streamRef.current) {
+        streamRef.current.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);

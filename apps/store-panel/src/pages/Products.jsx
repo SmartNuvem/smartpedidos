@@ -30,6 +30,34 @@ const parseIntValue = (value, fallback = 0) => {
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+const normalizeGroupRules = (group) => {
+  const minSelect = parseIntValue(group.minSelect ?? 0, 0);
+  const maxSelect = parseIntValue(group.maxSelect ?? 0, 0);
+
+  if (group.type === "SINGLE") {
+    return {
+      ...group,
+      minSelect: group.required ? 1 : 0,
+      maxSelect: 1,
+    };
+  }
+
+  let normalizedMin = minSelect;
+  let normalizedMax = maxSelect;
+  if (group.required && normalizedMin === 0) {
+    normalizedMin = 1;
+  }
+  if (normalizedMax > 0 && normalizedMax < normalizedMin) {
+    normalizedMax = normalizedMin;
+  }
+
+  return {
+    ...group,
+    minSelect: normalizedMin,
+    maxSelect: normalizedMax,
+  };
+};
+
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -151,7 +179,9 @@ const Products = () => {
   const updateGroupField = (groupId, field, value) => {
     setOptionGroups((prev) =>
       prev.map((group) =>
-        group.id === groupId ? { ...group, [field]: value } : group
+        group.id === groupId
+          ? normalizeGroupRules({ ...group, [field]: value })
+          : group
       )
     );
   };
@@ -192,13 +222,14 @@ const Products = () => {
       return;
     }
     try {
+      const normalizedDraft = normalizeGroupRules(groupDraft);
       await api.createProductOptionGroup(optionsProduct.id, {
-        name: groupDraft.name.trim(),
-        type: groupDraft.type,
-        required: groupDraft.required,
-        minSelect: parseIntValue(groupDraft.minSelect, 0),
-        maxSelect: parseIntValue(groupDraft.maxSelect, 0),
-        sortOrder: parseIntValue(groupDraft.sortOrder, 0),
+        name: normalizedDraft.name.trim(),
+        type: normalizedDraft.type,
+        required: normalizedDraft.required,
+        minSelect: parseIntValue(normalizedDraft.minSelect, 0),
+        maxSelect: parseIntValue(normalizedDraft.maxSelect, 0),
+        sortOrder: parseIntValue(normalizedDraft.sortOrder, 0),
       });
       setGroupDraft({
         name: "",
@@ -216,13 +247,14 @@ const Products = () => {
 
   const handleSaveGroup = async (group) => {
     try {
+      const normalizedGroup = normalizeGroupRules(group);
       await api.updateOptionGroup(group.id, {
-        name: group.name,
-        type: group.type,
-        required: group.required,
-        minSelect: parseIntValue(group.minSelect, 0),
-        maxSelect: parseIntValue(group.maxSelect, 0),
-        sortOrder: parseIntValue(group.sortOrder, 0),
+        name: normalizedGroup.name,
+        type: normalizedGroup.type,
+        required: normalizedGroup.required,
+        minSelect: parseIntValue(normalizedGroup.minSelect, 0),
+        maxSelect: parseIntValue(normalizedGroup.maxSelect, 0),
+        sortOrder: parseIntValue(normalizedGroup.sortOrder, 0),
       });
       await loadOptionGroups(optionsProduct.id);
     } catch {
@@ -552,6 +584,10 @@ const Products = () => {
           optionsProduct ? `Opções • ${optionsProduct.name}` : "Opções"
         }
         onClose={closeOptionsModal}
+        containerClassName="max-h-[80vh] max-w-4xl overflow-hidden"
+        headerClassName="pb-4 border-b border-slate-200"
+        bodyClassName="mt-4 flex-1 overflow-y-auto space-y-6 pr-1"
+        footerClassName="border-t border-slate-200 pt-4"
         footer={
           <Button variant="secondary" onClick={closeOptionsModal}>
             Fechar
@@ -574,21 +610,26 @@ const Products = () => {
                 <Input
                   label="Nome"
                   value={groupDraft.name}
+                  placeholder="Tamanho do copo"
                   onChange={(event) =>
-                    setGroupDraft((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
+                    setGroupDraft((prev) =>
+                      normalizeGroupRules({
+                        ...prev,
+                        name: event.target.value,
+                      })
+                    )
                   }
                 />
                 <Select
                   label="Tipo"
                   value={groupDraft.type}
                   onChange={(event) =>
-                    setGroupDraft((prev) => ({
-                      ...prev,
-                      type: event.target.value,
-                    }))
+                    setGroupDraft((prev) =>
+                      normalizeGroupRules({
+                        ...prev,
+                        type: event.target.value,
+                      })
+                    )
                   }
                 >
                   <option value="SINGLE">Única escolha</option>
@@ -598,22 +639,28 @@ const Products = () => {
                   label="Mínimo"
                   type="number"
                   value={groupDraft.minSelect}
+                  disabled={groupDraft.type === "SINGLE"}
                   onChange={(event) =>
-                    setGroupDraft((prev) => ({
-                      ...prev,
-                      minSelect: event.target.value,
-                    }))
+                    setGroupDraft((prev) =>
+                      normalizeGroupRules({
+                        ...prev,
+                        minSelect: event.target.value,
+                      })
+                    )
                   }
                 />
                 <Input
                   label="Máximo"
                   type="number"
                   value={groupDraft.maxSelect}
+                  disabled={groupDraft.type === "SINGLE"}
                   onChange={(event) =>
-                    setGroupDraft((prev) => ({
-                      ...prev,
-                      maxSelect: event.target.value,
-                    }))
+                    setGroupDraft((prev) =>
+                      normalizeGroupRules({
+                        ...prev,
+                        maxSelect: event.target.value,
+                      })
+                    )
                   }
                 />
                 <Input
@@ -632,10 +679,12 @@ const Products = () => {
                     type="checkbox"
                     checked={groupDraft.required}
                     onChange={(event) =>
-                      setGroupDraft((prev) => ({
-                        ...prev,
-                        required: event.target.checked,
-                      }))
+                      setGroupDraft((prev) =>
+                        normalizeGroupRules({
+                          ...prev,
+                          required: event.target.checked,
+                        })
+                      )
                     }
                   />
                   Obrigatório
@@ -679,6 +728,7 @@ const Products = () => {
                     <Input
                       label="Nome"
                       value={group.name}
+                      placeholder="Sabor"
                       onChange={(event) =>
                         updateGroupField(group.id, "name", event.target.value)
                       }
@@ -697,6 +747,7 @@ const Products = () => {
                       label="Mínimo"
                       type="number"
                       value={group.minSelect}
+                      disabled={group.type === "SINGLE"}
                       onChange={(event) =>
                         updateGroupField(
                           group.id,
@@ -709,6 +760,7 @@ const Products = () => {
                       label="Máximo"
                       type="number"
                       value={group.maxSelect}
+                      disabled={group.type === "SINGLE"}
                       onChange={(event) =>
                         updateGroupField(
                           group.id,
