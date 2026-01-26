@@ -9,7 +9,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-A API estará disponível em `http://localhost:3000`.
+A API estará disponível em `http://localhost:3000` e o painel da loja em `http://localhost:5173`.
 
 > Dentro do Docker, o host do banco deve ser `db` (como está no `.env.example`). Para rodar na máquina host sem Docker, ajuste o `DATABASE_URL` para usar `localhost`.
 
@@ -45,6 +45,32 @@ SQL
 ```
 
 > Para gerar o hash manualmente via psql, use `encode(digest('TOKEN', 'sha256'), 'hex')`.
+
+## Criando loja e login (bootstrap)
+
+Crie uma loja via endpoint administrativo:
+
+```bash
+curl -X POST http://localhost:3000/admin/stores \
+  -H 'Content-Type: application/json' \
+  -H 'x-bootstrap-token: change-me' \
+  -d '{"name":"Padaria Central","slug":"padaria-central","email":"loja@exemplo.com","password":"123456"}'
+```
+
+Faça login no painel com as credenciais:
+
+```bash
+curl -X POST http://localhost:3000/auth/store/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"loja@exemplo.com","password":"123456"}'
+```
+
+Verifique os dados da loja logada:
+
+```bash
+curl http://localhost:3000/store/me \
+  -H 'Authorization: Bearer TOKEN_AQUI'
+```
 
 ## Fluxo completo (curl)
 
