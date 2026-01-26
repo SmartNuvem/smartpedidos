@@ -261,6 +261,8 @@ const registerRoutes = () => {
     });
   });
 
+  app.log.info("Admin auth routes registered");
+
   app.post("/admin/stores", async (request, reply) => {
     const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
     const headerToken = request.headers["x-bootstrap-token"];
