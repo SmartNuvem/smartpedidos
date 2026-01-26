@@ -1,6 +1,10 @@
 import { getToken } from "./auth";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+const rawApiUrl = import.meta.env.VITE_API_URL;
+const normalizedApiUrl = rawApiUrl && rawApiUrl.trim() !== "" ? rawApiUrl.trim() : "/api";
+const API_URL = normalizedApiUrl.endsWith("/")
+  ? normalizedApiUrl.slice(0, -1)
+  : normalizedApiUrl;
 
 const buildHeaders = (headers = {}) => {
   const token = getToken();
