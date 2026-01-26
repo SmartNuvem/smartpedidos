@@ -199,9 +199,10 @@ const registerRoutes = () => {
   });
 
   app.post("/auth/admin/bootstrap", async (request, reply) => {
-    const token = request.headers["x-bootstrap-token"];
+    const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
+    const headerToken = request.headers["x-bootstrap-token"];
 
-    if (!token || token !== process.env.ADMIN_BOOTSTRAP_TOKEN) {
+    if (!bootstrapToken || headerToken !== bootstrapToken) {
       return reply.status(401).send({ message: "Invalid bootstrap token" });
     }
 
@@ -217,6 +218,7 @@ const registerRoutes = () => {
     });
 
     const { name, email, password } = schema.parse(request.body);
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     const admin = await prisma.admin.create({
@@ -224,12 +226,12 @@ const registerRoutes = () => {
       select: { id: true, name: true, email: true },
     });
 
-    const jwt = await reply.jwtSign(
+    const token = await reply.jwtSign(
       { sub: admin.id, role: "admin" },
       { expiresIn: "7d" }
     );
 
-    return reply.send({ admin, token: jwt });
+    return reply.send({ admin, token });
   });
 
   app.post("/auth/admin/login", async (request, reply) => {
@@ -250,14 +252,14 @@ const registerRoutes = () => {
       return reply.status(401).send({ message: "Invalid credentials" });
     }
 
-    const jwt = await reply.jwtSign(
+    const token = await reply.jwtSign(
       { sub: admin.id, role: "admin" },
       { expiresIn: "7d" }
     );
 
     return reply.send({
       admin: { id: admin.id, name: admin.name, email: admin.email },
-      token: jwt,
+      token,
     });
   });
 
