@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import cors from "@fastify/cors";
 import bcrypt from "bcrypt";
@@ -14,6 +14,30 @@ import { buildOrderPdf } from "./pdf";
 const app = Fastify({
   logger: true,
 });
+
+const authenticateStore = async (
+  request: FastifyRequest,
+  reply: FastifyReply
+) => {
+  const authHeader = request.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const token = authHeader.slice("Bearer ".length);
+  try {
+    const payload = app.jwt.verify<{
+      role?: string;
+      storeId?: string;
+    }>(token);
+    if (payload.role !== "store" || !payload.storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+    request.storeId = payload.storeId;
+  } catch {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+};
 
 const registerRoutes = () => {
   app.decorateRequest("storeId", null);
@@ -242,18 +266,7 @@ const registerRoutes = () => {
       return;
     }
 
-    try {
-      const payload = await request.jwtVerify<{
-        role?: string;
-        storeId?: string;
-      }>();
-      if (payload.role !== "store" || !payload.storeId) {
-        return reply.status(401).send({ message: "Unauthorized" });
-      }
-      request.storeId = payload.storeId;
-    } catch {
-      return reply.status(401).send({ message: "Unauthorized" });
-    }
+    return authenticateStore(request, reply);
   });
 
   app.get("/store/me", async (request, reply) => {
@@ -378,7 +391,7 @@ const registerRoutes = () => {
 
     const updated = await prisma.order.update({
       where: { id },
-      data: { status: "PRINTING" },
+      data: { status: "NEW" },
     });
 
     return {
