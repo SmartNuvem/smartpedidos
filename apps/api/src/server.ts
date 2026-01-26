@@ -286,6 +286,115 @@ app.get("/store/me", async (request, reply) => {
   };
 });
 
+app.get("/store/orders", async (request, reply) => {
+  const storeId = request.storeId;
+  if (!storeId) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const querySchema = z.object({
+    status: z.enum(["NEW", "PRINTING", "PRINTED"]).optional(),
+  });
+
+  const { status } = querySchema.parse(request.query);
+
+  const orders = await prisma.order.findMany({
+    where: {
+      storeId,
+      status,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return orders.map((order) => ({
+    id: order.id,
+    shortId: order.id.slice(0, 6),
+    customerName: null,
+    status: order.status,
+    total: order.total.toNumber(),
+    createdAt: order.createdAt,
+  }));
+});
+
+app.get("/store/orders/:id", async (request, reply) => {
+  const storeId = request.storeId;
+  if (!storeId) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const paramsSchema = z.object({ id: z.string().uuid() });
+  const { id } = paramsSchema.parse(request.params);
+
+  const order = await prisma.order.findFirst({
+    where: {
+      id,
+      storeId,
+    },
+    include: {
+      items: {
+        include: {
+          product: true,
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    return reply.status(404).send({ message: "Order not found" });
+  }
+
+  return {
+    id: order.id,
+    shortId: order.id.slice(0, 6),
+    customerName: null,
+    notes: null,
+    status: order.status,
+    total: order.total.toNumber(),
+    createdAt: order.createdAt,
+    items: order.items.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      name: item.product.name,
+      qty: item.qty,
+      price: item.price.toNumber(),
+    })),
+  };
+});
+
+app.post("/store/orders/:id/reprint", async (request, reply) => {
+  const storeId = request.storeId;
+  if (!storeId) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const paramsSchema = z.object({ id: z.string().uuid() });
+  const { id } = paramsSchema.parse(request.params);
+
+  const order = await prisma.order.findFirst({
+    where: {
+      id,
+      storeId,
+    },
+  });
+
+  if (!order) {
+    return reply.status(404).send({ message: "Order not found" });
+  }
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: { status: "PRINTING" },
+  });
+
+  return {
+    id: updated.id,
+    status: updated.status,
+    total: updated.total.toNumber(),
+  };
+});
+
 app.get("/agent/orders", async (request) => {
   const querySchema = z.object({
     status: z.enum(["NEW", "PRINTING", "PRINTED"]).optional(),
