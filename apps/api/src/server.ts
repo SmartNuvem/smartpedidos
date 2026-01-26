@@ -1,7 +1,7 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import cors from "@fastify/cors";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "./prisma";
 import {
@@ -196,6 +196,69 @@ const registerRoutes = () => {
         slug: store.slug,
       },
     };
+  });
+
+  app.post("/auth/admin/bootstrap", async (request, reply) => {
+    const token = request.headers["x-bootstrap-token"];
+
+    if (!token || token !== process.env.ADMIN_BOOTSTRAP_TOKEN) {
+      return reply.status(401).send({ message: "Invalid bootstrap token" });
+    }
+
+    const adminExists = await prisma.admin.count();
+    if (adminExists > 0) {
+      return reply.status(409).send({ message: "Admin already exists" });
+    }
+
+    const schema = z.object({
+      name: z.string().min(1),
+      email: z.string().email(),
+      password: z.string().min(6),
+    });
+
+    const { name, email, password } = schema.parse(request.body);
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const admin = await prisma.admin.create({
+      data: { name, email, passwordHash },
+      select: { id: true, name: true, email: true },
+    });
+
+    const jwt = await reply.jwtSign(
+      { sub: admin.id, role: "admin" },
+      { expiresIn: "7d" }
+    );
+
+    return reply.send({ admin, token: jwt });
+  });
+
+  app.post("/auth/admin/login", async (request, reply) => {
+    const schema = z.object({
+      email: z.string().email(),
+      password: z.string().min(1),
+    });
+
+    const { email, password } = schema.parse(request.body);
+
+    const admin = await prisma.admin.findUnique({ where: { email } });
+    if (!admin || !admin.active) {
+      return reply.status(401).send({ message: "Invalid credentials" });
+    }
+
+    const ok = await bcrypt.compare(password, admin.passwordHash);
+    if (!ok) {
+      return reply.status(401).send({ message: "Invalid credentials" });
+    }
+
+    const jwt = await reply.jwtSign(
+      { sub: admin.id, role: "admin" },
+      { expiresIn: "7d" }
+    );
+
+    return reply.send({
+      admin: { id: admin.id, name: admin.name, email: admin.email },
+      token: jwt,
+    });
   });
 
   app.post("/admin/stores", async (request, reply) => {
