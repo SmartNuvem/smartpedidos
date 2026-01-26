@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { getToken } from "./auth";
+import { getAdminToken, getToken } from "./auth";
+import AdminLayout from "./components/AdminLayout";
 import Layout from "./components/Layout";
+import AdminLogin from "./pages/AdminLogin";
+import AdminStores from "./pages/AdminStores";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Orders from "./pages/Orders";
@@ -17,9 +20,29 @@ const RequireAuth = ({ children }) => {
   return children;
 };
 
+const RequireAdmin = ({ children }) => {
+  const location = useLocation();
+  if (!getAdminToken()) {
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
+  }
+  return children;
+};
+
 const App = () => (
   <Routes>
     <Route path="/login" element={<Login />} />
+    <Route path="/admin/login" element={<AdminLogin />} />
+    <Route
+      path="/admin/stores"
+      element={
+        <RequireAdmin>
+          <AdminLayout>
+            <AdminStores />
+          </AdminLayout>
+        </RequireAdmin>
+      }
+    />
+    <Route path="/admin" element={<Navigate to="/admin/stores" replace />} />
     <Route
       path="/"
       element={

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { FastifyRequest } from "fastify";
+import { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "./prisma";
 
 export const hashToken = (token: string) =>
@@ -37,4 +37,24 @@ export const authenticateAgent = async (request: FastifyRequest) => {
       store: true,
     },
   });
+};
+
+export const requireAdmin = async (
+  request: FastifyRequest,
+  reply: FastifyReply
+) => {
+  const token = getBearerToken(request);
+  if (!token) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  try {
+    const payload = await reply.jwtVerify<{ role?: string; sub?: string }>();
+    if (payload.role !== "admin") {
+      return reply.status(403).send({ message: "Forbidden" });
+    }
+    request.adminId = payload.sub ?? null;
+  } catch {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
 };

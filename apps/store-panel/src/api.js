@@ -1,4 +1,4 @@
-import { getToken } from "./auth";
+import { getAdminToken, getToken } from "./auth";
 
 const rawApiUrl = import.meta.env.VITE_API_URL;
 const normalizedApiUrl =
@@ -9,6 +9,18 @@ const API_URL = normalizedApiUrl.endsWith("/")
 
 const buildHeaders = (headers = {}) => {
   const token = getToken();
+  const baseHeaders = {
+    "Content-Type": "application/json",
+    ...headers,
+  };
+  if (token) {
+    baseHeaders.Authorization = `Bearer ${token}`;
+  }
+  return baseHeaders;
+};
+
+const buildAdminHeaders = (headers = {}) => {
+  const token = getAdminToken();
   const baseHeaders = {
     "Content-Type": "application/json",
     ...headers,
@@ -111,6 +123,50 @@ export const api = {
       headers: buildHeaders(),
       body: JSON.stringify(payload),
     });
+    return handleResponse(response);
+  },
+};
+
+export const adminApi = {
+  login: async ({ email, password }) => {
+    const response = await fetch(`${API_URL}/auth/admin/login`, {
+      method: "POST",
+      headers: buildAdminHeaders(),
+      body: JSON.stringify({ email, password }),
+    });
+    return handleResponse(response);
+  },
+  getStores: async () => {
+    const response = await fetch(`${API_URL}/admin/stores`, {
+      headers: buildAdminHeaders(),
+    });
+    return handleResponse(response);
+  },
+  createStore: async (payload) => {
+    const response = await fetch(`${API_URL}/admin/stores`, {
+      method: "POST",
+      headers: buildAdminHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  updateStore: async (id, payload) => {
+    const response = await fetch(`${API_URL}/admin/stores/${id}`, {
+      method: "PATCH",
+      headers: buildAdminHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  resetStorePassword: async (id, password) => {
+    const response = await fetch(
+      `${API_URL}/admin/stores/${id}/reset-password`,
+      {
+        method: "POST",
+        headers: buildAdminHeaders(),
+        body: JSON.stringify({ password }),
+      }
+    );
     return handleResponse(response);
   },
 };
