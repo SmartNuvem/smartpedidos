@@ -49,11 +49,12 @@ export const requireAdmin = async (
   }
 
   try {
-    const payload = await reply.jwtVerify<{ role?: string; sub?: string }>();
-    if (payload.role !== "admin") {
+    await request.jwtVerify();
+    const { role, sub } = request.user ?? {};
+    if (role !== "admin") {
       return reply.status(403).send({ message: "Forbidden" });
     }
-    request.adminId = payload.sub ?? null;
+    request.adminId = sub ?? null;
   } catch {
     return reply.status(401).send({ message: "Unauthorized" });
   }
