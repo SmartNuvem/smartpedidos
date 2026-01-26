@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { api } from "../api";
 import { clearToken } from "../auth";
 import Button from "./Button";
 
@@ -12,9 +13,15 @@ const linkClass = ({ isActive }) =>
 const Layout = ({ children }) => {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    clearToken();
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // ignore logout errors
+    } finally {
+      clearToken();
+      navigate("/login");
+    }
   };
 
   return (

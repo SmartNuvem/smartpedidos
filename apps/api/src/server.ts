@@ -1,5 +1,6 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import fastifyJwt from "@fastify/jwt";
+import fastifyCookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
 import { OpenOverride, Prisma } from "@prisma/client";
@@ -8,6 +9,7 @@ import { prisma } from "./prisma";
 import {
   authenticateAgent,
   generateToken,
+  getBearerToken,
   hashToken,
   requireAdmin,
 } from "./auth";
@@ -26,8 +28,52 @@ const app = Fastify({
   logger: true,
 });
 
+const storeCookieName = "sp_store_token";
+const storeCookieMaxAge = 60 * 60 * 24 * 30;
+const cookieDomain = process.env.COOKIE_DOMAIN;
+
 const orderStreamClients = new Map<string, Set<FastifyReply>>();
 const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
+
+const parseOrigins = (value?: string) =>
+  (value ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const buildAllowedOrigins = () => {
+  const origins = new Set<string>([
+    "https://painel.smartpedidos.com.br",
+    "https://p.smartpedidos.com.br",
+    ...parseOrigins(process.env.STORE_PANEL_ORIGINS),
+    ...parseOrigins(process.env.PUBLIC_PANEL_ORIGINS),
+  ]);
+
+  if (process.env.NODE_ENV !== "production") {
+    origins.add("http://localhost:5173");
+    origins.add("http://localhost:3000");
+  }
+
+  return origins;
+};
+
+const buildStoreCookieOptions = () => ({
+  httpOnly: true,
+  secure: true,
+  sameSite: "none" as const,
+  path: "/",
+  maxAge: storeCookieMaxAge,
+  ...(cookieDomain ? { domain: cookieDomain } : {}),
+});
+
+const buildStoreLogoutCookieOptions = () => ({
+  httpOnly: true,
+  secure: true,
+  sameSite: "none" as const,
+  path: "/",
+  maxAge: 0,
+  ...(cookieDomain ? { domain: cookieDomain } : {}),
+});
 
 const sendOrderStreamEvent = (
   storeId: string,
@@ -239,20 +285,15 @@ const getStoreIdFromToken = (token: string) => {
   }
 };
 
-const authenticateStore = async (
+const requireStoreAuth = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const authHeader = request.headers.authorization;
-  let token: string | null = null;
-  if (authHeader?.startsWith("Bearer ")) {
-    token = authHeader.slice("Bearer ".length);
-  }
-
-  if (!token && request.url.startsWith("/store/orders/stream")) {
-    const queryToken = (request.query as { token?: string } | undefined)?.token;
-    if (typeof queryToken === "string" && queryToken.trim()) {
-      token = queryToken.trim();
+  let token: string | null = getBearerToken(request);
+  if (!token && request.cookies) {
+    const cookieToken = request.cookies[storeCookieName];
+    if (typeof cookieToken === "string" && cookieToken.trim()) {
+      token = cookieToken.trim();
     }
   }
 
@@ -735,11 +776,11 @@ const registerRoutes = () => {
 
     sendOrderStreamEvent(store.id, "order.created", {
       id: order.id,
+      shortCode: order.id.slice(0, 6),
       createdAt: order.createdAt,
-      status: order.status,
       totalCents,
       customerName,
-      deliveryType: order.fulfillmentType,
+      type: order.fulfillmentType,
     });
 
     return reply.status(201).send({
@@ -775,14 +816,21 @@ const registerRoutes = () => {
       { sub: store.id }
     );
 
-    return {
+    reply.setCookie(storeCookieName, token, buildStoreCookieOptions());
+
+    return reply.send({
       token,
       store: {
         id: store.id,
         name: store.name,
         slug: store.slug,
       },
-    };
+    });
+  });
+
+  app.post("/auth/store/logout", async (_request, reply) => {
+    reply.setCookie(storeCookieName, "", buildStoreLogoutCookieOptions());
+    return reply.send({ ok: true });
   });
 
   app.post("/auth/admin/bootstrap", async (request, reply) => {
@@ -1078,7 +1126,7 @@ const registerRoutes = () => {
       return;
     }
 
-    return authenticateStore(request, reply);
+    return requireStoreAuth(request, reply);
   });
 
   app.get("/store/me", async (request, reply) => {
@@ -1492,7 +1540,7 @@ const registerRoutes = () => {
     reply.raw.setHeader("Connection", "keep-alive");
     reply.raw.setHeader("X-Accel-Buffering", "no");
     reply.raw.flushHeaders?.();
-    reply.raw.write("event: ready\ndata: {\"ok\": true}\n\n");
+    reply.raw.write("event: connected\ndata: {\"ok\": true}\n\n");
     reply.raw.setTimeout(0);
 
     const clients = orderStreamClients.get(storeId) ?? new Set();
@@ -2455,8 +2503,16 @@ const start = async () => {
   await app.register(fastifyJwt, {
     secret: jwtSecret,
   });
+  await app.register(fastifyCookie);
+  const allowedOrigins = buildAllowedOrigins();
   await app.register(cors, {
-    origin: true,
+    origin: (origin, cb) => {
+      if (!origin) {
+        cb(null, true);
+        return;
+      }
+      cb(null, allowedOrigins.has(origin));
+    },
     credentials: true,
   });
 

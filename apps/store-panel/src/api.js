@@ -7,6 +7,12 @@ export const API_URL = normalizedApiUrl.endsWith("/")
   ? normalizedApiUrl.slice(0, -1)
   : normalizedApiUrl;
 
+const request = (url, options = {}) =>
+  fetch(url, {
+    credentials: "include",
+    ...options,
+  });
+
 const buildHeaders = (headers = {}) => {
   const token = getToken();
   const baseHeaders = {
@@ -48,47 +54,54 @@ const handleResponse = async (response) => {
 
 export const api = {
   login: async ({ email, password }) => {
-    const response = await fetch(`${API_URL}/auth/store/login`, {
+    const response = await request(`${API_URL}/auth/store/login`, {
       method: "POST",
       headers: buildHeaders(),
       body: JSON.stringify({ email, password }),
     });
     return handleResponse(response);
   },
+  logout: async () => {
+    const response = await request(`${API_URL}/auth/store/logout`, {
+      method: "POST",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   getOrders: async ({ status } = {}) => {
     const query = status ? `?status=${status}` : "";
-    const response = await fetch(`${API_URL}/store/orders${query}`, {
+    const response = await request(`${API_URL}/store/orders${query}`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   getOrder: async (id) => {
-    const response = await fetch(`${API_URL}/store/orders/${id}`, {
+    const response = await request(`${API_URL}/store/orders/${id}`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   reprintOrder: async (id) => {
-    const response = await fetch(`${API_URL}/store/orders/${id}/reprint`, {
+    const response = await request(`${API_URL}/store/orders/${id}/reprint`, {
       method: "POST",
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   getStore: async () => {
-    const response = await fetch(`${API_URL}/store/me`, {
+    const response = await request(`${API_URL}/store/me`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   getDeliveryAreas: async () => {
-    const response = await fetch(`${API_URL}/store/delivery-areas`, {
+    const response = await request(`${API_URL}/store/delivery-areas`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   createDeliveryArea: async (payload) => {
-    const response = await fetch(`${API_URL}/store/delivery-areas`, {
+    const response = await request(`${API_URL}/store/delivery-areas`, {
       method: "POST",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -96,7 +109,7 @@ export const api = {
     return handleResponse(response);
   },
   updateDeliveryArea: async (id, payload) => {
-    const response = await fetch(`${API_URL}/store/delivery-areas/${id}`, {
+    const response = await request(`${API_URL}/store/delivery-areas/${id}`, {
       method: "PATCH",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -104,20 +117,20 @@ export const api = {
     return handleResponse(response);
   },
   deleteDeliveryArea: async (id) => {
-    const response = await fetch(`${API_URL}/store/delivery-areas/${id}`, {
+    const response = await request(`${API_URL}/store/delivery-areas/${id}`, {
       method: "DELETE",
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   getStoreHours: async () => {
-    const response = await fetch(`${API_URL}/store/settings/hours`, {
+    const response = await request(`${API_URL}/store/settings/hours`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   updateStoreHours: async (payload) => {
-    const response = await fetch(`${API_URL}/store/settings/hours`, {
+    const response = await request(`${API_URL}/store/settings/hours`, {
       method: "PUT",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -125,13 +138,13 @@ export const api = {
     return handleResponse(response);
   },
   getPaymentSettings: async () => {
-    const response = await fetch(`${API_URL}/store/settings/payment`, {
+    const response = await request(`${API_URL}/store/settings/payment`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   updatePaymentSettings: async (payload) => {
-    const response = await fetch(`${API_URL}/store/settings/payment`, {
+    const response = await request(`${API_URL}/store/settings/payment`, {
       method: "PUT",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -139,13 +152,13 @@ export const api = {
     return handleResponse(response);
   },
   getCategories: async () => {
-    const response = await fetch(`${API_URL}/store/categories`, {
+    const response = await request(`${API_URL}/store/categories`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   createCategory: async ({ name }) => {
-    const response = await fetch(`${API_URL}/store/categories`, {
+    const response = await request(`${API_URL}/store/categories`, {
       method: "POST",
       headers: buildHeaders(),
       body: JSON.stringify({ name }),
@@ -153,7 +166,7 @@ export const api = {
     return handleResponse(response);
   },
   updateCategory: async (id, payload) => {
-    const response = await fetch(`${API_URL}/store/categories/${id}`, {
+    const response = await request(`${API_URL}/store/categories/${id}`, {
       method: "PATCH",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -161,13 +174,13 @@ export const api = {
     return handleResponse(response);
   },
   getProducts: async () => {
-    const response = await fetch(`${API_URL}/store/products`, {
+    const response = await request(`${API_URL}/store/products`, {
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   createProduct: async (payload) => {
-    const response = await fetch(`${API_URL}/store/products`, {
+    const response = await request(`${API_URL}/store/products`, {
       method: "POST",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -175,7 +188,7 @@ export const api = {
     return handleResponse(response);
   },
   updateProduct: async (id, payload) => {
-    const response = await fetch(`${API_URL}/store/products/${id}`, {
+    const response = await request(`${API_URL}/store/products/${id}`, {
       method: "PATCH",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -183,7 +196,7 @@ export const api = {
     return handleResponse(response);
   },
   getProductOptionGroups: async (productId) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/store/products/${productId}/option-groups`,
       {
         headers: buildHeaders(),
@@ -192,7 +205,7 @@ export const api = {
     return handleResponse(response);
   },
   createProductOptionGroup: async (productId, payload) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/store/products/${productId}/option-groups`,
       {
         method: "POST",
@@ -203,7 +216,7 @@ export const api = {
     return handleResponse(response);
   },
   updateOptionGroup: async (groupId, payload) => {
-    const response = await fetch(`${API_URL}/store/option-groups/${groupId}`, {
+    const response = await request(`${API_URL}/store/option-groups/${groupId}`, {
       method: "PUT",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
@@ -211,14 +224,14 @@ export const api = {
     return handleResponse(response);
   },
   deleteOptionGroup: async (groupId) => {
-    const response = await fetch(`${API_URL}/store/option-groups/${groupId}`, {
+    const response = await request(`${API_URL}/store/option-groups/${groupId}`, {
       method: "DELETE",
       headers: buildHeaders(),
     });
     return handleResponse(response);
   },
   getOptionGroupItems: async (groupId) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/store/option-groups/${groupId}/items`,
       {
         headers: buildHeaders(),
@@ -227,7 +240,7 @@ export const api = {
     return handleResponse(response);
   },
   createOptionGroupItem: async (groupId, payload) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/store/option-groups/${groupId}/items`,
       {
         method: "POST",
@@ -238,7 +251,7 @@ export const api = {
     return handleResponse(response);
   },
   updateOptionGroupItem: async (groupId, itemId, payload) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/store/option-groups/${groupId}/items/${itemId}`,
       {
         method: "PUT",
@@ -249,7 +262,7 @@ export const api = {
     return handleResponse(response);
   },
   deleteOptionGroupItem: async (groupId, itemId) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/store/option-groups/${groupId}/items/${itemId}`,
       {
         method: "DELETE",
@@ -262,7 +275,7 @@ export const api = {
 
 export const adminApi = {
   login: async ({ email, password }) => {
-    const response = await fetch(`${API_URL}/auth/admin/login`, {
+    const response = await request(`${API_URL}/auth/admin/login`, {
       method: "POST",
       headers: buildAdminHeaders(),
       body: JSON.stringify({ email, password }),
@@ -270,13 +283,13 @@ export const adminApi = {
     return handleResponse(response);
   },
   getStores: async () => {
-    const response = await fetch(`${API_URL}/admin/stores`, {
+    const response = await request(`${API_URL}/admin/stores`, {
       headers: buildAdminHeaders(),
     });
     return handleResponse(response);
   },
   createStore: async (payload) => {
-    const response = await fetch(`${API_URL}/admin/stores`, {
+    const response = await request(`${API_URL}/admin/stores`, {
       method: "POST",
       headers: buildAdminHeaders(),
       body: JSON.stringify(payload),
@@ -284,7 +297,7 @@ export const adminApi = {
     return handleResponse(response);
   },
   updateStore: async (id, payload) => {
-    const response = await fetch(`${API_URL}/admin/stores/${id}`, {
+    const response = await request(`${API_URL}/admin/stores/${id}`, {
       method: "PATCH",
       headers: buildAdminHeaders(),
       body: JSON.stringify(payload),
@@ -292,7 +305,7 @@ export const adminApi = {
     return handleResponse(response);
   },
   resetStorePassword: async (id, password) => {
-    const response = await fetch(
+    const response = await request(
       `${API_URL}/admin/stores/${id}/reset-password`,
       {
         method: "POST",

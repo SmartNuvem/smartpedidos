@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { getAdminToken, getToken } from "./auth";
+import { useEffect, useState } from "react";
+import { api } from "./api";
+import { getAdminToken } from "./auth";
 import AdminLayout from "./components/AdminLayout";
 import Layout from "./components/Layout";
 import AdminLogin from "./pages/AdminLogin";
@@ -15,9 +17,42 @@ import PublicOrder from "./pages/PublicOrder";
 
 const RequireAuth = ({ children }) => {
   const location = useLocation();
-  if (!getToken()) {
+  const [status, setStatus] = useState("checking");
+
+  useEffect(() => {
+    let isActive = true;
+    const checkSession = async () => {
+      try {
+        await api.getStore();
+        if (isActive) {
+          setStatus("authenticated");
+        }
+      } catch {
+        if (isActive) {
+          setStatus("unauthenticated");
+        }
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  if (status === "checking") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <span className="text-sm text-slate-500">Carregando...</span>
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated") {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
+
   return children;
 };
 
