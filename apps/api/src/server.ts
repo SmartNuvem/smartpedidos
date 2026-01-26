@@ -25,6 +25,111 @@ const app = Fastify({
   logger: true,
 });
 
+const defaultHours = {
+  timezone: "America/Sao_Paulo",
+  monOpen: null,
+  monClose: null,
+  monEnabled: false,
+  tueOpen: null,
+  tueClose: null,
+  tueEnabled: false,
+  wedOpen: null,
+  wedClose: null,
+  wedEnabled: false,
+  thuOpen: null,
+  thuClose: null,
+  thuEnabled: false,
+  friOpen: null,
+  friClose: null,
+  friEnabled: false,
+  satOpen: null,
+  satClose: null,
+  satEnabled: false,
+  sunOpen: null,
+  sunClose: null,
+  sunEnabled: false,
+  isOpenNowOverride: "AUTO" as const,
+  closedMessage: null,
+};
+
+const parseTimeToMinutes = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+  const [hours, minutes] = value.split(":").map((part) => Number(part));
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+  return hours * 60 + minutes;
+};
+
+const getLocalTimeParts = (timezone: string) => {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const weekday = parts.find((part) => part.type === "weekday")?.value;
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  return {
+    weekday,
+    minutes:
+      hour && minute ? Number(hour) * 60 + Number(minute) : Number.NaN,
+  };
+};
+
+const calculateIsOpenNow = (hours: typeof defaultHours) => {
+  if (hours.isOpenNowOverride === "FORCE_OPEN") {
+    return true;
+  }
+  if (hours.isOpenNowOverride === "FORCE_CLOSED") {
+    return false;
+  }
+
+  const { weekday, minutes } = getLocalTimeParts(hours.timezone);
+  if (!weekday || Number.isNaN(minutes)) {
+    return true;
+  }
+
+  const dayMap: Record<string, string> = {
+    Mon: "mon",
+    Tue: "tue",
+    Wed: "wed",
+    Thu: "thu",
+    Fri: "fri",
+    Sat: "sat",
+    Sun: "sun",
+  };
+  const dayKey = dayMap[weekday];
+  if (!dayKey) {
+    return true;
+  }
+
+  const enabled = hours[`${dayKey}Enabled` as keyof typeof hours];
+  const openValue = hours[`${dayKey}Open` as keyof typeof hours];
+  const closeValue = hours[`${dayKey}Close` as keyof typeof hours];
+
+  if (!enabled || typeof openValue !== "string" || typeof closeValue !== "string") {
+    return false;
+  }
+
+  const openMinutes = parseTimeToMinutes(openValue);
+  const closeMinutes = parseTimeToMinutes(closeValue);
+  if (openMinutes === null || closeMinutes === null) {
+    return false;
+  }
+
+  if (closeMinutes < openMinutes) {
+    return minutes >= openMinutes || minutes < closeMinutes;
+  }
+
+  return minutes >= openMinutes && minutes <= closeMinutes;
+};
+
 const authenticateStore = async (
   request: FastifyRequest,
   reply: FastifyReply
@@ -69,6 +174,12 @@ const registerRoutes = () => {
             },
           },
         },
+        deliveryAreas: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+        hours: true,
+        paymentSettings: true,
       },
     });
 
@@ -76,10 +187,50 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Store not found" });
     }
 
+    const hours = store.hours
+      ? {
+          timezone: store.hours.timezone,
+          monOpen: store.hours.monOpen,
+          monClose: store.hours.monClose,
+          monEnabled: store.hours.monEnabled,
+          tueOpen: store.hours.tueOpen,
+          tueClose: store.hours.tueClose,
+          tueEnabled: store.hours.tueEnabled,
+          wedOpen: store.hours.wedOpen,
+          wedClose: store.hours.wedClose,
+          wedEnabled: store.hours.wedEnabled,
+          thuOpen: store.hours.thuOpen,
+          thuClose: store.hours.thuClose,
+          thuEnabled: store.hours.thuEnabled,
+          friOpen: store.hours.friOpen,
+          friClose: store.hours.friClose,
+          friEnabled: store.hours.friEnabled,
+          satOpen: store.hours.satOpen,
+          satClose: store.hours.satClose,
+          satEnabled: store.hours.satEnabled,
+          sunOpen: store.hours.sunOpen,
+          sunClose: store.hours.sunClose,
+          sunEnabled: store.hours.sunEnabled,
+          isOpenNowOverride: store.hours.isOpenNowOverride,
+          closedMessage: store.hours.closedMessage,
+        }
+      : defaultHours;
+
+    const paymentSettings = store.paymentSettings ?? {
+      acceptPix: true,
+      acceptCash: true,
+      acceptCard: true,
+      pixKey: null,
+      pixName: null,
+      pixBank: null,
+    };
+
     return {
       store: {
         name: store.name,
         slug: store.slug,
+        isOpenNow: store.hours ? calculateIsOpenNow(hours) : true,
+        closedMessage: hours.closedMessage,
       },
       categories: store.categories.map((category) => ({
         id: category.id,
@@ -91,6 +242,13 @@ const registerRoutes = () => {
           active: product.active,
         })),
       })),
+      deliveryAreas: store.deliveryAreas.map((area) => ({
+        id: area.id,
+        name: area.name,
+        feeCents: area.feeCents,
+      })),
+      hours,
+      payment: paymentSettings,
     };
   });
 
@@ -106,9 +264,18 @@ const registerRoutes = () => {
     const bodySchema = z.object({
       customerName: z.string().min(1),
       customerPhone: z.string().min(1),
-      fulfillmentType: z.enum(["PICKUP", "DELIVERY"]),
+      orderType: z.enum(["PICKUP", "DELIVERY"]).optional(),
+      fulfillmentType: z.enum(["PICKUP", "DELIVERY"]).optional(),
       notes: z.string().min(1).optional(),
       address: addressSchema.optional(),
+      deliveryAreaId: z.string().uuid().optional(),
+      addressLine: z.string().min(1).optional(),
+      addressNumber: z.string().min(1).optional(),
+      addressNeighborhood: z.string().min(1).optional(),
+      addressCity: z.string().min(1).optional(),
+      addressRef: z.string().min(1).optional(),
+      paymentMethod: z.enum(["PIX", "CASH", "CARD"]),
+      changeForCents: z.number().int().nonnegative().optional(),
       items: z
         .array(
           z.object({
@@ -121,21 +288,108 @@ const registerRoutes = () => {
     });
 
     const { slug } = paramsSchema.parse(request.params);
-    const { items, fulfillmentType, address, customerName, customerPhone, notes } =
-      bodySchema.parse(request.body);
+    const {
+      items,
+      fulfillmentType,
+      orderType,
+      address,
+      customerName,
+      customerPhone,
+      notes,
+      deliveryAreaId,
+      addressLine,
+      addressNumber,
+      addressNeighborhood,
+      addressCity,
+      addressRef,
+      paymentMethod,
+      changeForCents,
+    } = bodySchema.parse(request.body);
 
-    if (fulfillmentType === "DELIVERY" && !address) {
-      return reply
-        .status(400)
-        .send({ message: "Delivery address is required" });
-    }
+    const normalizedOrderType = orderType ?? fulfillmentType ?? "PICKUP";
+    const isDelivery = normalizedOrderType === "DELIVERY";
 
     const store = await prisma.store.findUnique({
       where: { slug },
+      include: {
+        hours: true,
+        paymentSettings: true,
+      },
     });
 
     if (!store || !store.isActive) {
       return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const hours = store.hours
+      ? {
+          timezone: store.hours.timezone,
+          monOpen: store.hours.monOpen,
+          monClose: store.hours.monClose,
+          monEnabled: store.hours.monEnabled,
+          tueOpen: store.hours.tueOpen,
+          tueClose: store.hours.tueClose,
+          tueEnabled: store.hours.tueEnabled,
+          wedOpen: store.hours.wedOpen,
+          wedClose: store.hours.wedClose,
+          wedEnabled: store.hours.wedEnabled,
+          thuOpen: store.hours.thuOpen,
+          thuClose: store.hours.thuClose,
+          thuEnabled: store.hours.thuEnabled,
+          friOpen: store.hours.friOpen,
+          friClose: store.hours.friClose,
+          friEnabled: store.hours.friEnabled,
+          satOpen: store.hours.satOpen,
+          satClose: store.hours.satClose,
+          satEnabled: store.hours.satEnabled,
+          sunOpen: store.hours.sunOpen,
+          sunClose: store.hours.sunClose,
+          sunEnabled: store.hours.sunEnabled,
+          isOpenNowOverride: store.hours.isOpenNowOverride,
+          closedMessage: store.hours.closedMessage,
+        }
+      : defaultHours;
+
+    const isOpenNow = store.hours ? calculateIsOpenNow(hours) : true;
+
+    if (!isOpenNow) {
+      return reply.status(400).send({
+        message: hours.closedMessage || "A loja está fechada no momento.",
+      });
+    }
+
+    const paymentSettings = store.paymentSettings ?? {
+      acceptPix: true,
+      acceptCash: true,
+      acceptCard: true,
+    };
+
+    const paymentAllowed =
+      (paymentMethod === "PIX" && paymentSettings.acceptPix) ||
+      (paymentMethod === "CASH" && paymentSettings.acceptCash) ||
+      (paymentMethod === "CARD" && paymentSettings.acceptCard);
+
+    if (!paymentAllowed) {
+      return reply
+        .status(400)
+        .send({ message: "Forma de pagamento indisponível." });
+    }
+
+    const normalizedAddressLine = addressLine ?? address?.line ?? null;
+    const normalizedAddressNumber = addressNumber ?? address?.number ?? null;
+    const normalizedAddressNeighborhood =
+      addressNeighborhood ?? address?.neighborhood ?? null;
+    const normalizedAddressCity = addressCity ?? address?.city ?? null;
+    const normalizedAddressRef = addressRef ?? address?.reference ?? null;
+
+    if (isDelivery && !deliveryAreaId) {
+      return reply
+        .status(400)
+        .send({ message: "Selecione um bairro para entrega." });
+    }
+
+    if (isDelivery && !normalizedAddressLine) {
+      return reply.status(400).send({ message: "Endereço é obrigatório." });
     }
 
     const productIds = items.map((item) => item.productId);
@@ -180,27 +434,59 @@ const registerRoutes = () => {
       }
       return acc + item.unitPriceCents * item.quantity;
     }, 0);
-    const deliveryFeeCents = 0;
+    let deliveryFeeCents = 0;
+    let deliveryNeighborhood = normalizedAddressNeighborhood;
+
+    if (isDelivery) {
+      const area = await prisma.deliveryArea.findFirst({
+        where: {
+          id: deliveryAreaId,
+          storeId: store.id,
+          isActive: true,
+        },
+      });
+      if (!area) {
+        return reply
+          .status(400)
+          .send({ message: "Bairro de entrega inválido." });
+      }
+      deliveryFeeCents = area.feeCents;
+      deliveryNeighborhood = area.name;
+    }
+
     const totalCents = subtotalCents + deliveryFeeCents;
     const total = totalCents / 100;
+
+    if (
+      paymentMethod === "CASH" &&
+      changeForCents !== undefined &&
+      changeForCents < totalCents
+    ) {
+      return reply.status(400).send({
+        message: "Troco deve ser maior ou igual ao total do pedido.",
+      });
+    }
 
     const order = await prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
           storeId: store.id,
           status: "NEW",
-          fulfillmentType,
+          fulfillmentType: normalizedOrderType,
           customerName,
           customerPhone,
           notes: notes ?? null,
-          addressLine: fulfillmentType === "DELIVERY" ? address?.line : null,
-          addressNumber: fulfillmentType === "DELIVERY" ? address?.number : null,
-          addressNeighborhood:
-            fulfillmentType === "DELIVERY" ? address?.neighborhood : null,
-          addressCity: fulfillmentType === "DELIVERY" ? address?.city : null,
+          addressLine: isDelivery ? normalizedAddressLine : null,
+          addressNumber: isDelivery ? normalizedAddressNumber : null,
+          addressNeighborhood: isDelivery ? deliveryNeighborhood : null,
+          addressCity: isDelivery ? normalizedAddressCity : null,
           addressReference:
-            fulfillmentType === "DELIVERY" ? address?.reference : null,
+            isDelivery ? normalizedAddressRef : null,
+          deliveryAreaId: isDelivery ? deliveryAreaId ?? null : null,
           deliveryFeeCents,
+          paymentMethod,
+          changeForCents:
+            paymentMethod === "CASH" ? changeForCents ?? null : null,
           total,
         },
       });
@@ -580,6 +866,378 @@ const registerRoutes = () => {
     };
   });
 
+  app.get("/store/delivery-areas", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const areas = await prisma.deliveryArea.findMany({
+      where: { storeId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    return areas.map((area) => ({
+      id: area.id,
+      name: area.name,
+      feeCents: area.feeCents,
+      isActive: area.isActive,
+      sortOrder: area.sortOrder,
+      createdAt: area.createdAt,
+      updatedAt: area.updatedAt,
+    }));
+  });
+
+  app.post("/store/delivery-areas", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      feeCents: z.number().int().nonnegative(),
+      isActive: z.boolean().optional(),
+      sortOrder: z.number().int().optional(),
+    });
+
+    const { name, feeCents, isActive, sortOrder } = bodySchema.parse(
+      request.body
+    );
+
+    const area = await prisma.deliveryArea.create({
+      data: {
+        storeId,
+        name,
+        feeCents,
+        isActive: isActive ?? true,
+        sortOrder: sortOrder ?? 0,
+      },
+    });
+
+    return reply.status(201).send({
+      id: area.id,
+      name: area.name,
+      feeCents: area.feeCents,
+      isActive: area.isActive,
+      sortOrder: area.sortOrder,
+      createdAt: area.createdAt,
+      updatedAt: area.updatedAt,
+    });
+  });
+
+  app.patch("/store/delivery-areas/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1).optional(),
+      feeCents: z.number().int().nonnegative().optional(),
+      isActive: z.boolean().optional(),
+      sortOrder: z.number().int().optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { name, feeCents, isActive, sortOrder } = bodySchema.parse(
+      request.body
+    );
+
+    const area = await prisma.deliveryArea.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!area) {
+      return reply.status(404).send({ message: "Delivery area not found" });
+    }
+
+    const updated = await prisma.deliveryArea.update({
+      where: { id },
+      data: {
+        name: name ?? area.name,
+        feeCents: feeCents ?? area.feeCents,
+        isActive: isActive ?? area.isActive,
+        sortOrder: sortOrder ?? area.sortOrder,
+      },
+    });
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      feeCents: updated.feeCents,
+      isActive: updated.isActive,
+      sortOrder: updated.sortOrder,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
+  });
+
+  app.delete("/store/delivery-areas/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const area = await prisma.deliveryArea.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!area) {
+      return reply.status(404).send({ message: "Delivery area not found" });
+    }
+
+    await prisma.deliveryArea.delete({ where: { id } });
+    return reply.status(204).send();
+  });
+
+  app.get("/store/settings/hours", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const hours = await prisma.storeHours.findUnique({
+      where: { storeId },
+    });
+
+    if (!hours) {
+      return reply.send(defaultHours);
+    }
+
+    return reply.send({
+      timezone: hours.timezone,
+      monOpen: hours.monOpen,
+      monClose: hours.monClose,
+      monEnabled: hours.monEnabled,
+      tueOpen: hours.tueOpen,
+      tueClose: hours.tueClose,
+      tueEnabled: hours.tueEnabled,
+      wedOpen: hours.wedOpen,
+      wedClose: hours.wedClose,
+      wedEnabled: hours.wedEnabled,
+      thuOpen: hours.thuOpen,
+      thuClose: hours.thuClose,
+      thuEnabled: hours.thuEnabled,
+      friOpen: hours.friOpen,
+      friClose: hours.friClose,
+      friEnabled: hours.friEnabled,
+      satOpen: hours.satOpen,
+      satClose: hours.satClose,
+      satEnabled: hours.satEnabled,
+      sunOpen: hours.sunOpen,
+      sunClose: hours.sunClose,
+      sunEnabled: hours.sunEnabled,
+      isOpenNowOverride: hours.isOpenNowOverride,
+      closedMessage: hours.closedMessage,
+    });
+  });
+
+  app.put("/store/settings/hours", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      timezone: z.string().min(1).optional(),
+      monOpen: z.string().nullable().optional(),
+      monClose: z.string().nullable().optional(),
+      monEnabled: z.boolean().optional(),
+      tueOpen: z.string().nullable().optional(),
+      tueClose: z.string().nullable().optional(),
+      tueEnabled: z.boolean().optional(),
+      wedOpen: z.string().nullable().optional(),
+      wedClose: z.string().nullable().optional(),
+      wedEnabled: z.boolean().optional(),
+      thuOpen: z.string().nullable().optional(),
+      thuClose: z.string().nullable().optional(),
+      thuEnabled: z.boolean().optional(),
+      friOpen: z.string().nullable().optional(),
+      friClose: z.string().nullable().optional(),
+      friEnabled: z.boolean().optional(),
+      satOpen: z.string().nullable().optional(),
+      satClose: z.string().nullable().optional(),
+      satEnabled: z.boolean().optional(),
+      sunOpen: z.string().nullable().optional(),
+      sunClose: z.string().nullable().optional(),
+      sunEnabled: z.boolean().optional(),
+      isOpenNowOverride: z
+        .enum(["AUTO", "FORCE_OPEN", "FORCE_CLOSED"])
+        .optional(),
+      closedMessage: z.string().nullable().optional(),
+    });
+
+    const payload = bodySchema.parse(request.body);
+
+    const hours = await prisma.storeHours.upsert({
+      where: { storeId },
+      create: {
+        storeId,
+        timezone: payload.timezone ?? defaultHours.timezone,
+        monOpen: payload.monOpen ?? null,
+        monClose: payload.monClose ?? null,
+        monEnabled: payload.monEnabled ?? false,
+        tueOpen: payload.tueOpen ?? null,
+        tueClose: payload.tueClose ?? null,
+        tueEnabled: payload.tueEnabled ?? false,
+        wedOpen: payload.wedOpen ?? null,
+        wedClose: payload.wedClose ?? null,
+        wedEnabled: payload.wedEnabled ?? false,
+        thuOpen: payload.thuOpen ?? null,
+        thuClose: payload.thuClose ?? null,
+        thuEnabled: payload.thuEnabled ?? false,
+        friOpen: payload.friOpen ?? null,
+        friClose: payload.friClose ?? null,
+        friEnabled: payload.friEnabled ?? false,
+        satOpen: payload.satOpen ?? null,
+        satClose: payload.satClose ?? null,
+        satEnabled: payload.satEnabled ?? false,
+        sunOpen: payload.sunOpen ?? null,
+        sunClose: payload.sunClose ?? null,
+        sunEnabled: payload.sunEnabled ?? false,
+        isOpenNowOverride: payload.isOpenNowOverride ?? "AUTO",
+        closedMessage: payload.closedMessage ?? null,
+      },
+      update: {
+        timezone: payload.timezone ?? undefined,
+        monOpen: payload.monOpen ?? null,
+        monClose: payload.monClose ?? null,
+        monEnabled: payload.monEnabled ?? undefined,
+        tueOpen: payload.tueOpen ?? null,
+        tueClose: payload.tueClose ?? null,
+        tueEnabled: payload.tueEnabled ?? undefined,
+        wedOpen: payload.wedOpen ?? null,
+        wedClose: payload.wedClose ?? null,
+        wedEnabled: payload.wedEnabled ?? undefined,
+        thuOpen: payload.thuOpen ?? null,
+        thuClose: payload.thuClose ?? null,
+        thuEnabled: payload.thuEnabled ?? undefined,
+        friOpen: payload.friOpen ?? null,
+        friClose: payload.friClose ?? null,
+        friEnabled: payload.friEnabled ?? undefined,
+        satOpen: payload.satOpen ?? null,
+        satClose: payload.satClose ?? null,
+        satEnabled: payload.satEnabled ?? undefined,
+        sunOpen: payload.sunOpen ?? null,
+        sunClose: payload.sunClose ?? null,
+        sunEnabled: payload.sunEnabled ?? undefined,
+        isOpenNowOverride: payload.isOpenNowOverride ?? undefined,
+        closedMessage: payload.closedMessage ?? null,
+      },
+    });
+
+    return reply.send({
+      timezone: hours.timezone,
+      monOpen: hours.monOpen,
+      monClose: hours.monClose,
+      monEnabled: hours.monEnabled,
+      tueOpen: hours.tueOpen,
+      tueClose: hours.tueClose,
+      tueEnabled: hours.tueEnabled,
+      wedOpen: hours.wedOpen,
+      wedClose: hours.wedClose,
+      wedEnabled: hours.wedEnabled,
+      thuOpen: hours.thuOpen,
+      thuClose: hours.thuClose,
+      thuEnabled: hours.thuEnabled,
+      friOpen: hours.friOpen,
+      friClose: hours.friClose,
+      friEnabled: hours.friEnabled,
+      satOpen: hours.satOpen,
+      satClose: hours.satClose,
+      satEnabled: hours.satEnabled,
+      sunOpen: hours.sunOpen,
+      sunClose: hours.sunClose,
+      sunEnabled: hours.sunEnabled,
+      isOpenNowOverride: hours.isOpenNowOverride,
+      closedMessage: hours.closedMessage,
+    });
+  });
+
+  app.get("/store/settings/payment", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const settings = await prisma.storePaymentSettings.findUnique({
+      where: { storeId },
+    });
+
+    if (!settings) {
+      return reply.send({
+        acceptPix: true,
+        acceptCash: true,
+        acceptCard: true,
+        pixKey: null,
+        pixName: null,
+        pixBank: null,
+      });
+    }
+
+    return reply.send({
+      acceptPix: settings.acceptPix,
+      acceptCash: settings.acceptCash,
+      acceptCard: settings.acceptCard,
+      pixKey: settings.pixKey,
+      pixName: settings.pixName,
+      pixBank: settings.pixBank,
+    });
+  });
+
+  app.put("/store/settings/payment", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      acceptPix: z.boolean().optional(),
+      acceptCash: z.boolean().optional(),
+      acceptCard: z.boolean().optional(),
+      pixKey: z.string().nullable().optional(),
+      pixName: z.string().nullable().optional(),
+      pixBank: z.string().nullable().optional(),
+    });
+
+    const payload = bodySchema.parse(request.body);
+
+    const settings = await prisma.storePaymentSettings.upsert({
+      where: { storeId },
+      create: {
+        storeId,
+        acceptPix: payload.acceptPix ?? true,
+        acceptCash: payload.acceptCash ?? true,
+        acceptCard: payload.acceptCard ?? true,
+        pixKey: payload.pixKey ?? null,
+        pixName: payload.pixName ?? null,
+        pixBank: payload.pixBank ?? null,
+      },
+      update: {
+        acceptPix: payload.acceptPix ?? undefined,
+        acceptCash: payload.acceptCash ?? undefined,
+        acceptCard: payload.acceptCard ?? undefined,
+        pixKey: payload.pixKey ?? null,
+        pixName: payload.pixName ?? null,
+        pixBank: payload.pixBank ?? null,
+      },
+    });
+
+    return reply.send({
+      acceptPix: settings.acceptPix,
+      acceptCash: settings.acceptCash,
+      acceptCard: settings.acceptCard,
+      pixKey: settings.pixKey,
+      pixName: settings.pixName,
+      pixBank: settings.pixBank,
+    });
+  });
+
   app.get("/store/orders", async (request, reply) => {
     const storeId = request.storeId;
     if (!storeId) {
@@ -607,7 +1265,11 @@ const registerRoutes = () => {
       shortId: order.id.slice(0, 6),
       customerName: order.customerName,
       status: order.status,
+      fulfillmentType: order.fulfillmentType,
       total: order.total.toNumber(),
+      deliveryFeeCents: order.deliveryFeeCents,
+      paymentMethod: order.paymentMethod,
+      changeForCents: order.changeForCents,
       createdAt: order.createdAt,
     }));
   });
@@ -863,6 +1525,7 @@ const registerRoutes = () => {
             product: true,
           },
         },
+        deliveryArea: true,
       },
     });
 
@@ -882,6 +1545,17 @@ const registerRoutes = () => {
       addressNeighborhood: order.addressNeighborhood,
       addressCity: order.addressCity,
       addressReference: order.addressReference,
+      deliveryArea: order.deliveryArea
+        ? {
+            id: order.deliveryArea.id,
+            name: order.deliveryArea.name,
+            feeCents: order.deliveryArea.feeCents,
+          }
+        : null,
+      deliveryFeeCents: order.deliveryFeeCents,
+      paymentMethod: order.paymentMethod,
+      changeForCents: order.changeForCents,
+      paidStatus: order.paidStatus,
       status: order.status,
       total: order.total.toNumber(),
       createdAt: order.createdAt,

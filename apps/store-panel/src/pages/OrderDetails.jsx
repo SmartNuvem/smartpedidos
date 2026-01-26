@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, formatCurrency, formatDateTime } from "../api";
 import Button from "../components/Button";
@@ -24,9 +24,17 @@ const OrderDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reprintLoading, setReprintLoading] = useState(false);
+  const intervalRef = useRef(null);
+  const paymentLabels = {
+    PIX: "PIX",
+    CASH: "Dinheiro",
+    CARD: "Cartão",
+  };
 
-  const loadOrder = async () => {
-    setLoading(true);
+  const loadOrder = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const data = await api.getOrder(id);
@@ -34,19 +42,45 @@ const OrderDetails = () => {
     } catch {
       setError("Não foi possível carregar o pedido.");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadOrder();
+
+    const poll = () => {
+      if (document.hidden) {
+        return;
+      }
+      loadOrder({ silent: true });
+    };
+
+    intervalRef.current = window.setInterval(poll, 5000);
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        loadOrder({ silent: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [id]);
 
   const handleReprint = async () => {
     setReprintLoading(true);
     try {
       await api.reprintOrder(id);
-      await loadOrder();
+      await loadOrder({ silent: true });
     } catch {
       setError("Não foi possível reenviar para impressão.");
     } finally {
@@ -70,6 +104,11 @@ const OrderDetails = () => {
       </div>
     );
   }
+
+  const itemsSubtotal = order.items.reduce(
+    (acc, item) => acc + item.unitPrice * item.quantity,
+    0
+  );
 
   return (
     <div className="space-y-6">
@@ -127,6 +166,16 @@ const OrderDetails = () => {
               {order.addressReference ? (
                 <p>Referência: {order.addressReference}</p>
               ) : null}
+              <p>
+                Pagamento:{" "}
+                {paymentLabels[order.paymentMethod] || "Não informado"}
+              </p>
+              {order.paymentMethod === "CASH" && order.changeForCents ? (
+                <p>
+                  Troco para:{" "}
+                  {formatCurrency(order.changeForCents / 100)}
+                </p>
+              ) : null}
               <p>Observações: {order.notes || "-"}</p>
             </div>
           </div>
@@ -134,9 +183,26 @@ const OrderDetails = () => {
             <p className="text-xs font-semibold uppercase text-slate-500">
               Total
             </p>
-            <p className="mt-3 text-2xl font-semibold text-slate-900">
-              {formatCurrency(order.total)}
-            </p>
+            <div className="mt-3 space-y-1 text-sm text-slate-700">
+              <div className="flex items-center justify-between">
+                <span>Subtotal itens</span>
+                <span className="font-semibold text-slate-900">
+                  {formatCurrency(itemsSubtotal)}
+                </span>
+              </div>
+              {order.deliveryFeeCents > 0 ? (
+                <div className="flex items-center justify-between">
+                  <span>Taxa entrega</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCurrency(order.deliveryFeeCents / 100)}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between text-base font-semibold text-slate-900">
+                <span>Total</span>
+                <span>{formatCurrency(order.total)}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

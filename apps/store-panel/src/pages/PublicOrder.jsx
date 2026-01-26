@@ -4,9 +4,6 @@ import { API_URL, formatCurrency } from "../api";
 
 const initialAddress = {
   line: "",
-  number: "",
-  neighborhood: "",
-  city: "",
   reference: "",
 };
 
@@ -20,10 +17,14 @@ const PublicOrder = () => {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState("PICKUP");
+  const [deliveryAreaId, setDeliveryAreaId] = useState("");
   const [address, setAddress] = useState(initialAddress);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [changeFor, setChangeFor] = useState("");
+  const [pixCopied, setPixCopied] = useState(false);
 
   useEffect(() => {
     const loadMenu = async () => {
@@ -48,6 +49,29 @@ const PublicOrder = () => {
     }
   }, [slug]);
 
+  useEffect(() => {
+    if (!menu?.payment) {
+      return;
+    }
+    const availableMethods = [
+      menu.payment.acceptPix ? "PIX" : null,
+      menu.payment.acceptCash ? "CASH" : null,
+      menu.payment.acceptCard ? "CARD" : null,
+    ].filter(Boolean);
+    if (!availableMethods.includes(paymentMethod)) {
+      setPaymentMethod(availableMethods[0] || "");
+    }
+  }, [menu, paymentMethod]);
+
+  useEffect(() => {
+    if (paymentMethod !== "CASH") {
+      setChangeFor("");
+    }
+    if (paymentMethod !== "PIX") {
+      setPixCopied(false);
+    }
+  }, [paymentMethod]);
+
   const totalItems = useMemo(
     () => cartItems.reduce((acc, item) => acc + item.quantity, 0),
     [cartItems]
@@ -61,6 +85,13 @@ const PublicOrder = () => {
       ),
     [cartItems]
   );
+
+  const selectedDeliveryArea = useMemo(() => {
+    if (!menu?.deliveryAreas) {
+      return null;
+    }
+    return menu.deliveryAreas.find((area) => area.id === deliveryAreaId) || null;
+  }, [menu, deliveryAreaId]);
 
   const handleAddProduct = (product) => {
     setCartItems((prev) => {
@@ -111,15 +142,30 @@ const PublicOrder = () => {
   };
 
   const isDelivery = fulfillmentType === "DELIVERY";
+  const deliveryFeeCents =
+    isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
+  const totalCents = subtotalCents + deliveryFeeCents;
+  const isStoreOpen = menu?.store?.isOpenNow ?? true;
+  const changeForValue = Number(
+    changeFor.replace(/\./g, "").replace(",", ".")
+  );
+  const changeForCents =
+    Number.isFinite(changeForValue) && changeForValue > 0
+      ? Math.round(changeForValue * 100)
+      : undefined;
+  const isChangeValid =
+    paymentMethod !== "CASH" ||
+    changeForCents === undefined ||
+    changeForCents >= totalCents;
   const isFormValid =
     cartItems.length > 0 &&
     customerName.trim().length > 0 &&
     customerPhone.trim().length > 0 &&
+    paymentMethod &&
+    isStoreOpen &&
+    isChangeValid &&
     (!isDelivery ||
-      (address.line.trim() &&
-        address.number.trim() &&
-        address.neighborhood.trim() &&
-        address.city.trim()));
+      (deliveryAreaId && address.line.trim()));
 
   const scrollToCart = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -135,8 +181,11 @@ const PublicOrder = () => {
       const payload = {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
-        fulfillmentType,
+        orderType: fulfillmentType,
         notes: notes.trim() || undefined,
+        paymentMethod,
+        changeForCents:
+          paymentMethod === "CASH" ? changeForCents : undefined,
         items: cartItems.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -144,13 +193,9 @@ const PublicOrder = () => {
         })),
       };
       if (isDelivery) {
-        payload.address = {
-          line: address.line.trim(),
-          number: address.number.trim(),
-          neighborhood: address.neighborhood.trim(),
-          city: address.city.trim(),
-          reference: address.reference.trim() || undefined,
-        };
+        payload.deliveryAreaId = deliveryAreaId;
+        payload.addressLine = address.line.trim();
+        payload.addressRef = address.reference.trim() || undefined;
       }
 
       const response = await fetch(`${API_URL}/public/${slug}/orders`, {
@@ -171,6 +216,9 @@ const PublicOrder = () => {
       setCustomerPhone("");
       setNotes("");
       setAddress(initialAddress);
+      setDeliveryAreaId("");
+      setPaymentMethod("");
+      setChangeFor("");
       setFulfillmentType("PICKUP");
     } catch (err) {
       setError(err.message || "Não foi possível enviar o pedido.");
@@ -224,12 +272,29 @@ const PublicOrder = () => {
   return (
     <div className="mx-auto max-w-4xl px-4 pb-24 pt-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">
-          {menu.store?.name || "Cardápio"}
-        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold text-slate-900">
+            {menu.store?.name || "Cardápio"}
+          </h1>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              isStoreOpen
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {isStoreOpen ? "Aberto" : "Fechado"}
+          </span>
+        </div>
         <p className="text-sm text-slate-500">
           Monte seu pedido e envie direto para a loja.
         </p>
+        {!isStoreOpen ? (
+          <p className="mt-2 text-sm text-rose-600">
+            {menu.store?.closedMessage ||
+              "Estamos fechados no momento. Volte mais tarde."}
+          </p>
+        ) : null}
       </header>
 
       {error ? (
@@ -351,6 +416,18 @@ const PublicOrder = () => {
                 {formatCurrency(subtotalCents / 100)}
               </span>
             </div>
+            {isDelivery ? (
+              <div className="mt-2 flex items-center justify-between text-slate-700">
+                <span>Taxa entrega</span>
+                <span className="font-semibold text-slate-900">
+                  {formatCurrency(deliveryFeeCents / 100)}
+                </span>
+              </div>
+            ) : null}
+            <div className="mt-2 flex items-center justify-between text-base font-semibold text-slate-900">
+              <span>Total</span>
+              <span>{formatCurrency(totalCents / 100)}</span>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -382,7 +459,10 @@ const PublicOrder = () => {
                     ? "border-blue-600 bg-blue-50 text-blue-700"
                     : "border-slate-200 text-slate-600"
                 }`}
-                onClick={() => setFulfillmentType("PICKUP")}
+                onClick={() => {
+                  setFulfillmentType("PICKUP");
+                  setDeliveryAreaId("");
+                }}
               >
                 Retirar
               </button>
@@ -402,44 +482,29 @@ const PublicOrder = () => {
           {isDelivery ? (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-700">Endereço</h3>
-              <input
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="Rua / Avenida"
-                value={address.line}
-                onChange={(event) =>
-                  setAddress((prev) => ({ ...prev, line: event.target.value }))
-                }
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  placeholder="Número"
-                  value={address.number}
-                  onChange={(event) =>
-                    setAddress((prev) => ({
-                      ...prev,
-                      number: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  placeholder="Bairro"
-                  value={address.neighborhood}
-                  onChange={(event) =>
-                    setAddress((prev) => ({
-                      ...prev,
-                      neighborhood: event.target.value,
-                    }))
-                  }
-                />
+              <div>
+                <label className="text-xs font-semibold uppercase text-slate-500">
+                  Bairro
+                </label>
+                <select
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  value={deliveryAreaId}
+                  onChange={(event) => setDeliveryAreaId(event.target.value)}
+                >
+                  <option value="">Selecione o bairro</option>
+                  {menu.deliveryAreas?.map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.name} • {formatCurrency(area.feeCents / 100)}
+                    </option>
+                  ))}
+                </select>
               </div>
               <input
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="Cidade"
-                value={address.city}
+                placeholder="Rua, número, bloco"
+                value={address.line}
                 onChange={(event) =>
-                  setAddress((prev) => ({ ...prev, city: event.target.value }))
+                  setAddress((prev) => ({ ...prev, line: event.target.value }))
                 }
               />
               <input
@@ -455,6 +520,96 @@ const PublicOrder = () => {
               />
             </div>
           ) : null}
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-slate-700">Pagamento</h3>
+            <div className="flex flex-wrap gap-2">
+              {menu.payment?.acceptPix ? (
+                <button
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                    paymentMethod === "PIX"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => setPaymentMethod("PIX")}
+                >
+                  PIX
+                </button>
+              ) : null}
+              {menu.payment?.acceptCash ? (
+                <button
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                    paymentMethod === "CASH"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => setPaymentMethod("CASH")}
+                >
+                  Dinheiro
+                </button>
+              ) : null}
+              {menu.payment?.acceptCard ? (
+                <button
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                    paymentMethod === "CARD"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => setPaymentMethod("CARD")}
+                >
+                  Cartão
+                </button>
+              ) : null}
+            </div>
+
+            {paymentMethod === "CASH" ? (
+              <div>
+                <label className="text-xs font-semibold uppercase text-slate-500">
+                  Troco para quanto?
+                </label>
+                <input
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="Ex: 50,00"
+                  value={changeFor}
+                  onChange={(event) => setChangeFor(event.target.value)}
+                />
+                {!isChangeValid ? (
+                  <p className="mt-1 text-xs text-rose-600">
+                    Troco deve ser maior ou igual ao total do pedido.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {paymentMethod === "PIX" && menu.payment?.pixKey ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                <p className="font-semibold text-slate-900">PIX</p>
+                <p>Chave: {menu.payment.pixKey}</p>
+                {menu.payment.pixName ? (
+                  <p>Nome: {menu.payment.pixName}</p>
+                ) : null}
+                {menu.payment.pixBank ? (
+                  <p>Banco: {menu.payment.pixBank}</p>
+                ) : null}
+                <button
+                  className="mt-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        menu.payment.pixKey
+                      );
+                      setPixCopied(true);
+                      setTimeout(() => setPixCopied(false), 2000);
+                    } catch {
+                      setPixCopied(false);
+                    }
+                  }}
+                >
+                  {pixCopied ? "Copiado!" : "Copiar chave"}
+                </button>
+              </div>
+            ) : null}
+          </div>
 
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-slate-700">
@@ -474,7 +629,11 @@ const PublicOrder = () => {
             onClick={handleSubmit}
             disabled={!isFormValid || submitting}
           >
-            {submitting ? "Enviando..." : "Finalizar pedido"}
+            {submitting
+              ? "Enviando..."
+              : isStoreOpen
+                ? "Finalizar pedido"
+                : "Loja fechada"}
           </button>
         </aside>
       </div>
