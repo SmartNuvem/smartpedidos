@@ -12,6 +12,15 @@ import {
 } from "./auth";
 import { buildOrderPdf } from "./pdf";
 
+const slugRegex = /^[a-z0-9-]+$/;
+
+const normalizeSlug = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+
 const app = Fastify({
   logger: true,
 });
@@ -306,7 +315,7 @@ const registerRoutes = () => {
   app.post("/admin/stores", async (request, reply) => {
     const bodySchema = z.object({
       name: z.string().min(1),
-      slug: z.string().regex(/^[a-z0-9-]+$/),
+      slug: z.string().min(1),
       email: z.string().email(),
       password: z.string().min(6),
       isActive: z.boolean().optional(),
@@ -315,13 +324,17 @@ const registerRoutes = () => {
     const { name, slug, email, password, isActive } = bodySchema.parse(
       request.body
     );
+    const normalizedSlug = normalizeSlug(slug);
+    if (!slugRegex.test(normalizedSlug)) {
+      return reply.status(400).send({ message: "Invalid slug" });
+    }
     const passwordHash = await bcrypt.hash(password, 10);
 
     try {
       const store = await prisma.store.create({
         data: {
           name,
-          slug,
+          slug: normalizedSlug,
           email,
           passwordHash,
           isActive: isActive ?? true,
@@ -361,7 +374,7 @@ const registerRoutes = () => {
     const paramsSchema = z.object({ id: z.string().uuid() });
     const bodySchema = z.object({
       name: z.string().min(1).optional(),
-      slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
+      slug: z.string().min(1).optional(),
       email: z.string().email().optional(),
       isActive: z.boolean().optional(),
     });
@@ -373,12 +386,17 @@ const registerRoutes = () => {
       return reply.status(400).send({ message: "No changes provided" });
     }
 
+    const normalizedSlug = slug ? normalizeSlug(slug) : undefined;
+    if (normalizedSlug && !slugRegex.test(normalizedSlug)) {
+      return reply.status(400).send({ message: "Invalid slug" });
+    }
+
     try {
       const store = await prisma.store.update({
         where: { id },
         data: {
           name,
-          slug,
+          slug: normalizedSlug,
           email,
           isActive,
         },
@@ -430,6 +448,39 @@ const registerRoutes = () => {
     });
 
     return reply.send({ ok: true });
+  });
+
+  app.post("/admin/stores/:id/toggle", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+
+    const { id } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({ where: { id } });
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const updated = await prisma.store.update({
+      where: { id },
+      data: { isActive: !store.isActive },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        email: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    return reply.send({
+      id: updated.id,
+      name: updated.name,
+      slug: updated.slug,
+      email: updated.email,
+      isActive: updated.isActive,
+      createdAt: updated.createdAt,
+    });
   });
 
   app.addHook("preHandler", async (request, reply) => {
