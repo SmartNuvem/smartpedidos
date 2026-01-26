@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { API_URL, api, formatCurrency, formatDateTime } from "../api";
-import { getToken } from "../auth";
+import { api, formatCurrency, formatDateTime } from "../api";
 import Select from "../components/Select";
 import Table from "../components/Table";
+import useOrdersStream from "../hooks/useOrdersStream";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Todos" },
@@ -31,36 +31,97 @@ const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newOrderIds, setNewOrderIds] = useState([]);
+  const [streamStatus, setStreamStatus] = useState("connecting");
   const intervalRef = useRef(null);
-  const streamRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
-  const reconnectAttemptRef = useRef(0);
   const knownOrderIdsRef = useRef(new Set());
   const statusRef = useRef(status);
   const audioRef = useRef(null);
 
-  const loadOrders = async (selectedStatus, { silent = false } = {}) => {
-    if (!silent) {
-      setLoading(true);
-    }
-    setError("");
-    try {
-      const data = await api.getOrders({ status: selectedStatus || undefined });
-      setOrders(data);
-      knownOrderIdsRef.current = new Set(data.map((order) => order.id));
-    } catch {
-      setError("Não foi possível carregar os pedidos.");
-    } finally {
+  const loadOrders = useCallback(
+    async (selectedStatus, { silent = false } = {}) => {
       if (!silent) {
-        setLoading(false);
+        setLoading(true);
       }
-    }
-  };
+      setError("");
+      try {
+        const data = await api.getOrders({ status: selectedStatus || undefined });
+        setOrders(data);
+        knownOrderIdsRef.current = new Set(data.map((order) => order.id));
+      } catch {
+        setError("Não foi possível carregar os pedidos.");
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     statusRef.current = status;
     loadOrders(status);
-  }, [status]);
+  }, [loadOrders, status]);
+
+  const playNotification = useCallback(() => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) {
+        return;
+      }
+      const audioContext = audioRef.current ?? new AudioContext();
+      audioRef.current = audioContext;
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+      gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.2,
+        audioContext.currentTime + 0.01
+      );
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.0001,
+        audioContext.currentTime + 0.2
+      );
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.21);
+    } catch {
+      // Audio may be blocked by the browser.
+    }
+  }, []);
+
+  const handleOrderEvent = useCallback(
+    (event, { isCreated }) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (!payload?.id) {
+          return;
+        }
+        if (isCreated && knownOrderIdsRef.current.has(payload.id)) {
+          return;
+        }
+        if (isCreated) {
+          setNewOrderIds((prev) =>
+            prev.includes(payload.id) ? prev : [...prev, payload.id]
+          );
+          playNotification();
+        }
+        loadOrders(statusRef.current, { silent: true });
+      } catch {
+        // ignore malformed events
+      }
+    },
+    [loadOrders, playNotification]
+  );
+
+  useOrdersStream({
+    onOrderCreated: (event) => handleOrderEvent(event, { isCreated: true }),
+    onOrderUpdated: (event) => handleOrderEvent(event, { isCreated: false }),
+    onConnectionChange: setStreamStatus,
+  });
 
   useEffect(() => {
     const poll = () => {
@@ -73,39 +134,6 @@ const Orders = () => {
     const handleVisibility = () => {
       if (!document.hidden) {
         loadOrders(statusRef.current, { silent: true });
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    const playNotification = () => {
-      try {
-        const AudioContext =
-          window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) {
-          return;
-        }
-        const audioContext = audioRef.current ?? new AudioContext();
-        audioRef.current = audioContext;
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-        gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(
-          0.2,
-          audioContext.currentTime + 0.01
-        );
-        gainNode.gain.exponentialRampToValueAtTime(
-          0.0001,
-          audioContext.currentTime + 0.2
-        );
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        oscillator.start();
-        oscillator.stop(audioContext.currentTime + 0.21);
-      } catch {
-        // Audio may be blocked by the browser.
       }
     };
 
@@ -122,88 +150,19 @@ const Orders = () => {
       }
     };
 
-    const token = getToken();
-    if (!token || !window.EventSource) {
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    if (streamStatus === "open") {
+      stopPolling();
+    } else {
       startPolling();
-      return () => {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
-        document.removeEventListener("visibilitychange", handleVisibility);
-      };
     }
-
-    const connectStream = () => {
-      const streamUrl = `${API_URL}/store/orders/stream?token=${encodeURIComponent(
-        token
-      )}`;
-      const source = new EventSource(streamUrl);
-      streamRef.current = source;
-
-      const handleOrderEvent = (event, { isCreated }) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (!payload?.id) {
-            return;
-          }
-          if (isCreated && knownOrderIdsRef.current.has(payload.id)) {
-            return;
-          }
-          if (isCreated) {
-            setNewOrderIds((prev) =>
-              prev.includes(payload.id) ? prev : [...prev, payload.id]
-            );
-            playNotification();
-          }
-          loadOrders(statusRef.current, { silent: true });
-        } catch {
-          // ignore malformed events
-        }
-      };
-
-      source.addEventListener("order.created", (event) =>
-        handleOrderEvent(event, { isCreated: true })
-      );
-      source.addEventListener("order.updated", (event) =>
-        handleOrderEvent(event, { isCreated: false })
-      );
-
-      source.onopen = () => {
-        reconnectAttemptRef.current = 0;
-        stopPolling();
-      };
-
-      source.onerror = () => {
-        source.close();
-        streamRef.current = null;
-        startPolling();
-        if (reconnectTimeoutRef.current) {
-          return;
-        }
-        const nextAttempt = reconnectAttemptRef.current + 1;
-        reconnectAttemptRef.current = nextAttempt;
-        const delay = Math.min(30000, 2000 * nextAttempt);
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          reconnectTimeoutRef.current = null;
-          connectStream();
-        }, delay);
-      };
-    };
-
-    connectStream();
 
     return () => {
       stopPolling();
-      if (streamRef.current) {
-        streamRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [loadOrders, streamStatus]);
 
   return (
     <div className="space-y-6">

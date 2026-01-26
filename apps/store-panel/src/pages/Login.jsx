@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { getToken, setToken } from "../auth";
+import { setToken } from "../auth";
 import Button from "../components/Button";
 import Input from "../components/Input";
 
@@ -16,9 +16,22 @@ const Login = () => {
   const from = location.state?.from?.pathname ?? "/";
 
   useEffect(() => {
-    if (getToken()) {
-      navigate(from, { replace: true });
-    }
+    let isActive = true;
+    const checkSession = async () => {
+      try {
+        await api.getStore();
+        if (isActive) {
+          navigate(from, { replace: true });
+        }
+      } catch {
+        // ignore if not authenticated
+      }
+    };
+
+    checkSession();
+    return () => {
+      isActive = false;
+    };
   }, [from, navigate]);
 
   const handleSubmit = async (event) => {
@@ -27,7 +40,9 @@ const Login = () => {
     setError("");
     try {
       const data = await api.login({ email, password });
-      setToken(data.token);
+      if (data?.token) {
+        setToken(data.token);
+      }
       navigate(from, { replace: true });
     } catch (err) {
       if (err.status === 401) {
