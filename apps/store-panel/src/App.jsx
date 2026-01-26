@@ -11,6 +11,7 @@ import OrderDetails from "./pages/OrderDetails";
 import Settings from "./pages/Settings";
 import Categories from "./pages/Categories";
 import Products from "./pages/Products";
+import PublicOrder from "./pages/PublicOrder";
 
 const RequireAuth = ({ children }) => {
   const location = useLocation();
@@ -30,6 +31,7 @@ const RequireAdmin = ({ children }) => {
 
 const App = () => (
   <Routes>
+    <Route path="/p/:slug" element={<PublicOrder />} />
     <Route path="/login" element={<Login />} />
     <Route path="/admin/login" element={<AdminLogin />} />
     <Route

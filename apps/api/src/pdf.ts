@@ -23,20 +23,53 @@ export const buildOrderPdf = (order: OrderReceipt) => {
     margins: { top: 10, bottom: 10, left: 10, right: 10 },
   });
 
+  const fulfillmentLabel =
+    order.fulfillmentType === "DELIVERY" ? "ENTREGA" : "RETIRAR";
+
   doc.fontSize(14).text(order.store.name, { align: "center" });
   doc.moveDown(0.5);
   doc.fontSize(10).text(`Pedido: ${order.id}`);
   doc.text(`Data: ${formatDate(order.createdAt)}`);
+  doc.text(`Cliente: ${order.customerName}`);
+  doc.text(`Telefone: ${order.customerPhone}`);
+  doc.text(`Tipo: ${fulfillmentLabel}`);
+
+  if (order.fulfillmentType === "DELIVERY") {
+    const address = [
+      order.addressLine,
+      order.addressNumber,
+      order.addressNeighborhood,
+      order.addressCity,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    if (address) {
+      doc.text(`Endereço: ${address}`);
+    }
+    if (order.addressReference) {
+      doc.text(`Referência: ${order.addressReference}`);
+    }
+  }
+
   doc.moveDown(0.5);
   doc.text("Itens:");
   doc.moveDown(0.2);
 
   order.items.forEach((item) => {
-    const lineTotal = item.price.mul(item.qty);
-    doc.text(`${item.qty}x ${item.product.name}`);
-    doc.text(currency.format(lineTotal.toNumber()), { align: "right" });
+    const lineTotalCents = item.unitPriceCents * item.quantity;
+    doc.text(`${item.quantity}x ${item.product.name}`);
+    if (item.notes) {
+      doc.fontSize(8).text(`Obs: ${item.notes}`);
+      doc.fontSize(10);
+    }
+    doc.text(currency.format(lineTotalCents / 100), { align: "right" });
     doc.moveDown(0.2);
   });
+
+  if (order.notes) {
+    doc.moveDown(0.3);
+    doc.fontSize(9).text(`Observações: ${order.notes}`);
+  }
 
   doc.moveDown(0.5);
   doc.fontSize(12).text(`Total: ${currency.format(order.total.toNumber())}`, {

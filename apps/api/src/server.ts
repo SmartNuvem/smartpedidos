@@ -72,21 +72,22 @@ const registerRoutes = () => {
       },
     });
 
-    if (!store) {
+    if (!store || !store.isActive) {
       return reply.status(404).send({ message: "Store not found" });
     }
 
     return {
-      id: store.id,
-      name: store.name,
-      slug: store.slug,
+      store: {
+        name: store.name,
+        slug: store.slug,
+      },
       categories: store.categories.map((category) => ({
         id: category.id,
         name: category.name,
         products: category.products.map((product) => ({
           id: product.id,
           name: product.name,
-          price: product.price.toNumber(),
+          priceCents: Math.round(product.price.toNumber() * 100),
           active: product.active,
         })),
       })),
@@ -95,25 +96,45 @@ const registerRoutes = () => {
 
   app.post("/public/:slug/orders", async (request, reply) => {
     const paramsSchema = z.object({ slug: z.string() });
+    const addressSchema = z.object({
+      line: z.string().min(1),
+      number: z.string().min(1),
+      neighborhood: z.string().min(1),
+      city: z.string().min(1),
+      reference: z.string().min(1).optional(),
+    });
     const bodySchema = z.object({
+      customerName: z.string().min(1),
+      customerPhone: z.string().min(1),
+      fulfillmentType: z.enum(["PICKUP", "DELIVERY"]),
+      notes: z.string().min(1).optional(),
+      address: addressSchema.optional(),
       items: z
         .array(
           z.object({
             productId: z.string().uuid(),
-            qty: z.number().int().positive(),
+            quantity: z.number().int().positive(),
+            notes: z.string().min(1).optional(),
           })
         )
         .min(1),
     });
 
     const { slug } = paramsSchema.parse(request.params);
-    const { items } = bodySchema.parse(request.body);
+    const { items, fulfillmentType, address, customerName, customerPhone, notes } =
+      bodySchema.parse(request.body);
+
+    if (fulfillmentType === "DELIVERY" && !address) {
+      return reply
+        .status(400)
+        .send({ message: "Delivery address is required" });
+    }
 
     const store = await prisma.store.findUnique({
       where: { slug },
     });
 
-    if (!store) {
+    if (!store || !store.isActive) {
       return reply.status(404).send({ message: "Store not found" });
     }
 
@@ -135,30 +156,62 @@ const registerRoutes = () => {
     }
 
     const productMap = new Map(products.map((product) => [product.id, product]));
-
-    const total = items.reduce((acc, item) => {
+    const normalizedItems = items.map((item) => {
       const product = productMap.get(item.productId);
       if (!product) {
+        return null;
+      }
+      const unitPriceCents = Math.round(product.price.toNumber() * 100);
+      return {
+        ...item,
+        unitPriceCents,
+      };
+    });
+
+    if (normalizedItems.some((item) => item === null)) {
+      return reply
+        .status(400)
+        .send({ message: "One or more products are invalid" });
+    }
+
+    const subtotalCents = normalizedItems.reduce((acc, item) => {
+      if (!item) {
         return acc;
       }
-      return acc + product.price.toNumber() * item.qty;
+      return acc + item.unitPriceCents * item.quantity;
     }, 0);
+    const deliveryFeeCents = 0;
+    const totalCents = subtotalCents + deliveryFeeCents;
+    const total = totalCents / 100;
 
     const order = await prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
           storeId: store.id,
           status: "NEW",
+          fulfillmentType,
+          customerName,
+          customerPhone,
+          notes: notes ?? null,
+          addressLine: fulfillmentType === "DELIVERY" ? address?.line : null,
+          addressNumber: fulfillmentType === "DELIVERY" ? address?.number : null,
+          addressNeighborhood:
+            fulfillmentType === "DELIVERY" ? address?.neighborhood : null,
+          addressCity: fulfillmentType === "DELIVERY" ? address?.city : null,
+          addressReference:
+            fulfillmentType === "DELIVERY" ? address?.reference : null,
+          deliveryFeeCents,
           total,
         },
       });
 
       await tx.orderItem.createMany({
-        data: items.map((item) => ({
+        data: normalizedItems.map((item) => ({
           orderId: createdOrder.id,
-          productId: item.productId,
-          qty: item.qty,
-          price: productMap.get(item.productId)!.price,
+          productId: item!.productId,
+          quantity: item!.quantity,
+          unitPriceCents: item!.unitPriceCents,
+          notes: item!.notes ?? null,
         })),
       });
 
@@ -166,9 +219,9 @@ const registerRoutes = () => {
     });
 
     return reply.status(201).send({
-      id: order.id,
+      orderId: order.id,
+      number: order.id.slice(0, 6),
       status: order.status,
-      total: order.total.toNumber(),
     });
   });
 
@@ -552,7 +605,7 @@ const registerRoutes = () => {
     return orders.map((order) => ({
       id: order.id,
       shortId: order.id.slice(0, 6),
-      customerName: null,
+      customerName: order.customerName,
       status: order.status,
       total: order.total.toNumber(),
       createdAt: order.createdAt,
@@ -820,8 +873,15 @@ const registerRoutes = () => {
     return {
       id: order.id,
       shortId: order.id.slice(0, 6),
-      customerName: null,
-      notes: null,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      fulfillmentType: order.fulfillmentType,
+      notes: order.notes,
+      addressLine: order.addressLine,
+      addressNumber: order.addressNumber,
+      addressNeighborhood: order.addressNeighborhood,
+      addressCity: order.addressCity,
+      addressReference: order.addressReference,
       status: order.status,
       total: order.total.toNumber(),
       createdAt: order.createdAt,
@@ -829,8 +889,9 @@ const registerRoutes = () => {
         id: item.id,
         productId: item.productId,
         name: item.product.name,
-        qty: item.qty,
-        price: item.price.toNumber(),
+        quantity: item.quantity,
+        unitPrice: item.unitPriceCents / 100,
+        notes: item.notes,
       })),
     };
   });
@@ -902,8 +963,9 @@ const registerRoutes = () => {
         id: item.id,
         productId: item.productId,
         name: item.product.name,
-        qty: item.qty,
-        price: item.price.toNumber(),
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        notes: item.notes,
       })),
     }));
   });
