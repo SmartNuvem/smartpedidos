@@ -106,6 +106,27 @@ const OrderDetails = () => {
             <div className="mt-3 space-y-1 text-sm text-slate-700">
               <p>Data: {formatDateTime(order.createdAt)}</p>
               <p>Cliente: {order.customerName || "-"}</p>
+              <p>Telefone: {order.customerPhone || "-"}</p>
+              <p>
+                Tipo:{" "}
+                {order.fulfillmentType === "DELIVERY" ? "Entrega" : "Retirar"}
+              </p>
+              {order.fulfillmentType === "DELIVERY" ? (
+                <p>
+                  Endereço:{" "}
+                  {[
+                    order.addressLine,
+                    order.addressNumber,
+                    order.addressNeighborhood,
+                    order.addressCity,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "-"}
+                </p>
+              ) : null}
+              {order.addressReference ? (
+                <p>Referência: {order.addressReference}</p>
+              ) : null}
               <p>Observações: {order.notes || "-"}</p>
             </div>
           </div>
@@ -145,15 +166,20 @@ const OrderDetails = () => {
                 <tr key={item.id}>
                   <td className="px-4 py-3 font-semibold text-slate-900">
                     {item.name}
+                    {item.notes ? (
+                      <p className="mt-1 text-xs font-normal text-slate-500">
+                        Obs: {item.notes}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {item.qty}
+                    {item.quantity}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {formatCurrency(item.price)}
+                    {formatCurrency(item.unitPrice)}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-900">
-                    {formatCurrency(item.price * item.qty)}
+                    {formatCurrency(item.unitPrice * item.quantity)}
                   </td>
                 </tr>
               ))}

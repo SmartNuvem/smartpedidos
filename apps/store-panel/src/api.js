@@ -3,7 +3,7 @@ import { getAdminToken, getToken } from "./auth";
 const rawApiUrl = import.meta.env.VITE_API_URL;
 const normalizedApiUrl =
   rawApiUrl && rawApiUrl.trim() !== "" ? rawApiUrl.trim() : "/api";
-const API_URL = normalizedApiUrl.endsWith("/")
+export const API_URL = normalizedApiUrl.endsWith("/")
   ? normalizedApiUrl.slice(0, -1)
   : normalizedApiUrl;
 
