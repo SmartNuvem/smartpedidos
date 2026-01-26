@@ -8,6 +8,7 @@ import {
   authenticateAgent,
   generateToken,
   hashToken,
+  requireAdmin,
 } from "./auth";
 import { buildOrderPdf } from "./pdf";
 
@@ -202,7 +203,11 @@ const registerRoutes = () => {
     const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
     const headerToken = request.headers["x-bootstrap-token"];
 
-    if (!bootstrapToken || headerToken !== bootstrapToken) {
+    if (!bootstrapToken) {
+      return reply.status(403).send({ message: "Bootstrap disabled" });
+    }
+
+    if (headerToken !== bootstrapToken) {
       return reply.status(401).send({ message: "Invalid bootstrap token" });
     }
 
@@ -265,22 +270,51 @@ const registerRoutes = () => {
 
   app.log.info("Admin auth routes registered");
 
-  app.post("/admin/stores", async (request, reply) => {
-    const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
-    const headerToken = request.headers["x-bootstrap-token"];
-
-    if (!bootstrapToken || headerToken !== bootstrapToken) {
-      return reply.status(401).send({ message: "Unauthorized" });
+  app.addHook("preHandler", async (request, reply) => {
+    if (!request.url.startsWith("/admin")) {
+      return;
     }
 
-    const bodySchema = z.object({
-      name: z.string().min(1),
-      slug: z.string().min(1),
-      email: z.string().email(),
-      password: z.string().min(6),
+    return requireAdmin(request, reply);
+  });
+
+  app.get("/admin/stores", async (_request, reply) => {
+    const stores = await prisma.store.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        email: true,
+        isActive: true,
+        createdAt: true,
+      },
     });
 
-    const { name, slug, email, password } = bodySchema.parse(request.body);
+    return reply.send(
+      stores.map((store) => ({
+        id: store.id,
+        name: store.name,
+        slug: store.slug,
+        email: store.email,
+        active: store.isActive,
+        createdAt: store.createdAt,
+      }))
+    );
+  });
+
+  app.post("/admin/stores", async (request, reply) => {
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      slug: z.string().regex(/^[a-z0-9-]+$/),
+      email: z.string().email(),
+      password: z.string().min(6),
+      active: z.boolean().optional(),
+    });
+
+    const { name, slug, email, password, active } = bodySchema.parse(
+      request.body
+    );
     const passwordHash = await bcrypt.hash(password, 10);
 
     try {
@@ -290,7 +324,15 @@ const registerRoutes = () => {
           slug,
           email,
           passwordHash,
+          isActive: active ?? true,
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          email: true,
           isActive: true,
+          createdAt: true,
         },
       });
 
@@ -299,9 +341,8 @@ const registerRoutes = () => {
         name: store.name,
         slug: store.slug,
         email: store.email,
-        isActive: store.isActive,
+        active: store.isActive,
         createdAt: store.createdAt,
-        updatedAt: store.updatedAt,
       });
     } catch (error) {
       if (
@@ -314,6 +355,81 @@ const registerRoutes = () => {
       }
       throw error;
     }
+  });
+
+  app.patch("/admin/stores/:id", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1).optional(),
+      slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
+      email: z.string().email().optional(),
+      active: z.boolean().optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { name, slug, email, active } = bodySchema.parse(request.body);
+
+    if (!name && !slug && !email && active === undefined) {
+      return reply.status(400).send({ message: "No changes provided" });
+    }
+
+    try {
+      const store = await prisma.store.update({
+        where: { id },
+        data: {
+          name,
+          slug,
+          email,
+          isActive: active,
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          email: true,
+          isActive: true,
+          createdAt: true,
+        },
+      });
+
+      return reply.send({
+        id: store.id,
+        name: store.name,
+        slug: store.slug,
+        email: store.email,
+        active: store.isActive,
+        createdAt: store.createdAt,
+      });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2002"
+      ) {
+        return reply.status(409).send({ message: "Store already exists" });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/admin/stores/:id/reset-password", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      password: z.string().min(6),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { password } = bodySchema.parse(request.body);
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await prisma.store.update({
+      where: { id },
+      data: { passwordHash },
+    });
+
+    return reply.send({ ok: true });
   });
 
   app.addHook("preHandler", async (request, reply) => {
