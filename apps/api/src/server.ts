@@ -521,7 +521,35 @@ const start = async () => {
   await app.register(fastifyJwt, {
     secret: jwtSecret,
   });
-  await app.register(cors, { origin: true });
+  const corsOriginEnv = process.env.CORS_ORIGIN;
+  let corsOrigin: boolean | string | RegExp | ((origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => void) =
+    true;
+
+  if (corsOriginEnv) {
+    const normalized = corsOriginEnv.trim();
+    if (normalized === "*") {
+      corsOrigin = "*";
+    } else {
+      const allowList = normalized
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+
+      corsOrigin = (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        if (allowList.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error("Origin not allowed by CORS"));
+      };
+    }
+  }
+
+  await app.register(cors, { origin: corsOrigin });
 
   registerRoutes();
 

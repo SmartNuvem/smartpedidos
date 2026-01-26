@@ -2,7 +2,7 @@
 
 Monorepo do SmartPedidos com API Fastify + Prisma e placeholders para Web Admin e Agent Windows.
 
-## Subindo com Docker Compose
+## Subindo com Docker Compose (VM zerada)
 
 ```bash
 cp .env.example .env
@@ -12,6 +12,18 @@ docker compose up -d --build
 A API estará disponível em `http://localhost:3000` e o painel da loja em `http://localhost:5173`.
 
 > Dentro do Docker, o host do banco deve ser `db` (como está no `.env.example`). Para rodar na máquina host sem Docker, ajuste o `DATABASE_URL` para usar `localhost`.
+>
+> **Nota sobre lockfiles:** este repositório usa workspaces npm e não versiona `package-lock.json`. Se sua infraestrutura exigir lockfiles, adicione-os no seu pipeline interno.
+
+### Configuração de ambiente (VM zerada)
+
+Edite o arquivo `.env` e ajuste:
+
+- `VITE_API_URL`: URL pública da API acessível pelo navegador (ex.: `http://192.168.2.63:3000`).
+- `VITE_API_PROXY_TARGET`: usado apenas no dev server do Vite quando `VITE_API_URL=/api` (ex.: `http://api:3000` no Docker ou `http://localhost:3000` fora do Docker).
+- `CORS_ORIGIN`: origem permitida do painel (ex.: `http://192.168.2.63:5173`). Aceita lista separada por vírgula.
+
+Se preferir, deixe `VITE_API_URL=/api` para usar o proxy do Vite (útil no Docker). Nesse caso, a URL externa do painel continua `http://IP:5173`.
 
 ## Criando o schema do banco (Prisma)
 
@@ -71,6 +83,12 @@ Verifique os dados da loja logada:
 curl http://localhost:3000/store/me \
   -H 'Authorization: Bearer TOKEN_AQUI'
 ```
+
+## Troubleshooting
+
+### `api:3000` não resolve no navegador
+
+Se o console do navegador mostrar `ERR_NAME_NOT_RESOLVED` para `api:3000`, defina `VITE_API_URL` com a URL pública da API (`http://IP:3000`) ou use `VITE_API_URL=/api` com `VITE_API_PROXY_TARGET` apontando para a API no Docker.
 
 ## Fluxo completo (curl)
 
