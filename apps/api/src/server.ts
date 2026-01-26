@@ -52,6 +52,7 @@ const registerRoutes = () => {
       where: { slug },
       include: {
         categories: {
+          where: { active: true },
           include: {
             products: {
               where: { active: true },
@@ -322,6 +323,237 @@ const registerRoutes = () => {
       total: order.total.toNumber(),
       createdAt: order.createdAt,
     }));
+  });
+
+  app.get("/store/categories", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const categories = await prisma.category.findMany({
+      where: { storeId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      active: category.active,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    }));
+  });
+
+  app.post("/store/categories", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      active: z.boolean().optional(),
+    });
+
+    const { name, active } = bodySchema.parse(request.body);
+
+    const category = await prisma.category.create({
+      data: {
+        name,
+        active: active ?? true,
+        storeId,
+      },
+    });
+
+    return reply.status(201).send({
+      id: category.id,
+      name: category.name,
+      active: category.active,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    });
+  });
+
+  app.patch("/store/categories/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1).optional(),
+      active: z.boolean().optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { name, active } = bodySchema.parse(request.body);
+
+    if (!name && active === undefined) {
+      return reply.status(400).send({ message: "No changes provided" });
+    }
+
+    const category = await prisma.category.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!category) {
+      return reply.status(404).send({ message: "Category not found" });
+    }
+
+    const updated = await prisma.category.update({
+      where: { id },
+      data: {
+        name: name ?? category.name,
+        active: active ?? category.active,
+      },
+    });
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      active: updated.active,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
+  });
+
+  app.get("/store/products", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const products = await prisma.product.findMany({
+      where: {
+        category: {
+          storeId,
+        },
+      },
+      include: {
+        category: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: product.price.toNumber(),
+      active: product.active,
+      categoryId: product.categoryId,
+      categoryName: product.category.name,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+    }));
+  });
+
+  app.post("/store/products", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      categoryId: z.string().uuid(),
+      price: z.number().nonnegative(),
+      active: z.boolean().optional(),
+    });
+
+    const { name, categoryId, price, active } = bodySchema.parse(request.body);
+
+    const category = await prisma.category.findFirst({
+      where: { id: categoryId, storeId },
+    });
+
+    if (!category) {
+      return reply.status(404).send({ message: "Category not found" });
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        name,
+        price,
+        active: active ?? true,
+        categoryId,
+      },
+    });
+
+    return reply.status(201).send({
+      id: product.id,
+      name: product.name,
+      price: product.price.toNumber(),
+      active: product.active,
+      categoryId: product.categoryId,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+    });
+  });
+
+  app.patch("/store/products/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1).optional(),
+      price: z.number().nonnegative().optional(),
+      categoryId: z.string().uuid().optional(),
+      active: z.boolean().optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { name, price, categoryId, active } = bodySchema.parse(request.body);
+
+    if (!name && price === undefined && !categoryId && active === undefined) {
+      return reply.status(400).send({ message: "No changes provided" });
+    }
+
+    const product = await prisma.product.findFirst({
+      where: {
+        id,
+        category: {
+          storeId,
+        },
+      },
+    });
+
+    if (!product) {
+      return reply.status(404).send({ message: "Product not found" });
+    }
+
+    if (categoryId) {
+      const category = await prisma.category.findFirst({
+        where: { id: categoryId, storeId },
+      });
+      if (!category) {
+        return reply.status(404).send({ message: "Category not found" });
+      }
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: {
+        name: name ?? product.name,
+        price: price ?? product.price,
+        active: active ?? product.active,
+        categoryId: categoryId ?? product.categoryId,
+      },
+    });
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      price: updated.price.toNumber(),
+      active: updated.active,
+      categoryId: updated.categoryId,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
   });
 
   app.get("/store/orders/:id", async (request, reply) => {

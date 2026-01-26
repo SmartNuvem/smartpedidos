@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Button from "../components/Button";
+import Input from "../components/Input";
 
 const Settings = () => {
   const [store, setStore] = useState(null);
@@ -26,40 +28,42 @@ const Settings = () => {
   }, []);
 
   return (
-    <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Configurações</h1>
-          <p className="muted">Dados básicos da loja (somente leitura).</p>
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Configurações
+            </h2>
+            <p className="text-sm text-slate-500">
+              Dados básicos da loja (somente leitura).
+            </p>
+          </div>
+          <Button variant="secondary" disabled>
+            Salvar
+          </Button>
         </div>
       </div>
 
-      {store ? (
-        <div className="form-grid">
-          <label>
-            Nome
-            <input type="text" value={store.name} readOnly />
-          </label>
-          <label>
-            Slug
-            <input type="text" value={store.slug} readOnly />
-          </label>
-          <label>
-            E-mail
-            <input type="text" value={store.email} readOnly />
-          </label>
-          <label>
-            Status
-            <input
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {store ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Input label="Nome" type="text" value={store.name} readOnly />
+            <Input label="Slug" type="text" value={store.slug} readOnly />
+            <Input label="E-mail" type="text" value={store.email} readOnly />
+            <Input
+              label="Status"
               type="text"
               value={store.isActive ? "Ativa" : "Inativa"}
               readOnly
             />
-          </label>
-        </div>
-      ) : (
-        <p>{error || "Carregando..."}</p>
-      )}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            {error || "Carregando..."}
+          </p>
+        )}
+      </div>
     </div>
   );
 };

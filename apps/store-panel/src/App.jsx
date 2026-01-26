@@ -6,6 +6,8 @@ import Login from "./pages/Login";
 import Orders from "./pages/Orders";
 import OrderDetails from "./pages/OrderDetails";
 import Settings from "./pages/Settings";
+import Categories from "./pages/Categories";
+import Products from "./pages/Products";
 
 const RequireAuth = ({ children }) => {
   const location = useLocation();
@@ -29,7 +31,7 @@ const App = () => (
       }
     />
     <Route
-      path="/pedidos"
+      path="/orders"
       element={
         <RequireAuth>
           <Layout>
@@ -38,6 +40,47 @@ const App = () => (
         </RequireAuth>
       }
     />
+    <Route
+      path="/orders/:id"
+      element={
+        <RequireAuth>
+          <Layout>
+            <OrderDetails />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/categories"
+      element={
+        <RequireAuth>
+          <Layout>
+            <Categories />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/products"
+      element={
+        <RequireAuth>
+          <Layout>
+            <Products />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/settings"
+      element={
+        <RequireAuth>
+          <Layout>
+            <Settings />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route path="/pedidos" element={<Navigate to="/orders" replace />} />
     <Route
       path="/pedidos/:id"
       element={
@@ -50,13 +93,7 @@ const App = () => (
     />
     <Route
       path="/configuracoes"
-      element={
-        <RequireAuth>
-          <Layout>
-            <Settings />
-          </Layout>
-        </RequireAuth>
-      }
+      element={<Navigate to="/settings" replace />}
     />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>
