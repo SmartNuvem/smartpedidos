@@ -1,7 +1,8 @@
 import { getToken } from "./auth";
 
 const rawApiUrl = import.meta.env.VITE_API_URL;
-const normalizedApiUrl = rawApiUrl && rawApiUrl.trim() !== "" ? rawApiUrl.trim() : "/api";
+const normalizedApiUrl =
+  rawApiUrl && rawApiUrl.trim() !== "" ? rawApiUrl.trim() : "/api";
 const API_URL = normalizedApiUrl.endsWith("/")
   ? normalizedApiUrl.slice(0, -1)
   : normalizedApiUrl;
@@ -68,6 +69,50 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getCategories: async () => {
+    const response = await fetch(`${API_URL}/store/categories`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  createCategory: async ({ name }) => {
+    const response = await fetch(`${API_URL}/store/categories`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify({ name }),
+    });
+    return handleResponse(response);
+  },
+  updateCategory: async (id, payload) => {
+    const response = await fetch(`${API_URL}/store/categories/${id}`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  getProducts: async () => {
+    const response = await fetch(`${API_URL}/store/products`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  createProduct: async (payload) => {
+    const response = await fetch(`${API_URL}/store/products`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  updateProduct: async (id, payload) => {
+    const response = await fetch(`${API_URL}/store/products/${id}`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
 };
 
 export const formatCurrency = (value) =>
@@ -81,4 +126,11 @@ export const formatDateTime = (value) => {
     return "-";
   }
   return new Date(value).toLocaleString("pt-BR");
+};
+
+export const formatDecimal = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  return Number(value).toFixed(2).replace(".", ",");
 };
