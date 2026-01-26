@@ -81,6 +81,63 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getDeliveryAreas: async () => {
+    const response = await fetch(`${API_URL}/store/delivery-areas`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  createDeliveryArea: async (payload) => {
+    const response = await fetch(`${API_URL}/store/delivery-areas`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  updateDeliveryArea: async (id, payload) => {
+    const response = await fetch(`${API_URL}/store/delivery-areas/${id}`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  deleteDeliveryArea: async (id) => {
+    const response = await fetch(`${API_URL}/store/delivery-areas/${id}`, {
+      method: "DELETE",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  getStoreHours: async () => {
+    const response = await fetch(`${API_URL}/store/settings/hours`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  updateStoreHours: async (payload) => {
+    const response = await fetch(`${API_URL}/store/settings/hours`, {
+      method: "PUT",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  getPaymentSettings: async () => {
+    const response = await fetch(`${API_URL}/store/settings/payment`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  updatePaymentSettings: async (payload) => {
+    const response = await fetch(`${API_URL}/store/settings/payment`, {
+      method: "PUT",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
   getCategories: async () => {
     const response = await fetch(`${API_URL}/store/categories`, {
       headers: buildHeaders(),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatCurrency, formatDateTime } from "../api";
 import Select from "../components/Select";
@@ -29,9 +29,12 @@ const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const intervalRef = useRef(null);
 
-  const loadOrders = async (selectedStatus) => {
-    setLoading(true);
+  const loadOrders = async (selectedStatus, { silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const data = await api.getOrders({ status: selectedStatus || undefined });
@@ -39,12 +42,38 @@ const Orders = () => {
     } catch {
       setError("Não foi possível carregar os pedidos.");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadOrders(status);
+
+    const poll = () => {
+      if (document.hidden) {
+        return;
+      }
+      loadOrders(status, { silent: true });
+    };
+
+    intervalRef.current = window.setInterval(poll, 5000);
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        loadOrders(status, { silent: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [status]);
 
   return (
