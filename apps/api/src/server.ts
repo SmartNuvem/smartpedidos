@@ -297,7 +297,7 @@ const registerRoutes = () => {
         name: store.name,
         slug: store.slug,
         email: store.email,
-        active: store.isActive,
+        isActive: store.isActive,
         createdAt: store.createdAt,
       }))
     );
@@ -309,10 +309,10 @@ const registerRoutes = () => {
       slug: z.string().regex(/^[a-z0-9-]+$/),
       email: z.string().email(),
       password: z.string().min(6),
-      active: z.boolean().optional(),
+      isActive: z.boolean().optional(),
     });
 
-    const { name, slug, email, password, active } = bodySchema.parse(
+    const { name, slug, email, password, isActive } = bodySchema.parse(
       request.body
     );
     const passwordHash = await bcrypt.hash(password, 10);
@@ -324,7 +324,7 @@ const registerRoutes = () => {
           slug,
           email,
           passwordHash,
-          isActive: active ?? true,
+          isActive: isActive ?? true,
         },
         select: {
           id: true,
@@ -341,7 +341,7 @@ const registerRoutes = () => {
         name: store.name,
         slug: store.slug,
         email: store.email,
-        active: store.isActive,
+        isActive: store.isActive,
         createdAt: store.createdAt,
       });
     } catch (error) {
@@ -363,13 +363,13 @@ const registerRoutes = () => {
       name: z.string().min(1).optional(),
       slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
       email: z.string().email().optional(),
-      active: z.boolean().optional(),
+      isActive: z.boolean().optional(),
     });
 
     const { id } = paramsSchema.parse(request.params);
-    const { name, slug, email, active } = bodySchema.parse(request.body);
+    const { name, slug, email, isActive } = bodySchema.parse(request.body);
 
-    if (!name && !slug && !email && active === undefined) {
+    if (!name && !slug && !email && isActive === undefined) {
       return reply.status(400).send({ message: "No changes provided" });
     }
 
@@ -380,7 +380,7 @@ const registerRoutes = () => {
           name,
           slug,
           email,
-          isActive: active,
+          isActive,
         },
         select: {
           id: true,
@@ -397,7 +397,7 @@ const registerRoutes = () => {
         name: store.name,
         slug: store.slug,
         email: store.email,
-        active: store.isActive,
+        isActive: store.isActive,
         createdAt: store.createdAt,
       });
     } catch (error) {
