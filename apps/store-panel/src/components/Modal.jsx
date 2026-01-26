@@ -1,6 +1,16 @@
 import { useEffect } from "react";
 
-const Modal = ({ open, title, children, footer, onClose }) => {
+const Modal = ({
+  open,
+  title,
+  children,
+  footer,
+  onClose,
+  containerClassName = "",
+  headerClassName = "",
+  bodyClassName = "mt-4 space-y-4",
+  footerClassName = "",
+}) => {
   useEffect(() => {
     if (!open) return undefined;
     const handleKey = (event) => {
@@ -21,8 +31,12 @@ const Modal = ({ open, title, children, footer, onClose }) => {
         onClick={onClose}
         role="presentation"
       />
-      <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
+      <div
+        className={`relative z-10 flex w-full max-w-lg flex-col rounded-2xl bg-white p-6 shadow-xl ${containerClassName}`.trim()}
+      >
+        <div
+          className={`flex items-start justify-between gap-4 ${headerClassName}`.trim()}
+        >
           <div>
             <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
           </div>
@@ -34,8 +48,14 @@ const Modal = ({ open, title, children, footer, onClose }) => {
             ✕
           </button>
         </div>
-        <div className="mt-4 space-y-4">{children}</div>
-        {footer ? <div className="mt-6 flex justify-end gap-3">{footer}</div> : null}
+        <div className={bodyClassName}>{children}</div>
+        {footer ? (
+          <div
+            className={`mt-6 flex justify-end gap-3 ${footerClassName}`.trim()}
+          >
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );

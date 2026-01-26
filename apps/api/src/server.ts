@@ -27,6 +27,70 @@ const app = Fastify({
 });
 
 const orderStreamClients = new Map<string, Set<FastifyReply>>();
+const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
+
+const sendOrderStreamEvent = (
+  storeId: string,
+  event: string,
+  payload: Record<string, unknown>
+) => {
+  const storeStreams = orderStreamClients.get(storeId);
+  if (!storeStreams) {
+    return;
+  }
+  const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  storeStreams.forEach((client) => {
+    try {
+      client.raw.write(message);
+    } catch {
+      const ping = orderStreamPingers.get(client);
+      if (ping) {
+        clearInterval(ping);
+        orderStreamPingers.delete(client);
+      }
+      storeStreams.delete(client);
+    }
+  });
+  if (storeStreams.size === 0) {
+    orderStreamClients.delete(storeId);
+  }
+};
+
+const normalizeOptionGroupRules = ({
+  type,
+  required,
+  minSelect,
+  maxSelect,
+}: {
+  type: "SINGLE" | "MULTI";
+  required: boolean;
+  minSelect: number;
+  maxSelect: number;
+}) => {
+  let normalizedMin = minSelect;
+  let normalizedMax = maxSelect;
+
+  if (type === "SINGLE") {
+    normalizedMin = required ? 1 : 0;
+    normalizedMax = 1;
+  } else {
+    if (required && normalizedMin === 0) {
+      normalizedMin = 1;
+    }
+    if (normalizedMax > 0 && normalizedMax < normalizedMin) {
+      return {
+        ok: false,
+        message: "O máximo deve ser maior ou igual ao mínimo.",
+      };
+    }
+  }
+
+  return {
+    ok: true as const,
+    minSelect: normalizedMin,
+    maxSelect: normalizedMax,
+  };
+};
 
 type StoreHoursData = {
   timezone: string;
@@ -669,23 +733,14 @@ const registerRoutes = () => {
       return createdOrder;
     });
 
-    const streamPayload = {
-      orderId: order.id,
+    sendOrderStreamEvent(store.id, "order.created", {
+      id: order.id,
       createdAt: order.createdAt,
-    };
-    const storeStreams = orderStreamClients.get(store.id);
-    if (storeStreams) {
-      const payload = `event: order:new\ndata: ${JSON.stringify(
-        streamPayload
-      )}\n\n`;
-      storeStreams.forEach((client) => {
-        try {
-          client.raw.write(payload);
-        } catch {
-          storeStreams.delete(client);
-        }
-      });
-    }
+      status: order.status,
+      totalCents,
+      customerName,
+      deliveryType: order.fulfillmentType,
+    });
 
     return reply.status(201).send({
       orderId: order.id,
@@ -1443,6 +1498,24 @@ const registerRoutes = () => {
     const clients = orderStreamClients.get(storeId) ?? new Set();
     clients.add(reply);
     orderStreamClients.set(storeId, clients);
+    const pingInterval = setInterval(() => {
+      try {
+        reply.raw.write(
+          `event: ping\ndata: ${JSON.stringify({
+            ts: new Date().toISOString(),
+          })}\n\n`
+        );
+      } catch {
+        const activeClients = orderStreamClients.get(storeId);
+        activeClients?.delete(reply);
+        const ping = orderStreamPingers.get(reply);
+        if (ping) {
+          clearInterval(ping);
+          orderStreamPingers.delete(reply);
+        }
+      }
+    }, 15000);
+    orderStreamPingers.set(reply, pingInterval);
 
     request.raw.on("close", () => {
       const activeClients = orderStreamClients.get(storeId);
@@ -1452,6 +1525,11 @@ const registerRoutes = () => {
       activeClients.delete(reply);
       if (activeClients.size === 0) {
         orderStreamClients.delete(storeId);
+      }
+      const ping = orderStreamPingers.get(reply);
+      if (ping) {
+        clearInterval(ping);
+        orderStreamPingers.delete(reply);
       }
     });
 
@@ -1803,14 +1881,25 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Product not found" });
     }
 
+    const normalizedRules = normalizeOptionGroupRules({
+      type: payload.type,
+      required: payload.required ?? false,
+      minSelect: payload.minSelect ?? 0,
+      maxSelect: payload.maxSelect ?? 0,
+    });
+
+    if (!normalizedRules.ok) {
+      return reply.status(400).send({ message: normalizedRules.message });
+    }
+
     const group = await prisma.productOptionGroup.create({
       data: {
         productId: product.id,
         name: payload.name,
         type: payload.type,
         required: payload.required ?? false,
-        minSelect: payload.minSelect ?? 0,
-        maxSelect: payload.maxSelect ?? 0,
+        minSelect: normalizedRules.minSelect,
+        maxSelect: normalizedRules.maxSelect,
         sortOrder: payload.sortOrder ?? 0,
       },
     });
@@ -1859,14 +1948,29 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Option group not found" });
     }
 
+    const updatedType = payload.type ?? group.type;
+    const updatedRequired = payload.required ?? group.required;
+    const updatedMin = payload.minSelect ?? group.minSelect;
+    const updatedMax = payload.maxSelect ?? group.maxSelect;
+    const normalizedRules = normalizeOptionGroupRules({
+      type: updatedType,
+      required: updatedRequired,
+      minSelect: updatedMin,
+      maxSelect: updatedMax,
+    });
+
+    if (!normalizedRules.ok) {
+      return reply.status(400).send({ message: normalizedRules.message });
+    }
+
     const updated = await prisma.productOptionGroup.update({
       where: { id: groupId },
       data: {
         name: payload.name ?? group.name,
-        type: payload.type ?? group.type,
-        required: payload.required ?? group.required,
-        minSelect: payload.minSelect ?? group.minSelect,
-        maxSelect: payload.maxSelect ?? group.maxSelect,
+        type: updatedType,
+        required: updatedRequired,
+        minSelect: normalizedRules.minSelect,
+        maxSelect: normalizedRules.maxSelect,
         sortOrder: payload.sortOrder ?? group.sortOrder,
       },
     });
@@ -2191,6 +2295,15 @@ const registerRoutes = () => {
       data: { status: "NEW" },
     });
 
+    sendOrderStreamEvent(storeId, "order.updated", {
+      id: updated.id,
+      createdAt: updated.createdAt,
+      status: updated.status,
+      totalCents: Math.round(updated.total.toNumber() * 100),
+      customerName: updated.customerName,
+      deliveryType: updated.fulfillmentType,
+    });
+
     return {
       id: updated.id,
       status: updated.status,
@@ -2265,6 +2378,15 @@ const registerRoutes = () => {
     const updated = await prisma.order.update({
       where: { id },
       data: { status },
+    });
+
+    sendOrderStreamEvent(agent.storeId, "order.updated", {
+      id: updated.id,
+      createdAt: updated.createdAt,
+      status: updated.status,
+      totalCents: Math.round(updated.total.toNumber() * 100),
+      customerName: updated.customerName,
+      deliveryType: updated.fulfillmentType,
     });
 
     return {
