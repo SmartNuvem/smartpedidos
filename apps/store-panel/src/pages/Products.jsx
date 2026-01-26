@@ -16,6 +16,20 @@ const parsePrice = (value) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+const parsePriceCents = (value) => {
+  if (value === "" || value === null || value === undefined) {
+    return 0;
+  }
+  const normalized = String(value).replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isNaN(parsed) ? 0 : Math.round(parsed * 100);
+};
+
+const parseIntValue = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -24,6 +38,20 @@ const Products = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [optionsModalOpen, setOptionsModalOpen] = useState(false);
+  const [optionsProduct, setOptionsProduct] = useState(null);
+  const [optionGroups, setOptionGroups] = useState([]);
+  const [optionLoading, setOptionLoading] = useState(false);
+  const [optionError, setOptionError] = useState("");
+  const [groupDraft, setGroupDraft] = useState({
+    name: "",
+    type: "SINGLE",
+    required: false,
+    minSelect: 0,
+    maxSelect: 0,
+    sortOrder: 0,
+  });
+  const [itemDrafts, setItemDrafts] = useState({});
   const [formState, setFormState] = useState({
     name: "",
     categoryId: "",
@@ -80,9 +108,238 @@ const Products = () => {
     setModalOpen(true);
   };
 
+  const openOptions = (product) => {
+    setOptionsProduct(product);
+    setOptionsModalOpen(true);
+    setGroupDraft({
+      name: "",
+      type: "SINGLE",
+      required: false,
+      minSelect: 0,
+      maxSelect: 0,
+      sortOrder: 0,
+    });
+    setItemDrafts({});
+    loadOptionGroups(product.id);
+  };
+
+  const closeOptionsModal = () => {
+    setOptionsModalOpen(false);
+    setOptionsProduct(null);
+    setOptionGroups([]);
+    setOptionError("");
+  };
+
   const closeModal = () => {
     setModalOpen(false);
     setEditingProduct(null);
+  };
+
+  const loadOptionGroups = async (productId) => {
+    setOptionLoading(true);
+    setOptionError("");
+    try {
+      const data = await api.getProductOptionGroups(productId);
+      setOptionGroups(data);
+    } catch {
+      setOptionError("Não foi possível carregar as opções.");
+    } finally {
+      setOptionLoading(false);
+    }
+  };
+
+  const updateGroupField = (groupId, field, value) => {
+    setOptionGroups((prev) =>
+      prev.map((group) =>
+        group.id === groupId ? { ...group, [field]: value } : group
+      )
+    );
+  };
+
+  const updateItemField = (groupId, itemId, field, value) => {
+    setOptionGroups((prev) =>
+      prev.map((group) => {
+        if (group.id !== groupId) {
+          return group;
+        }
+        return {
+          ...group,
+          items: group.items.map((item) =>
+            item.id === itemId ? { ...item, [field]: value } : item
+          ),
+        };
+      })
+    );
+  };
+
+  const updateItemDraft = (groupId, field, value) => {
+    setItemDrafts((prev) => ({
+      ...prev,
+      [groupId]: {
+        name: "",
+        priceDelta: "",
+        sortOrder: 0,
+        isActive: true,
+        ...(prev[groupId] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleCreateGroup = async () => {
+    if (!optionsProduct || !groupDraft.name.trim()) {
+      setToast({ message: "Informe o nome do grupo.", variant: "error" });
+      return;
+    }
+    try {
+      await api.createProductOptionGroup(optionsProduct.id, {
+        name: groupDraft.name.trim(),
+        type: groupDraft.type,
+        required: groupDraft.required,
+        minSelect: parseIntValue(groupDraft.minSelect, 0),
+        maxSelect: parseIntValue(groupDraft.maxSelect, 0),
+        sortOrder: parseIntValue(groupDraft.sortOrder, 0),
+      });
+      setGroupDraft({
+        name: "",
+        type: "SINGLE",
+        required: false,
+        minSelect: 0,
+        maxSelect: 0,
+        sortOrder: 0,
+      });
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível criar o grupo.", variant: "error" });
+    }
+  };
+
+  const handleSaveGroup = async (group) => {
+    try {
+      await api.updateOptionGroup(group.id, {
+        name: group.name,
+        type: group.type,
+        required: group.required,
+        minSelect: parseIntValue(group.minSelect, 0),
+        maxSelect: parseIntValue(group.maxSelect, 0),
+        sortOrder: parseIntValue(group.sortOrder, 0),
+      });
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível salvar o grupo.", variant: "error" });
+    }
+  };
+
+  const handleDeleteGroup = async (groupId) => {
+    try {
+      await api.deleteOptionGroup(groupId);
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível remover o grupo.", variant: "error" });
+    }
+  };
+
+  const handleCreateItem = async (groupId) => {
+    const draft = itemDrafts[groupId] ?? {
+      name: "",
+      priceDelta: "",
+      sortOrder: 0,
+      isActive: true,
+    };
+    if (!draft.name.trim()) {
+      setToast({ message: "Informe o nome do item.", variant: "error" });
+      return;
+    }
+    try {
+      await api.createOptionGroupItem(groupId, {
+        name: draft.name.trim(),
+        priceDeltaCents: parsePriceCents(draft.priceDelta),
+        sortOrder: parseIntValue(draft.sortOrder, 0),
+        isActive: draft.isActive,
+      });
+      updateItemDraft(groupId, "name", "");
+      updateItemDraft(groupId, "priceDelta", "");
+      updateItemDraft(groupId, "sortOrder", 0);
+      updateItemDraft(groupId, "isActive", true);
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível criar o item.", variant: "error" });
+    }
+  };
+
+  const handleSaveItem = async (groupId, item) => {
+    try {
+      await api.updateOptionGroupItem(groupId, item.id, {
+        name: item.name,
+        priceDeltaCents: item.priceDeltaCents,
+        sortOrder: parseIntValue(item.sortOrder, 0),
+        isActive: item.isActive,
+      });
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível salvar o item.", variant: "error" });
+    }
+  };
+
+  const handleDeleteItem = async (groupId, itemId) => {
+    try {
+      await api.deleteOptionGroupItem(groupId, itemId);
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível remover o item.", variant: "error" });
+    }
+  };
+
+  const handleMoveGroup = async (groupId, direction) => {
+    const sorted = [...optionGroups].sort(
+      (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+    );
+    const index = sorted.findIndex((group) => group.id === groupId);
+    const targetIndex = index + direction;
+    if (index === -1 || targetIndex < 0 || targetIndex >= sorted.length) {
+      return;
+    }
+    const current = sorted[index];
+    const target = sorted[targetIndex];
+    try {
+      await Promise.all([
+        api.updateOptionGroup(current.id, { sortOrder: target.sortOrder }),
+        api.updateOptionGroup(target.id, { sortOrder: current.sortOrder }),
+      ]);
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível mover o grupo.", variant: "error" });
+    }
+  };
+
+  const handleMoveItem = async (groupId, itemId, direction) => {
+    const group = optionGroups.find((item) => item.id === groupId);
+    if (!group) {
+      return;
+    }
+    const sorted = [...group.items].sort(
+      (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+    );
+    const index = sorted.findIndex((item) => item.id === itemId);
+    const targetIndex = index + direction;
+    if (index === -1 || targetIndex < 0 || targetIndex >= sorted.length) {
+      return;
+    }
+    const current = sorted[index];
+    const target = sorted[targetIndex];
+    try {
+      await Promise.all([
+        api.updateOptionGroupItem(groupId, current.id, {
+          sortOrder: target.sortOrder,
+        }),
+        api.updateOptionGroupItem(groupId, target.id, {
+          sortOrder: current.sortOrder,
+        }),
+      ]);
+      await loadOptionGroups(optionsProduct.id);
+    } catch {
+      setToast({ message: "Não foi possível mover o item.", variant: "error" });
+    }
   };
 
   const handleChange = (field, value) => {
@@ -207,6 +464,12 @@ const Products = () => {
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button
                         variant="secondary"
+                        onClick={() => openOptions(product)}
+                      >
+                        Opções
+                      </Button>
+                      <Button
+                        variant="secondary"
                         onClick={() => openEdit(product)}
                       >
                         Editar
@@ -281,6 +544,394 @@ const Products = () => {
             <option value="false">Inativo</option>
           </Select>
         </form>
+      </Modal>
+
+      <Modal
+        open={optionsModalOpen}
+        title={
+          optionsProduct ? `Opções • ${optionsProduct.name}` : "Opções"
+        }
+        onClose={closeOptionsModal}
+        footer={
+          <Button variant="secondary" onClick={closeOptionsModal}>
+            Fechar
+          </Button>
+        }
+      >
+        {optionLoading ? (
+          <p className="text-sm text-slate-500">Carregando opções...</p>
+        ) : optionError ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {optionError}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Novo grupo de opções
+              </h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="Nome"
+                  value={groupDraft.name}
+                  onChange={(event) =>
+                    setGroupDraft((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
+                  }
+                />
+                <Select
+                  label="Tipo"
+                  value={groupDraft.type}
+                  onChange={(event) =>
+                    setGroupDraft((prev) => ({
+                      ...prev,
+                      type: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="SINGLE">Única escolha</option>
+                  <option value="MULTI">Múltipla escolha</option>
+                </Select>
+                <Input
+                  label="Mínimo"
+                  type="number"
+                  value={groupDraft.minSelect}
+                  onChange={(event) =>
+                    setGroupDraft((prev) => ({
+                      ...prev,
+                      minSelect: event.target.value,
+                    }))
+                  }
+                />
+                <Input
+                  label="Máximo"
+                  type="number"
+                  value={groupDraft.maxSelect}
+                  onChange={(event) =>
+                    setGroupDraft((prev) => ({
+                      ...prev,
+                      maxSelect: event.target.value,
+                    }))
+                  }
+                />
+                <Input
+                  label="Ordem"
+                  type="number"
+                  value={groupDraft.sortOrder}
+                  onChange={(event) =>
+                    setGroupDraft((prev) => ({
+                      ...prev,
+                      sortOrder: event.target.value,
+                    }))
+                  }
+                />
+                <label className="mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={groupDraft.required}
+                    onChange={(event) =>
+                      setGroupDraft((prev) => ({
+                        ...prev,
+                        required: event.target.checked,
+                      }))
+                    }
+                  />
+                  Obrigatório
+                </label>
+              </div>
+              <div className="mt-4">
+                <Button onClick={handleCreateGroup}>Adicionar grupo</Button>
+              </div>
+            </div>
+
+            {optionGroups.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Nenhum grupo cadastrado.
+              </p>
+            ) : (
+              optionGroups.map((group) => (
+                <div
+                  key={group.id}
+                  className="rounded-xl border border-slate-200 p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h4 className="text-sm font-semibold text-slate-700">
+                      {group.name}
+                    </h4>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleMoveGroup(group.id, -1)}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleMoveGroup(group.id, 1)}
+                      >
+                        ↓
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Input
+                      label="Nome"
+                      value={group.name}
+                      onChange={(event) =>
+                        updateGroupField(group.id, "name", event.target.value)
+                      }
+                    />
+                    <Select
+                      label="Tipo"
+                      value={group.type}
+                      onChange={(event) =>
+                        updateGroupField(group.id, "type", event.target.value)
+                      }
+                    >
+                      <option value="SINGLE">Única escolha</option>
+                      <option value="MULTI">Múltipla escolha</option>
+                    </Select>
+                    <Input
+                      label="Mínimo"
+                      type="number"
+                      value={group.minSelect}
+                      onChange={(event) =>
+                        updateGroupField(
+                          group.id,
+                          "minSelect",
+                          event.target.value
+                        )
+                      }
+                    />
+                    <Input
+                      label="Máximo"
+                      type="number"
+                      value={group.maxSelect}
+                      onChange={(event) =>
+                        updateGroupField(
+                          group.id,
+                          "maxSelect",
+                          event.target.value
+                        )
+                      }
+                    />
+                    <Input
+                      label="Ordem"
+                      type="number"
+                      value={group.sortOrder}
+                      onChange={(event) =>
+                        updateGroupField(
+                          group.id,
+                          "sortOrder",
+                          event.target.value
+                        )
+                      }
+                    />
+                    <label className="mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={group.required}
+                        onChange={(event) =>
+                          updateGroupField(
+                            group.id,
+                            "required",
+                            event.target.checked
+                          )
+                        }
+                      />
+                      Obrigatório
+                    </label>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button onClick={() => handleSaveGroup(group)}>
+                      Salvar grupo
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => handleDeleteGroup(group.id)}
+                    >
+                      Remover grupo
+                    </Button>
+                  </div>
+
+                  <div className="mt-5 border-t border-slate-200 pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-slate-700">
+                        Itens do grupo
+                      </h5>
+                    </div>
+
+                    <div className="mt-3 space-y-3">
+                      {group.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-lg border border-slate-200 p-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-slate-700">
+                              {item.name}
+                            </span>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="secondary"
+                                onClick={() =>
+                                  handleMoveItem(group.id, item.id, -1)
+                                }
+                              >
+                                ↑
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() =>
+                                  handleMoveItem(group.id, item.id, 1)
+                                }
+                              >
+                                ↓
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <Input
+                              label="Nome"
+                              value={item.name}
+                              onChange={(event) =>
+                                updateItemField(
+                                  group.id,
+                                  item.id,
+                                  "name",
+                                  event.target.value
+                                )
+                              }
+                            />
+                            <Input
+                              label="Preço adicional"
+                              value={formatDecimal(item.priceDeltaCents / 100)}
+                              onChange={(event) =>
+                                updateItemField(
+                                  group.id,
+                                  item.id,
+                                  "priceDeltaCents",
+                                  parsePriceCents(event.target.value)
+                                )
+                              }
+                            />
+                            <Input
+                              label="Ordem"
+                              type="number"
+                              value={item.sortOrder}
+                              onChange={(event) =>
+                                updateItemField(
+                                  group.id,
+                                  item.id,
+                                  "sortOrder",
+                                  event.target.value
+                                )
+                              }
+                            />
+                            <label className="mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={item.isActive}
+                                onChange={(event) =>
+                                  updateItemField(
+                                    group.id,
+                                    item.id,
+                                    "isActive",
+                                    event.target.checked
+                                  )
+                                }
+                              />
+                              Ativo
+                            </label>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleSaveItem(group.id, item)}
+                            >
+                              Salvar item
+                            </Button>
+                            <Button
+                              variant="danger"
+                              onClick={() =>
+                                handleDeleteItem(group.id, item.id)
+                              }
+                            >
+                              Remover item
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-3">
+                      <h6 className="text-xs font-semibold uppercase text-slate-500">
+                        Novo item
+                      </h6>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <Input
+                          label="Nome"
+                          value={itemDrafts[group.id]?.name ?? ""}
+                          onChange={(event) =>
+                            updateItemDraft(group.id, "name", event.target.value)
+                          }
+                        />
+                        <Input
+                          label="Preço adicional"
+                          placeholder="0,00"
+                          value={itemDrafts[group.id]?.priceDelta ?? ""}
+                          onChange={(event) =>
+                            updateItemDraft(
+                              group.id,
+                              "priceDelta",
+                              event.target.value
+                            )
+                          }
+                        />
+                        <Input
+                          label="Ordem"
+                          type="number"
+                          value={itemDrafts[group.id]?.sortOrder ?? 0}
+                          onChange={(event) =>
+                            updateItemDraft(
+                              group.id,
+                              "sortOrder",
+                              event.target.value
+                            )
+                          }
+                        />
+                        <label className="mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={itemDrafts[group.id]?.isActive ?? true}
+                            onChange={(event) =>
+                              updateItemDraft(
+                                group.id,
+                                "isActive",
+                                event.target.checked
+                              )
+                            }
+                          />
+                          Ativo
+                        </label>
+                      </div>
+                      <div className="mt-3">
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleCreateItem(group.id)}
+                        >
+                          Adicionar item
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </Modal>
 
       <Toast

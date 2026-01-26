@@ -31,6 +31,15 @@ const OrderDetails = () => {
     CARD: "Cartão",
   };
 
+  const groupOptions = (options = []) =>
+    options.reduce((acc, option) => {
+      if (!acc[option.groupName]) {
+        acc[option.groupName] = [];
+      }
+      acc[option.groupName].push(option);
+      return acc;
+    }, {});
+
   const loadOrder = async ({ silent = false } = {}) => {
     if (!silent) {
       setLoading(true);
@@ -236,6 +245,30 @@ const OrderDetails = () => {
                       <p className="mt-1 text-xs font-normal text-slate-500">
                         Obs: {item.notes}
                       </p>
+                    ) : null}
+                    {item.options && item.options.length > 0 ? (
+                      <div className="mt-2 space-y-1 text-xs font-normal text-slate-600">
+                        {Object.entries(groupOptions(item.options)).map(
+                          ([groupName, options]) => (
+                            <p key={groupName}>
+                              <span className="font-semibold">
+                                {groupName}:
+                              </span>{" "}
+                              {options
+                                .map((option) => {
+                                  const priceLabel =
+                                    option.priceDeltaCents > 0
+                                      ? ` (+${formatCurrency(
+                                          option.priceDeltaCents / 100
+                                        )})`
+                                      : "";
+                                  return `${option.itemName}${priceLabel}`;
+                                })
+                                .join(", ")}
+                            </p>
+                          )
+                        )}
+                      </div>
                     ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-600">

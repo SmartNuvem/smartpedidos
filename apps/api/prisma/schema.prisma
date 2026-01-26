@@ -35,6 +35,11 @@ enum OpenOverride {
   FORCE_CLOSED
 }
 
+enum OptionGroupType {
+  SINGLE
+  MULTI
+}
+
 model Store {
   id              String                @id @default(uuid())
   name            String
@@ -71,6 +76,7 @@ model Product {
   categoryId String
   category   Category    @relation(fields: [categoryId], references: [id])
   orderItems OrderItem[]
+  optionGroups ProductOptionGroup[]
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 }
@@ -110,8 +116,53 @@ model OrderItem {
   quantity       Int
   unitPriceCents Int
   notes          String?
+  options        OrderItemOption[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+model ProductOptionGroup {
+  id         String            @id @default(uuid())
+  productId  String
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name       String
+  type       OptionGroupType
+  required   Boolean           @default(false)
+  minSelect  Int               @default(0)
+  maxSelect  Int               @default(0)
+  sortOrder  Int               @default(0)
+  items      ProductOptionItem[]
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([productId])
+}
+
+model ProductOptionItem {
+  id               String              @id @default(uuid())
+  groupId          String
+  group            ProductOptionGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name             String
+  priceDeltaCents  Int                 @default(0)
+  isActive         Boolean             @default(true)
+  sortOrder        Int                 @default(0)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([groupId])
+}
+
+model OrderItemOption {
+  id             String   @id @default(uuid())
+  orderItemId    String
+  orderItem      OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  groupName      String
+  itemName       String
+  priceDeltaCents Int      @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([orderItemId])
 }
 
 model Agent {

@@ -26,6 +26,8 @@ const app = Fastify({
   logger: true,
 });
 
+const orderStreamClients = new Map<string, Set<FastifyReply>>();
+
 type StoreHoursData = {
   timezone: string;
   monOpen: string | null;
@@ -158,28 +160,48 @@ const calculateIsOpenNow = (hours: StoreHoursData) => {
   return minutes >= openMinutes && minutes <= closeMinutes;
 };
 
-const authenticateStore = async (
-  request: FastifyRequest,
-  reply: FastifyReply
-) => {
-  const authHeader = request.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return reply.status(401).send({ message: "Unauthorized" });
-  }
-
-  const token = authHeader.slice("Bearer ".length);
+const getStoreIdFromToken = (token: string) => {
   try {
     const payload = app.jwt.verify<{
       role?: string;
       storeId?: string;
     }>(token);
     if (payload.role !== "store" || !payload.storeId) {
-      return reply.status(401).send({ message: "Unauthorized" });
+      return null;
     }
-    request.storeId = payload.storeId;
+    return payload.storeId;
   } catch {
+    return null;
+  }
+};
+
+const authenticateStore = async (
+  request: FastifyRequest,
+  reply: FastifyReply
+) => {
+  const authHeader = request.headers.authorization;
+  let token: string | null = null;
+  if (authHeader?.startsWith("Bearer ")) {
+    token = authHeader.slice("Bearer ".length);
+  }
+
+  if (!token && request.url.startsWith("/store/orders/stream")) {
+    const queryToken = (request.query as { token?: string } | undefined)?.token;
+    if (typeof queryToken === "string" && queryToken.trim()) {
+      token = queryToken.trim();
+    }
+  }
+
+  if (!token) {
     return reply.status(401).send({ message: "Unauthorized" });
   }
+
+  const storeId = getStoreIdFromToken(token);
+  if (!storeId) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  request.storeId = storeId;
 };
 
 const registerRoutes = () => {
@@ -199,6 +221,17 @@ const registerRoutes = () => {
           include: {
             products: {
               where: { active: true },
+              include: {
+                optionGroups: {
+                  include: {
+                    items: {
+                      where: { isActive: true },
+                      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+                    },
+                  },
+                  orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+                },
+              },
             },
           },
         },
@@ -268,6 +301,22 @@ const registerRoutes = () => {
           name: product.name,
           priceCents: Math.round(product.price.toNumber() * 100),
           active: product.active,
+          optionGroups: product.optionGroups.map((group) => ({
+            id: group.id,
+            name: group.name,
+            type: group.type,
+            required: group.required,
+            minSelect: group.minSelect,
+            maxSelect: group.maxSelect,
+            sortOrder: group.sortOrder,
+            items: group.items.map((item) => ({
+              id: item.id,
+              name: item.name,
+              priceDeltaCents: item.priceDeltaCents,
+              isActive: item.isActive,
+              sortOrder: item.sortOrder,
+            })),
+          })),
         })),
       })),
       deliveryAreas: store.deliveryAreas.map((area) => ({
@@ -310,6 +359,14 @@ const registerRoutes = () => {
             productId: z.string().uuid(),
             quantity: z.number().int().positive(),
             notes: z.string().min(1).optional(),
+            options: z
+              .array(
+                z.object({
+                  groupId: z.string().uuid(),
+                  itemIds: z.array(z.string().uuid()).min(1),
+                })
+              )
+              .optional(),
           })
         )
         .min(1),
@@ -429,6 +486,14 @@ const registerRoutes = () => {
         },
         active: true,
       },
+      include: {
+        optionGroups: {
+          include: {
+            items: true,
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+      },
     });
 
     if (products.length !== productIds.length) {
@@ -444,9 +509,68 @@ const registerRoutes = () => {
         return null;
       }
       const unitPriceCents = Math.round(product.price.toNumber() * 100);
+      const selectionInputs = item.options ?? [];
+      const groupIds = new Set(product.optionGroups.map((group) => group.id));
+      const invalidGroup = selectionInputs.find(
+        (selection) => !groupIds.has(selection.groupId)
+      );
+      if (invalidGroup) {
+        return null;
+      }
+
+      const optionEntries: Array<{
+        groupName: string;
+        itemName: string;
+        priceDeltaCents: number;
+      }> = [];
+      let optionTotalCents = 0;
+
+      for (const group of product.optionGroups) {
+        const selectedIds =
+          selectionInputs.find((selection) => selection.groupId === group.id)
+            ?.itemIds ?? [];
+        const uniqueSelectedIds = [...new Set(selectedIds)];
+        const activeItems = group.items.filter((option) => option.isActive);
+        const activeMap = new Map(activeItems.map((option) => [option.id, option]));
+        const selectedItems = uniqueSelectedIds.map((optionId) =>
+          activeMap.get(optionId)
+        );
+
+        if (selectedItems.some((option) => !option)) {
+          return null;
+        }
+
+        const minRequired = group.required
+          ? Math.max(group.minSelect, 1)
+          : group.minSelect;
+        const maxAllowed =
+          group.type === "SINGLE"
+            ? 1
+            : group.maxSelect > 0
+              ? group.maxSelect
+              : Number.POSITIVE_INFINITY;
+
+        if (
+          selectedItems.length < minRequired ||
+          selectedItems.length > maxAllowed
+        ) {
+          return null;
+        }
+
+        selectedItems.forEach((option) => {
+          optionEntries.push({
+            groupName: group.name,
+            itemName: option!.name,
+            priceDeltaCents: option!.priceDeltaCents,
+          });
+          optionTotalCents += option!.priceDeltaCents;
+        });
+      }
+
       return {
         ...item,
-        unitPriceCents,
+        unitPriceCents: unitPriceCents + optionTotalCents,
+        optionEntries,
       };
     });
 
@@ -519,18 +643,49 @@ const registerRoutes = () => {
         },
       });
 
-      await tx.orderItem.createMany({
-        data: normalizedItems.map((item) => ({
-          orderId: createdOrder.id,
-          productId: item!.productId,
-          quantity: item!.quantity,
-          unitPriceCents: item!.unitPriceCents,
-          notes: item!.notes ?? null,
-        })),
-      });
+      for (const item of normalizedItems) {
+        const createdItem = await tx.orderItem.create({
+          data: {
+            orderId: createdOrder.id,
+            productId: item!.productId,
+            quantity: item!.quantity,
+            unitPriceCents: item!.unitPriceCents,
+            notes: item!.notes ?? null,
+          },
+        });
+
+        if (item!.optionEntries.length > 0) {
+          await tx.orderItemOption.createMany({
+            data: item!.optionEntries.map((option) => ({
+              orderItemId: createdItem.id,
+              groupName: option.groupName,
+              itemName: option.itemName,
+              priceDeltaCents: option.priceDeltaCents,
+            })),
+          });
+        }
+      }
 
       return createdOrder;
     });
+
+    const streamPayload = {
+      orderId: order.id,
+      createdAt: order.createdAt,
+    };
+    const storeStreams = orderStreamClients.get(store.id);
+    if (storeStreams) {
+      const payload = `event: order:new\ndata: ${JSON.stringify(
+        streamPayload
+      )}\n\n`;
+      storeStreams.forEach((client) => {
+        try {
+          client.raw.write(payload);
+        } catch {
+          storeStreams.delete(client);
+        }
+      });
+    }
 
     return reply.status(201).send({
       orderId: order.id,
@@ -1271,6 +1426,38 @@ const registerRoutes = () => {
     });
   });
 
+  app.get("/store/orders/stream", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    reply.raw.setHeader("Content-Type", "text/event-stream");
+    reply.raw.setHeader("Cache-Control", "no-cache");
+    reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("X-Accel-Buffering", "no");
+    reply.raw.flushHeaders?.();
+    reply.raw.write("event: ready\ndata: {\"ok\": true}\n\n");
+    reply.raw.setTimeout(0);
+
+    const clients = orderStreamClients.get(storeId) ?? new Set();
+    clients.add(reply);
+    orderStreamClients.set(storeId, clients);
+
+    request.raw.on("close", () => {
+      const activeClients = orderStreamClients.get(storeId);
+      if (!activeClients) {
+        return;
+      }
+      activeClients.delete(reply);
+      if (activeClients.size === 0) {
+        orderStreamClients.delete(storeId);
+      }
+    });
+
+    return reply.raw;
+  });
+
   app.get("/store/orders", async (request, reply) => {
     const storeId = request.storeId;
     if (!storeId) {
@@ -1279,14 +1466,16 @@ const registerRoutes = () => {
 
     const querySchema = z.object({
       status: z.enum(["NEW", "PRINTING", "PRINTED"]).optional(),
+      since: z.string().datetime().optional(),
     });
 
-    const { status } = querySchema.parse(request.query);
+    const { status, since } = querySchema.parse(request.query);
 
     const orders = await prisma.order.findMany({
       where: {
         storeId,
         status,
+        createdAt: since ? { gt: new Date(since) } : undefined,
       },
       orderBy: {
         createdAt: "desc",
@@ -1538,6 +1727,373 @@ const registerRoutes = () => {
     };
   });
 
+  app.get("/store/products/:id/option-groups", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const product = await prisma.product.findFirst({
+      where: { id, category: { storeId } },
+      include: {
+        optionGroups: {
+          include: {
+            items: true,
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+      },
+    });
+
+    if (!product) {
+      return reply.status(404).send({ message: "Product not found" });
+    }
+
+    return reply.send(
+      product.optionGroups.map((group) => ({
+        id: group.id,
+        productId: group.productId,
+        name: group.name,
+        type: group.type,
+        required: group.required,
+        minSelect: group.minSelect,
+        maxSelect: group.maxSelect,
+        sortOrder: group.sortOrder,
+        items: group.items
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+          .map((item) => ({
+            id: item.id,
+            groupId: item.groupId,
+            name: item.name,
+            priceDeltaCents: item.priceDeltaCents,
+            isActive: item.isActive,
+            sortOrder: item.sortOrder,
+          })),
+      }))
+    );
+  });
+
+  app.post("/store/products/:id/option-groups", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      type: z.enum(["SINGLE", "MULTI"]),
+      required: z.boolean().optional(),
+      minSelect: z.number().int().nonnegative().optional(),
+      maxSelect: z.number().int().nonnegative().optional(),
+      sortOrder: z.number().int().optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const payload = bodySchema.parse(request.body);
+
+    const product = await prisma.product.findFirst({
+      where: { id, category: { storeId } },
+    });
+
+    if (!product) {
+      return reply.status(404).send({ message: "Product not found" });
+    }
+
+    const group = await prisma.productOptionGroup.create({
+      data: {
+        productId: product.id,
+        name: payload.name,
+        type: payload.type,
+        required: payload.required ?? false,
+        minSelect: payload.minSelect ?? 0,
+        maxSelect: payload.maxSelect ?? 0,
+        sortOrder: payload.sortOrder ?? 0,
+      },
+    });
+
+    return reply.status(201).send({
+      id: group.id,
+      productId: group.productId,
+      name: group.name,
+      type: group.type,
+      required: group.required,
+      minSelect: group.minSelect,
+      maxSelect: group.maxSelect,
+      sortOrder: group.sortOrder,
+    });
+  });
+
+  app.put("/store/option-groups/:groupId", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ groupId: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1).optional(),
+      type: z.enum(["SINGLE", "MULTI"]).optional(),
+      required: z.boolean().optional(),
+      minSelect: z.number().int().nonnegative().optional(),
+      maxSelect: z.number().int().nonnegative().optional(),
+      sortOrder: z.number().int().optional(),
+    });
+
+    const { groupId } = paramsSchema.parse(request.params);
+    const payload = bodySchema.parse(request.body);
+
+    const group = await prisma.productOptionGroup.findFirst({
+      where: {
+        id: groupId,
+        product: {
+          category: { storeId },
+        },
+      },
+    });
+
+    if (!group) {
+      return reply.status(404).send({ message: "Option group not found" });
+    }
+
+    const updated = await prisma.productOptionGroup.update({
+      where: { id: groupId },
+      data: {
+        name: payload.name ?? group.name,
+        type: payload.type ?? group.type,
+        required: payload.required ?? group.required,
+        minSelect: payload.minSelect ?? group.minSelect,
+        maxSelect: payload.maxSelect ?? group.maxSelect,
+        sortOrder: payload.sortOrder ?? group.sortOrder,
+      },
+    });
+
+    return reply.send({
+      id: updated.id,
+      productId: updated.productId,
+      name: updated.name,
+      type: updated.type,
+      required: updated.required,
+      minSelect: updated.minSelect,
+      maxSelect: updated.maxSelect,
+      sortOrder: updated.sortOrder,
+    });
+  });
+
+  app.delete("/store/option-groups/:groupId", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ groupId: z.string().uuid() });
+    const { groupId } = paramsSchema.parse(request.params);
+
+    const group = await prisma.productOptionGroup.findFirst({
+      where: {
+        id: groupId,
+        product: {
+          category: { storeId },
+        },
+      },
+    });
+
+    if (!group) {
+      return reply.status(404).send({ message: "Option group not found" });
+    }
+
+    await prisma.productOptionGroup.delete({ where: { id: groupId } });
+    return reply.status(204).send();
+  });
+
+  app.get("/store/option-groups/:groupId/items", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ groupId: z.string().uuid() });
+    const { groupId } = paramsSchema.parse(request.params);
+
+    const group = await prisma.productOptionGroup.findFirst({
+      where: {
+        id: groupId,
+        product: { category: { storeId } },
+      },
+    });
+
+    if (!group) {
+      return reply.status(404).send({ message: "Option group not found" });
+    }
+
+    const items = await prisma.productOptionItem.findMany({
+      where: { groupId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    return reply.send(
+      items.map((item) => ({
+        id: item.id,
+        groupId: item.groupId,
+        name: item.name,
+        priceDeltaCents: item.priceDeltaCents,
+        isActive: item.isActive,
+        sortOrder: item.sortOrder,
+      }))
+    );
+  });
+
+  app.post("/store/option-groups/:groupId/items", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ groupId: z.string().uuid() });
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      priceDeltaCents: z.number().int().optional(),
+      isActive: z.boolean().optional(),
+      sortOrder: z.number().int().optional(),
+    });
+
+    const { groupId } = paramsSchema.parse(request.params);
+    const payload = bodySchema.parse(request.body);
+
+    const group = await prisma.productOptionGroup.findFirst({
+      where: {
+        id: groupId,
+        product: { category: { storeId } },
+      },
+    });
+
+    if (!group) {
+      return reply.status(404).send({ message: "Option group not found" });
+    }
+
+    const item = await prisma.productOptionItem.create({
+      data: {
+        groupId,
+        name: payload.name,
+        priceDeltaCents: payload.priceDeltaCents ?? 0,
+        isActive: payload.isActive ?? true,
+        sortOrder: payload.sortOrder ?? 0,
+      },
+    });
+
+    return reply.status(201).send({
+      id: item.id,
+      groupId: item.groupId,
+      name: item.name,
+      priceDeltaCents: item.priceDeltaCents,
+      isActive: item.isActive,
+      sortOrder: item.sortOrder,
+    });
+  });
+
+  app.put(
+    "/store/option-groups/:groupId/items/:itemId",
+    async (request, reply) => {
+      const storeId = request.storeId;
+      if (!storeId) {
+        return reply.status(401).send({ message: "Unauthorized" });
+      }
+
+      const paramsSchema = z.object({
+        groupId: z.string().uuid(),
+        itemId: z.string().uuid(),
+      });
+      const bodySchema = z.object({
+        name: z.string().min(1).optional(),
+        priceDeltaCents: z.number().int().optional(),
+        isActive: z.boolean().optional(),
+        sortOrder: z.number().int().optional(),
+      });
+
+      const { groupId, itemId } = paramsSchema.parse(request.params);
+      const payload = bodySchema.parse(request.body);
+
+      const group = await prisma.productOptionGroup.findFirst({
+        where: {
+          id: groupId,
+          product: { category: { storeId } },
+        },
+      });
+
+      if (!group) {
+        return reply.status(404).send({ message: "Option group not found" });
+      }
+
+      const item = await prisma.productOptionItem.findFirst({
+        where: { id: itemId, groupId },
+      });
+
+      if (!item) {
+        return reply.status(404).send({ message: "Option item not found" });
+      }
+
+      const updated = await prisma.productOptionItem.update({
+        where: { id: itemId },
+        data: {
+          name: payload.name ?? item.name,
+          priceDeltaCents: payload.priceDeltaCents ?? item.priceDeltaCents,
+          isActive: payload.isActive ?? item.isActive,
+          sortOrder: payload.sortOrder ?? item.sortOrder,
+        },
+      });
+
+      return reply.send({
+        id: updated.id,
+        groupId: updated.groupId,
+        name: updated.name,
+        priceDeltaCents: updated.priceDeltaCents,
+        isActive: updated.isActive,
+        sortOrder: updated.sortOrder,
+      });
+    }
+  );
+
+  app.delete(
+    "/store/option-groups/:groupId/items/:itemId",
+    async (request, reply) => {
+      const storeId = request.storeId;
+      if (!storeId) {
+        return reply.status(401).send({ message: "Unauthorized" });
+      }
+
+      const paramsSchema = z.object({
+        groupId: z.string().uuid(),
+        itemId: z.string().uuid(),
+      });
+      const { groupId, itemId } = paramsSchema.parse(request.params);
+
+      const group = await prisma.productOptionGroup.findFirst({
+        where: {
+          id: groupId,
+          product: { category: { storeId } },
+        },
+      });
+
+      if (!group) {
+        return reply.status(404).send({ message: "Option group not found" });
+      }
+
+      const item = await prisma.productOptionItem.findFirst({
+        where: { id: itemId, groupId },
+      });
+
+      if (!item) {
+        return reply.status(404).send({ message: "Option item not found" });
+      }
+
+      await prisma.productOptionItem.delete({ where: { id: itemId } });
+      return reply.status(204).send();
+    }
+  );
+
   app.get("/store/orders/:id", async (request, reply) => {
     const storeId = request.storeId;
     if (!storeId) {
@@ -1556,6 +2112,7 @@ const registerRoutes = () => {
         items: {
           include: {
             product: true,
+            options: true,
           },
         },
         deliveryArea: true,
@@ -1599,6 +2156,12 @@ const registerRoutes = () => {
         quantity: item.quantity,
         unitPrice: item.unitPriceCents / 100,
         notes: item.notes,
+        options: item.options.map((option) => ({
+          id: option.id,
+          groupName: option.groupName,
+          itemName: option.itemName,
+          priceDeltaCents: option.priceDeltaCents,
+        })),
       })),
     };
   });
@@ -1727,6 +2290,7 @@ const registerRoutes = () => {
         items: {
           include: {
             product: true,
+            options: true,
           },
         },
       },
