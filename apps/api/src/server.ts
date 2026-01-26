@@ -840,6 +840,15 @@ const start = async () => {
 
   registerRoutes();
 
+  app.ready((err) => {
+    if (err) {
+      app.log.error(err);
+      process.exit(1);
+    }
+    app.log.info("=== ROUTES ===");
+    app.log.info("\n" + app.printRoutes());
+  });
+
   const port = Number(process.env.PORT ?? 3000);
   try {
     await app.listen({ port, host: "0.0.0.0" });
