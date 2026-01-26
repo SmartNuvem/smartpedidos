@@ -18,6 +18,8 @@ COPY apps/api/src ./apps/api/src
 WORKDIR /app/apps/api
 
 RUN npm run build
+RUN grep -R "auth/admin" -n /app/apps/api/dist/server.js \
+  && grep -R "admin/bootstrap" -n /app/apps/api/dist/server.js
 
 EXPOSE 3000
 

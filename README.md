@@ -86,6 +86,15 @@ curl http://localhost:3000/store/me \
 
 ## Troubleshooting
 
+### Validar rotas admin no build
+
+Após o build dentro do container, confirme que o bundle contém as rotas admin:
+
+```bash
+grep -R "admin/bootstrap" -n /app/apps/api/dist/server.js
+grep -R "auth/admin" -n /app/apps/api/dist/server.js
+```
+
 ### `api:3000` não resolve no navegador
 
 Se o console do navegador mostrar `ERR_NAME_NOT_RESOLVED` para `api:3000`, defina `VITE_API_URL` com a URL pública da API (`http://IP:3000`) ou use `VITE_API_URL=/api` com `VITE_API_PROXY_TARGET` apontando para a API no Docker.
