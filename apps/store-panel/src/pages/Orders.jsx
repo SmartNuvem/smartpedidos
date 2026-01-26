@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatCurrency, formatDateTime } from "../api";
+import { API_URL, api, formatCurrency, formatDateTime } from "../api";
+import { getToken } from "../auth";
 import Select from "../components/Select";
 import Table from "../components/Table";
 
@@ -29,7 +30,11 @@ const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [newOrderIds, setNewOrderIds] = useState([]);
   const intervalRef = useRef(null);
+  const knownOrderIdsRef = useRef(new Set());
+  const statusRef = useRef(status);
+  const audioRef = useRef(null);
 
   const loadOrders = async (selectedStatus, { silent = false } = {}) => {
     if (!silent) {
@@ -39,6 +44,7 @@ const Orders = () => {
     try {
       const data = await api.getOrders({ status: selectedStatus || undefined });
       setOrders(data);
+      knownOrderIdsRef.current = new Set(data.map((order) => order.id));
     } catch {
       setError("Não foi possível carregar os pedidos.");
     } finally {
@@ -49,39 +55,141 @@ const Orders = () => {
   };
 
   useEffect(() => {
+    statusRef.current = status;
     loadOrders(status);
+  }, [status]);
 
+  useEffect(() => {
     const poll = () => {
       if (document.hidden) {
         return;
       }
-      loadOrders(status, { silent: true });
+      loadOrders(statusRef.current, { silent: true });
     };
-
-    intervalRef.current = window.setInterval(poll, 5000);
 
     const handleVisibility = () => {
       if (!document.hidden) {
-        loadOrders(status, { silent: true });
+        loadOrders(statusRef.current, { silent: true });
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibility);
 
-    return () => {
+    const playNotification = () => {
+      try {
+        const AudioContext =
+          window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+          return;
+        }
+        const audioContext = audioRef.current ?? new AudioContext();
+        audioRef.current = audioContext;
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+        gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.2,
+          audioContext.currentTime + 0.01
+        );
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.0001,
+          audioContext.currentTime + 0.2
+        );
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.21);
+      } catch {
+        // Audio may be blocked by the browser.
+      }
+    };
+
+    const startPolling = () => {
+      if (!intervalRef.current) {
+        intervalRef.current = window.setInterval(poll, 5000);
+      }
+    };
+
+    const stopPolling = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
+    };
+
+    const token = getToken();
+    if (!token || !window.EventSource) {
+      startPolling();
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+        }
+        document.removeEventListener("visibilitychange", handleVisibility);
+      };
+    }
+
+    // TODO: migrate SSE auth to httpOnly cookie.
+    const streamUrl = `${API_URL}/store/orders/stream?token=${encodeURIComponent(
+      token
+    )}`;
+    const source = new EventSource(streamUrl);
+
+    source.addEventListener("order:new", (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (!payload?.orderId) {
+          return;
+        }
+        if (knownOrderIdsRef.current.has(payload.orderId)) {
+          return;
+        }
+        setNewOrderIds((prev) =>
+          prev.includes(payload.orderId)
+            ? prev
+            : [...prev, payload.orderId]
+        );
+        playNotification();
+        loadOrders(statusRef.current, { silent: true });
+      } catch {
+        // ignore malformed events
+      }
+    });
+
+    source.onerror = () => {
+      source.close();
+      startPolling();
+    };
+
+    source.onopen = () => {
+      stopPolling();
+    };
+
+    return () => {
+      stopPolling();
+      source.close();
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [status]);
+  }, []);
 
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900">Pedidos</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-2xl font-semibold text-slate-900">Pedidos</h2>
+              {newOrderIds.length > 0 ? (
+                <button
+                  className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
+                  onClick={() => setNewOrderIds([])}
+                  type="button"
+                >
+                  Novo pedido ({newOrderIds.length})
+                </button>
+              ) : null}
+            </div>
             <p className="text-sm text-slate-500">
               Acompanhe e gerencie os pedidos da loja.
             </p>

@@ -182,6 +182,82 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getProductOptionGroups: async (productId) => {
+    const response = await fetch(
+      `${API_URL}/store/products/${productId}/option-groups`,
+      {
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
+  createProductOptionGroup: async (productId, payload) => {
+    const response = await fetch(
+      `${API_URL}/store/products/${productId}/option-groups`,
+      {
+        method: "POST",
+        headers: buildHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(response);
+  },
+  updateOptionGroup: async (groupId, payload) => {
+    const response = await fetch(`${API_URL}/store/option-groups/${groupId}`, {
+      method: "PUT",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  deleteOptionGroup: async (groupId) => {
+    const response = await fetch(`${API_URL}/store/option-groups/${groupId}`, {
+      method: "DELETE",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  getOptionGroupItems: async (groupId) => {
+    const response = await fetch(
+      `${API_URL}/store/option-groups/${groupId}/items`,
+      {
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
+  createOptionGroupItem: async (groupId, payload) => {
+    const response = await fetch(
+      `${API_URL}/store/option-groups/${groupId}/items`,
+      {
+        method: "POST",
+        headers: buildHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(response);
+  },
+  updateOptionGroupItem: async (groupId, itemId, payload) => {
+    const response = await fetch(
+      `${API_URL}/store/option-groups/${groupId}/items/${itemId}`,
+      {
+        method: "PUT",
+        headers: buildHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
+    return handleResponse(response);
+  },
+  deleteOptionGroupItem: async (groupId, itemId) => {
+    const response = await fetch(
+      `${API_URL}/store/option-groups/${groupId}/items/${itemId}`,
+      {
+        method: "DELETE",
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
 };
 
 export const adminApi = {

@@ -1,5 +1,11 @@
 import PDFDocument from "pdfkit";
-import { Order, OrderItem, Product, Store } from "@prisma/client";
+import {
+  Order,
+  OrderItem,
+  OrderItemOption,
+  Product,
+  Store,
+} from "@prisma/client";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -14,7 +20,7 @@ const formatDate = (date: Date) =>
 
 export type OrderReceipt = Order & {
   store: Store;
-  items: Array<OrderItem & { product: Product }>;
+  items: Array<OrderItem & { product: Product; options?: OrderItemOption[] }>;
 };
 
 export const buildOrderPdf = (order: OrderReceipt) => {
@@ -79,6 +85,30 @@ export const buildOrderPdf = (order: OrderReceipt) => {
   order.items.forEach((item) => {
     const lineTotalCents = item.unitPriceCents * item.quantity;
     doc.text(`${item.quantity}x ${item.product.name}`);
+    if (item.options && item.options.length > 0) {
+      const groupedOptions = item.options.reduce((acc, option) => {
+        if (!acc[option.groupName]) {
+          acc[option.groupName] = [];
+        }
+        acc[option.groupName].push(option);
+        return acc;
+      }, {} as Record<string, OrderItemOption[]>);
+
+      doc.fontSize(8);
+      Object.entries(groupedOptions).forEach(([groupName, options]) => {
+        const description = options
+          .map((option) => {
+            const priceLabel =
+              option.priceDeltaCents > 0
+                ? ` (+${currency.format(option.priceDeltaCents / 100)})`
+                : "";
+            return `${option.itemName}${priceLabel}`;
+          })
+          .join(", ");
+        doc.text(`- ${groupName}: ${description}`, { indent: 8 });
+      });
+      doc.fontSize(10);
+    }
     if (item.notes) {
       doc.fontSize(8).text(`Obs: ${item.notes}`);
       doc.fontSize(10);

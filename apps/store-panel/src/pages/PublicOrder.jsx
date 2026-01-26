@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { API_URL, formatCurrency } from "../api";
+import Modal from "../components/Modal";
 
 const initialAddress = {
   line: "",
@@ -14,6 +15,11 @@ const PublicOrder = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [cartItems, setCartItems] = useState([]);
+  const [optionModalOpen, setOptionModalOpen] = useState(false);
+  const [optionProduct, setOptionProduct] = useState(null);
+  const [optionStep, setOptionStep] = useState(0);
+  const [optionSelections, setOptionSelections] = useState({});
+  const [optionError, setOptionError] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [fulfillmentType, setFulfillmentType] = useState("PICKUP");
@@ -25,6 +31,8 @@ const PublicOrder = () => {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
+
+  const optionGroups = optionProduct?.optionGroups ?? [];
 
   useEffect(() => {
     const loadMenu = async () => {
@@ -72,6 +80,84 @@ const PublicOrder = () => {
     }
   }, [paymentMethod]);
 
+  const createCartItemId = () => {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  const resetOptionModal = () => {
+    setOptionModalOpen(false);
+    setOptionProduct(null);
+    setOptionStep(0);
+    setOptionSelections({});
+    setOptionError("");
+  };
+
+  const openOptionsModal = (product) => {
+    setOptionProduct(product);
+    setOptionStep(0);
+    setOptionSelections({});
+    setOptionError("");
+    setOptionModalOpen(true);
+  };
+
+  const getSelectedIds = (groupId) => optionSelections[groupId] ?? [];
+
+  const getGroupValidation = (group) => {
+    const selectedCount = getSelectedIds(group.id).length;
+    const minRequired = group.required
+      ? Math.max(group.minSelect ?? 0, 1)
+      : group.minSelect ?? 0;
+    const maxAllowed =
+      group.type === "SINGLE"
+        ? 1
+        : group.maxSelect > 0
+          ? group.maxSelect
+          : Number.POSITIVE_INFINITY;
+    return {
+      selectedCount,
+      minRequired,
+      maxAllowed,
+      isValid:
+        selectedCount >= minRequired && selectedCount <= maxAllowed,
+    };
+  };
+
+  const calculateOptionTotalCents = () =>
+    optionGroups.reduce((total, group) => {
+      const selectedIds = getSelectedIds(group.id);
+      const groupTotal = group.items
+        .filter((item) => selectedIds.includes(item.id))
+        .reduce((acc, item) => acc + item.priceDeltaCents, 0);
+      return total + groupTotal;
+    }, 0);
+
+  const handleOptionSelection = (group, itemId) => {
+    setOptionError("");
+    setOptionSelections((prev) => {
+      const current = prev[group.id] ?? [];
+      if (group.type === "SINGLE") {
+        return { ...prev, [group.id]: [itemId] };
+      }
+      const exists = current.includes(itemId);
+      if (exists) {
+        return {
+          ...prev,
+          [group.id]: current.filter((id) => id !== itemId),
+        };
+      }
+      if (group.maxSelect > 0 && current.length >= group.maxSelect) {
+        setOptionError(
+          `Selecione no máximo ${group.maxSelect} opção(ões) em ${group.name}.`
+        );
+        return prev;
+      }
+      return { ...prev, [group.id]: [...current, itemId] };
+    });
+  };
+
   const totalItems = useMemo(
     () => cartItems.reduce((acc, item) => acc + item.quantity, 0),
     [cartItems]
@@ -94,11 +180,17 @@ const PublicOrder = () => {
   }, [menu, deliveryAreaId]);
 
   const handleAddProduct = (product) => {
+    if (product.optionGroups && product.optionGroups.length > 0) {
+      openOptionsModal(product);
+      return;
+    }
     setCartItems((prev) => {
-      const existing = prev.find((item) => item.productId === product.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.productId === product.id
+      const existingIndex = prev.findIndex(
+        (item) => item.productId === product.id && !item.optionSelections?.length
+      );
+      if (existingIndex >= 0) {
+        return prev.map((item, index) =>
+          index === existingIndex
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
@@ -106,21 +198,88 @@ const PublicOrder = () => {
       return [
         ...prev,
         {
+          id: createCartItemId(),
           productId: product.id,
           name: product.name,
           priceCents: product.priceCents,
           quantity: 1,
           notes: "",
+          options: [],
+          optionSelections: [],
         },
       ];
     });
   };
 
-  const handleQuantityChange = (productId, delta) => {
+  const handleConfirmOptions = () => {
+    if (!optionProduct) {
+      return;
+    }
+    const allValid = optionGroups.every(
+      (group) => getGroupValidation(group).isValid
+    );
+    if (!allValid) {
+      setOptionError("Selecione as opções obrigatórias para continuar.");
+      return;
+    }
+
+    const selectedGroups = optionGroups
+      .map((group) => {
+        const selectedIds = getSelectedIds(group.id);
+        if (selectedIds.length === 0) {
+          return null;
+        }
+        const items = group.items.filter((item) =>
+          selectedIds.includes(item.id)
+        );
+        return {
+          groupId: group.id,
+          groupName: group.name,
+          items: items.map((item) => ({
+            id: item.id,
+            name: item.name,
+            priceDeltaCents: item.priceDeltaCents,
+          })),
+        };
+      })
+      .filter(Boolean);
+
+    const optionSelectionsPayload = selectedGroups.map((group) => ({
+      groupId: group.groupId,
+      itemIds: group.items.map((item) => item.id),
+    }));
+    const optionTotalCents = selectedGroups.reduce(
+      (sum, group) =>
+        sum +
+        group.items.reduce(
+          (acc, item) => acc + item.priceDeltaCents,
+          0
+        ),
+      0
+    );
+
+    setCartItems((prev) => [
+      ...prev,
+      {
+        id: createCartItemId(),
+        productId: optionProduct.id,
+        name: optionProduct.name,
+        priceCents: optionProduct.priceCents + optionTotalCents,
+        quantity: 1,
+        notes: "",
+        options: selectedGroups,
+        optionSelections: optionSelectionsPayload,
+      },
+    ]);
+
+    resetOptionModal();
+  };
+
+  const handleQuantityChange = (itemId, delta) => {
     setCartItems((prev) =>
       prev
         .map((item) => {
-          if (item.productId !== productId) {
+          if (item.id !== itemId) {
             return item;
           }
           return { ...item, quantity: item.quantity + delta };
@@ -129,14 +288,14 @@ const PublicOrder = () => {
     );
   };
 
-  const handleRemoveItem = (productId) => {
-    setCartItems((prev) => prev.filter((item) => item.productId !== productId));
+  const handleRemoveItem = (itemId) => {
+    setCartItems((prev) => prev.filter((item) => item.id !== itemId));
   };
 
-  const handleItemNotes = (productId, value) => {
+  const handleItemNotes = (itemId, value) => {
     setCartItems((prev) =>
       prev.map((item) =>
-        item.productId === productId ? { ...item, notes: value } : item
+        item.id === itemId ? { ...item, notes: value } : item
       )
     );
   };
@@ -166,6 +325,13 @@ const PublicOrder = () => {
     isChangeValid &&
     (!isDelivery ||
       (deliveryAreaId && address.line.trim()));
+  const currentGroup = optionGroups[optionStep];
+  const currentGroupValidation = currentGroup
+    ? getGroupValidation(currentGroup)
+    : null;
+  const optionTotalCents = calculateOptionTotalCents();
+  const optionFinalPriceCents =
+    (optionProduct?.priceCents ?? 0) + optionTotalCents;
 
   const scrollToCart = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -190,6 +356,10 @@ const PublicOrder = () => {
           productId: item.productId,
           quantity: item.quantity,
           notes: item.notes.trim() || undefined,
+          options:
+            item.optionSelections && item.optionSelections.length > 0
+              ? item.optionSelections
+              : undefined,
         })),
       };
       if (isDelivery) {
@@ -329,7 +499,9 @@ const PublicOrder = () => {
                         className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
                         onClick={() => handleAddProduct(product)}
                       >
-                        Adicionar
+                        {product.optionGroups && product.optionGroups.length > 0
+                          ? "Personalizar"
+                          : "Adicionar"}
                       </button>
                     </div>
                   </div>
@@ -357,7 +529,7 @@ const PublicOrder = () => {
           ) : (
             <div className="space-y-4">
               {cartItems.map((item) => (
-                <div key={item.productId} className="space-y-2">
+                <div key={item.id} className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-semibold text-slate-900">
@@ -366,12 +538,34 @@ const PublicOrder = () => {
                       <p className="text-sm text-slate-500">
                         {formatCurrency(item.priceCents / 100)}
                       </p>
+                      {item.options && item.options.length > 0 ? (
+                        <div className="mt-2 space-y-1 text-xs text-slate-500">
+                          {item.options.map((group) => (
+                            <p key={group.groupId}>
+                              <span className="font-semibold">
+                                {group.groupName}:
+                              </span>{" "}
+                              {group.items
+                                .map((option) => {
+                                  const priceLabel =
+                                    option.priceDeltaCents > 0
+                                      ? ` (+${formatCurrency(
+                                          option.priceDeltaCents / 100
+                                        )})`
+                                      : "";
+                                  return `${option.name}${priceLabel}`;
+                                })
+                                .join(", ")}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         className="h-8 w-8 rounded-full border border-slate-200 text-slate-600"
                         onClick={() =>
-                          handleQuantityChange(item.productId, -1)
+                          handleQuantityChange(item.id, -1)
                         }
                       >
                         -
@@ -382,7 +576,7 @@ const PublicOrder = () => {
                       <button
                         className="h-8 w-8 rounded-full border border-slate-200 text-slate-600"
                         onClick={() =>
-                          handleQuantityChange(item.productId, 1)
+                          handleQuantityChange(item.id, 1)
                         }
                       >
                         +
@@ -395,12 +589,12 @@ const PublicOrder = () => {
                     placeholder="Observações do item (opcional)"
                     value={item.notes}
                     onChange={(event) =>
-                      handleItemNotes(item.productId, event.target.value)
+                      handleItemNotes(item.id, event.target.value)
                     }
                   />
                   <button
                     className="text-xs font-semibold text-rose-500"
-                    onClick={() => handleRemoveItem(item.productId)}
+                    onClick={() => handleRemoveItem(item.id)}
                   >
                     Remover item
                   </button>
@@ -637,6 +831,141 @@ const PublicOrder = () => {
           </button>
         </aside>
       </div>
+
+      <Modal
+        open={optionModalOpen}
+        title={optionProduct ? `Personalizar ${optionProduct.name}` : "Personalizar"}
+        onClose={resetOptionModal}
+        footer={
+          optionGroups.length > 0 ? (
+            <>
+              <button
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+                onClick={() => setOptionStep((prev) => Math.max(prev - 1, 0))}
+                disabled={optionStep === 0}
+                type="button"
+              >
+                Voltar
+              </button>
+              {optionStep < optionGroups.length - 1 ? (
+                <button
+                  className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
+                  onClick={() => {
+                    if (!currentGroupValidation?.isValid) {
+                      setOptionError(
+                        "Selecione as opções obrigatórias para continuar."
+                      );
+                      return;
+                    }
+                    setOptionStep((prev) =>
+                      Math.min(prev + 1, optionGroups.length - 1)
+                    );
+                  }}
+                  type="button"
+                  disabled={!currentGroupValidation?.isValid}
+                >
+                  Próximo
+                </button>
+              ) : (
+                <button
+                  className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                  onClick={handleConfirmOptions}
+                  type="button"
+                >
+                  Adicionar ao carrinho
+                </button>
+              )}
+            </>
+          ) : null
+        }
+      >
+        {currentGroup ? (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">
+                Passo {optionStep + 1} de {optionGroups.length}
+              </p>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {currentGroup.name}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {currentGroup.type === "SINGLE"
+                  ? "Escolha uma opção"
+                  : "Escolha múltiplas opções"}
+                {currentGroup.required
+                  ? " • Obrigatório"
+                  : currentGroup.minSelect > 0
+                    ? ` • Mínimo ${currentGroup.minSelect}`
+                    : ""}
+                {currentGroup.maxSelect > 0
+                  ? ` • Máximo ${currentGroup.maxSelect}`
+                  : ""}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {currentGroup.items.map((item) => {
+                const selectedIds = getSelectedIds(currentGroup.id);
+                const isSelected = selectedIds.includes(item.id);
+                const isMulti = currentGroup.type === "MULTI";
+                const maxReached =
+                  isMulti &&
+                  currentGroup.maxSelect > 0 &&
+                  selectedIds.length >= currentGroup.maxSelect &&
+                  !isSelected;
+                return (
+                  <label
+                    key={item.id}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type={isMulti ? "checkbox" : "radio"}
+                        name={`group-${currentGroup.id}`}
+                        checked={isSelected}
+                        disabled={maxReached}
+                        onChange={() =>
+                          handleOptionSelection(currentGroup, item.id)
+                        }
+                      />
+                      <span className="text-slate-700">{item.name}</span>
+                    </div>
+                    {item.priceDeltaCents > 0 ? (
+                      <span className="text-xs font-semibold text-slate-700">
+                        +{formatCurrency(item.priceDeltaCents / 100)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">Incluso</span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+
+            {!currentGroupValidation?.isValid ? (
+              <p className="text-xs text-rose-600">
+                Selecione pelo menos {currentGroupValidation?.minRequired} opção(ões)
+                para continuar.
+              </p>
+            ) : null}
+
+            {optionError ? (
+              <p className="text-xs text-rose-600">{optionError}</p>
+            ) : null}
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <p className="text-slate-600">Total do item:</p>
+              <p className="font-semibold text-slate-900">
+                {formatCurrency(optionFinalPriceCents / 100)}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Nenhuma opção configurada para este produto.
+          </p>
+        )}
+      </Modal>
 
       {totalItems > 0 ? (
         <button
