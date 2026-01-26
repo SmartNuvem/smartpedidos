@@ -64,41 +64,41 @@ model Category {
 }
 
 model Product {
-  id         String     @id @default(uuid())
+  id         String      @id @default(uuid())
   name       String
-  price      Decimal    @db.Decimal(10, 2)
-  active     Boolean    @default(true)
+  price      Decimal     @db.Decimal(10, 2)
+  active     Boolean     @default(true)
   categoryId String
-  category   Category   @relation(fields: [categoryId], references: [id])
+  category   Category    @relation(fields: [categoryId], references: [id])
   orderItems OrderItem[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 }
 
 model Order {
-  id                   String           @id @default(uuid())
-  storeId              String
-  store                Store            @relation(fields: [storeId], references: [id])
-  status               OrderStatus      @default(NEW)
-  fulfillmentType      FulfillmentType
-  customerName         String
-  customerPhone        String
-  notes                String?
-  addressLine          String?
-  addressNumber        String?
-  addressNeighborhood  String?
-  addressCity          String?
-  addressReference     String?
-  deliveryAreaId       String?
-  deliveryArea         DeliveryArea?    @relation(fields: [deliveryAreaId], references: [id])
-  deliveryFeeCents     Int              @default(0)
-  paymentMethod        PaymentMethod    @default(CASH)
-  changeForCents       Int?
-  paidStatus           PaidStatus       @default(UNPAID)
-  total                Decimal          @db.Decimal(10, 2)
-  items                OrderItem[]
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  id                  String          @id @default(uuid())
+  storeId             String
+  store               Store           @relation(fields: [storeId], references: [id])
+  status              OrderStatus     @default(NEW)
+  fulfillmentType     FulfillmentType
+  customerName        String
+  customerPhone       String
+  notes               String?
+  addressLine         String?
+  addressNumber       String?
+  addressNeighborhood String?
+  addressCity         String?
+  addressReference    String?
+  deliveryAreaId      String?
+  deliveryArea        DeliveryArea?   @relation(fields: [deliveryAreaId], references: [id])
+  deliveryFeeCents    Int             @default(0)
+  paymentMethod       PaymentMethod   @default(CASH)
+  changeForCents      Int?
+  paidStatus          PaidStatus      @default(UNPAID)
+  total               Decimal         @db.Decimal(10, 2)
+  items               OrderItem[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 }
 
 model OrderItem {
@@ -135,48 +135,49 @@ model Admin {
 }
 
 model DeliveryArea {
-  id         String   @id @default(uuid())
-  storeId    String
-  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  name       String
-  feeCents   Int
-  isActive   Boolean  @default(true)
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(uuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name      String
+  feeCents  Int
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
 
   @@index([storeId])
 }
 
 model StoreHours {
-  id                 String            @id @default(uuid())
-  storeId            String            @unique
-  store              Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  timezone           String            @default("America/Sao_Paulo")
-  monOpen            String?
-  monClose           String?
-  monEnabled         Boolean           @default(false)
-  tueOpen            String?
-  tueClose           String?
-  tueEnabled         Boolean           @default(false)
-  wedOpen            String?
-  wedClose           String?
-  wedEnabled         Boolean           @default(false)
-  thuOpen            String?
-  thuClose           String?
-  thuEnabled         Boolean           @default(false)
-  friOpen            String?
-  friClose           String?
-  friEnabled         Boolean           @default(false)
-  satOpen            String?
-  satClose           String?
-  satEnabled         Boolean           @default(false)
-  sunOpen            String?
-  sunClose           String?
-  sunEnabled         Boolean           @default(false)
-  isOpenNowOverride  StoreOpenOverride @default(AUTO)
-  closedMessage      String?
-  updatedAt          DateTime          @updatedAt
+  id                String            @id @default(uuid())
+  storeId           String            @unique
+  store             Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  timezone          String            @default("America/Sao_Paulo")
+  monOpen           String?
+  monClose          String?
+  monEnabled        Boolean           @default(false)
+  tueOpen           String?
+  tueClose          String?
+  tueEnabled        Boolean           @default(false)
+  wedOpen           String?
+  wedClose          String?
+  wedEnabled        Boolean           @default(false)
+  thuOpen           String?
+  thuClose          String?
+  thuEnabled        Boolean           @default(false)
+  friOpen           String?
+  friClose          String?
+  friEnabled        Boolean           @default(false)
+  satOpen           String?
+  satClose          String?
+  satEnabled        Boolean           @default(false)
+  sunOpen           String?
+  sunClose          String?
+  sunEnabled        Boolean           @default(false)
+  isOpenNowOverride StoreOpenOverride @default(AUTO)
+  closedMessage     String?
+  updatedAt         DateTime          @updatedAt
 }
 
 model StorePaymentSettings {
