@@ -2,6 +2,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
+import { OpenOverride, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./prisma";
 import {
@@ -25,7 +26,34 @@ const app = Fastify({
   logger: true,
 });
 
-const defaultHours = {
+type StoreHoursData = {
+  timezone: string;
+  monOpen: string | null;
+  monClose: string | null;
+  monEnabled: boolean;
+  tueOpen: string | null;
+  tueClose: string | null;
+  tueEnabled: boolean;
+  wedOpen: string | null;
+  wedClose: string | null;
+  wedEnabled: boolean;
+  thuOpen: string | null;
+  thuClose: string | null;
+  thuEnabled: boolean;
+  friOpen: string | null;
+  friClose: string | null;
+  friEnabled: boolean;
+  satOpen: string | null;
+  satClose: string | null;
+  satEnabled: boolean;
+  sunOpen: string | null;
+  sunClose: string | null;
+  sunEnabled: boolean;
+  isOpenNowOverride: OpenOverride;
+  closedMessage: string | null;
+};
+
+const defaultHours: StoreHoursData = {
   timezone: "America/Sao_Paulo",
   monOpen: null,
   monClose: null,
@@ -48,7 +76,7 @@ const defaultHours = {
   sunOpen: null,
   sunClose: null,
   sunEnabled: false,
-  isOpenNowOverride: "AUTO" as const,
+  isOpenNowOverride: OpenOverride.AUTO,
   closedMessage: null,
 };
 
@@ -82,11 +110,11 @@ const getLocalTimeParts = (timezone: string) => {
   };
 };
 
-const calculateIsOpenNow = (hours: typeof defaultHours) => {
-  if (hours.isOpenNowOverride === "FORCE_OPEN") {
+const calculateIsOpenNow = (hours: StoreHoursData) => {
+  if (hours.isOpenNowOverride === OpenOverride.FORCE_OPEN) {
     return true;
   }
-  if (hours.isOpenNowOverride === "FORCE_CLOSED") {
+  if (hours.isOpenNowOverride === OpenOverride.FORCE_CLOSED) {
     return false;
   }
 
@@ -1043,28 +1071,29 @@ const registerRoutes = () => {
       return reply.status(401).send({ message: "Unauthorized" });
     }
 
+    const hhmm = z.string().regex(/^\d{2}:\d{2}$/);
     const bodySchema = z.object({
       timezone: z.string().min(1).optional(),
-      monOpen: z.string().nullable().optional(),
-      monClose: z.string().nullable().optional(),
+      monOpen: hhmm.nullable().optional(),
+      monClose: hhmm.nullable().optional(),
       monEnabled: z.boolean().optional(),
-      tueOpen: z.string().nullable().optional(),
-      tueClose: z.string().nullable().optional(),
+      tueOpen: hhmm.nullable().optional(),
+      tueClose: hhmm.nullable().optional(),
       tueEnabled: z.boolean().optional(),
-      wedOpen: z.string().nullable().optional(),
-      wedClose: z.string().nullable().optional(),
+      wedOpen: hhmm.nullable().optional(),
+      wedClose: hhmm.nullable().optional(),
       wedEnabled: z.boolean().optional(),
-      thuOpen: z.string().nullable().optional(),
-      thuClose: z.string().nullable().optional(),
+      thuOpen: hhmm.nullable().optional(),
+      thuClose: hhmm.nullable().optional(),
       thuEnabled: z.boolean().optional(),
-      friOpen: z.string().nullable().optional(),
-      friClose: z.string().nullable().optional(),
+      friOpen: hhmm.nullable().optional(),
+      friClose: hhmm.nullable().optional(),
       friEnabled: z.boolean().optional(),
-      satOpen: z.string().nullable().optional(),
-      satClose: z.string().nullable().optional(),
+      satOpen: hhmm.nullable().optional(),
+      satClose: hhmm.nullable().optional(),
       satEnabled: z.boolean().optional(),
-      sunOpen: z.string().nullable().optional(),
-      sunClose: z.string().nullable().optional(),
+      sunOpen: hhmm.nullable().optional(),
+      sunClose: hhmm.nullable().optional(),
       sunEnabled: z.boolean().optional(),
       isOpenNowOverride: z
         .enum(["AUTO", "FORCE_OPEN", "FORCE_CLOSED"])
@@ -1074,61 +1103,65 @@ const registerRoutes = () => {
 
     const payload = bodySchema.parse(request.body);
 
+    const createData: Prisma.StoreHoursUncheckedCreateInput = {
+      storeId,
+      timezone: payload.timezone ?? defaultHours.timezone,
+      monOpen: payload.monOpen ?? null,
+      monClose: payload.monClose ?? null,
+      monEnabled: payload.monEnabled ?? false,
+      tueOpen: payload.tueOpen ?? null,
+      tueClose: payload.tueClose ?? null,
+      tueEnabled: payload.tueEnabled ?? false,
+      wedOpen: payload.wedOpen ?? null,
+      wedClose: payload.wedClose ?? null,
+      wedEnabled: payload.wedEnabled ?? false,
+      thuOpen: payload.thuOpen ?? null,
+      thuClose: payload.thuClose ?? null,
+      thuEnabled: payload.thuEnabled ?? false,
+      friOpen: payload.friOpen ?? null,
+      friClose: payload.friClose ?? null,
+      friEnabled: payload.friEnabled ?? false,
+      satOpen: payload.satOpen ?? null,
+      satClose: payload.satClose ?? null,
+      satEnabled: payload.satEnabled ?? false,
+      sunOpen: payload.sunOpen ?? null,
+      sunClose: payload.sunClose ?? null,
+      sunEnabled: payload.sunEnabled ?? false,
+      isOpenNowOverride: payload.isOpenNowOverride ?? OpenOverride.AUTO,
+      closedMessage: payload.closedMessage ?? null,
+    };
+
+    const updateData: Prisma.StoreHoursUncheckedUpdateInput = {
+      timezone: payload.timezone ?? undefined,
+      monOpen: payload.monOpen ?? null,
+      monClose: payload.monClose ?? null,
+      monEnabled: payload.monEnabled ?? undefined,
+      tueOpen: payload.tueOpen ?? null,
+      tueClose: payload.tueClose ?? null,
+      tueEnabled: payload.tueEnabled ?? undefined,
+      wedOpen: payload.wedOpen ?? null,
+      wedClose: payload.wedClose ?? null,
+      wedEnabled: payload.wedEnabled ?? undefined,
+      thuOpen: payload.thuOpen ?? null,
+      thuClose: payload.thuClose ?? null,
+      thuEnabled: payload.thuEnabled ?? undefined,
+      friOpen: payload.friOpen ?? null,
+      friClose: payload.friClose ?? null,
+      friEnabled: payload.friEnabled ?? undefined,
+      satOpen: payload.satOpen ?? null,
+      satClose: payload.satClose ?? null,
+      satEnabled: payload.satEnabled ?? undefined,
+      sunOpen: payload.sunOpen ?? null,
+      sunClose: payload.sunClose ?? null,
+      sunEnabled: payload.sunEnabled ?? undefined,
+      isOpenNowOverride: payload.isOpenNowOverride ?? undefined,
+      closedMessage: payload.closedMessage ?? null,
+    };
+
     const hours = await prisma.storeHours.upsert({
       where: { storeId },
-      create: {
-        storeId,
-        timezone: payload.timezone ?? defaultHours.timezone,
-        monOpen: payload.monOpen ?? null,
-        monClose: payload.monClose ?? null,
-        monEnabled: payload.monEnabled ?? false,
-        tueOpen: payload.tueOpen ?? null,
-        tueClose: payload.tueClose ?? null,
-        tueEnabled: payload.tueEnabled ?? false,
-        wedOpen: payload.wedOpen ?? null,
-        wedClose: payload.wedClose ?? null,
-        wedEnabled: payload.wedEnabled ?? false,
-        thuOpen: payload.thuOpen ?? null,
-        thuClose: payload.thuClose ?? null,
-        thuEnabled: payload.thuEnabled ?? false,
-        friOpen: payload.friOpen ?? null,
-        friClose: payload.friClose ?? null,
-        friEnabled: payload.friEnabled ?? false,
-        satOpen: payload.satOpen ?? null,
-        satClose: payload.satClose ?? null,
-        satEnabled: payload.satEnabled ?? false,
-        sunOpen: payload.sunOpen ?? null,
-        sunClose: payload.sunClose ?? null,
-        sunEnabled: payload.sunEnabled ?? false,
-        isOpenNowOverride: payload.isOpenNowOverride ?? "AUTO",
-        closedMessage: payload.closedMessage ?? null,
-      },
-      update: {
-        timezone: payload.timezone ?? undefined,
-        monOpen: payload.monOpen ?? null,
-        monClose: payload.monClose ?? null,
-        monEnabled: payload.monEnabled ?? undefined,
-        tueOpen: payload.tueOpen ?? null,
-        tueClose: payload.tueClose ?? null,
-        tueEnabled: payload.tueEnabled ?? undefined,
-        wedOpen: payload.wedOpen ?? null,
-        wedClose: payload.wedClose ?? null,
-        wedEnabled: payload.wedEnabled ?? undefined,
-        thuOpen: payload.thuOpen ?? null,
-        thuClose: payload.thuClose ?? null,
-        thuEnabled: payload.thuEnabled ?? undefined,
-        friOpen: payload.friOpen ?? null,
-        friClose: payload.friClose ?? null,
-        friEnabled: payload.friEnabled ?? undefined,
-        satOpen: payload.satOpen ?? null,
-        satClose: payload.satClose ?? null,
-        satEnabled: payload.satEnabled ?? undefined,
-        sunOpen: payload.sunOpen ?? null,
-        sunClose: payload.sunClose ?? null,
-        sunEnabled: payload.sunEnabled ?? undefined,
-        isOpenNowOverride: payload.isOpenNowOverride ?? undefined,
-        closedMessage: payload.closedMessage ?? null,
-      },
+      create: createData,
+      update: updateData,
     });
 
     return reply.send({

@@ -29,7 +29,7 @@ enum PaidStatus {
   PAID
 }
 
-enum StoreOpenOverride {
+enum OpenOverride {
   AUTO
   FORCE_OPEN
   FORCE_CLOSED
@@ -150,34 +150,34 @@ model DeliveryArea {
 }
 
 model StoreHours {
-  id                String            @id @default(uuid())
-  storeId           String            @unique
-  store             Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  timezone          String            @default("America/Sao_Paulo")
+  id                String       @id @default(uuid())
+  storeId           String       @unique
+  store             Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  timezone          String       @default("America/Sao_Paulo")
   monOpen           String?
   monClose          String?
-  monEnabled        Boolean           @default(false)
+  monEnabled        Boolean      @default(false)
   tueOpen           String?
   tueClose          String?
-  tueEnabled        Boolean           @default(false)
+  tueEnabled        Boolean      @default(false)
   wedOpen           String?
   wedClose          String?
-  wedEnabled        Boolean           @default(false)
+  wedEnabled        Boolean      @default(false)
   thuOpen           String?
   thuClose          String?
-  thuEnabled        Boolean           @default(false)
+  thuEnabled        Boolean      @default(false)
   friOpen           String?
   friClose          String?
-  friEnabled        Boolean           @default(false)
+  friEnabled        Boolean      @default(false)
   satOpen           String?
   satClose          String?
-  satEnabled        Boolean           @default(false)
+  satEnabled        Boolean      @default(false)
   sunOpen           String?
   sunClose          String?
-  sunEnabled        Boolean           @default(false)
-  isOpenNowOverride StoreOpenOverride @default(AUTO)
+  sunEnabled        Boolean      @default(false)
+  isOpenNowOverride OpenOverride @default(AUTO)
   closedMessage     String?
-  updatedAt         DateTime          @updatedAt
+  updatedAt         DateTime     @updatedAt
 }
 
 model StorePaymentSettings {
