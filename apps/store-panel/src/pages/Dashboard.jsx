@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, formatCurrency, formatDateTime } from "../api";
 import useOrdersStream from "../hooks/useOrdersStream";
 
@@ -20,9 +20,6 @@ const Dashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [streamStatus, setStreamStatus] = useState("connecting");
-  const [pollingEnabled, setPollingEnabled] = useState(false);
-  const intervalRef = useRef(null);
 
   const loadOrders = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -77,60 +74,7 @@ const Dashboard = () => {
   useOrdersStream({
     onOrderCreated: () => loadOrders({ silent: true }),
     onOrderUpdated: () => loadOrders({ silent: true }),
-    onConnectionChange: setStreamStatus,
   });
-
-  useEffect(() => {
-    if (streamStatus === "open") {
-      setPollingEnabled(false);
-      return;
-    }
-
-    if (streamStatus === "error" || streamStatus === "unsupported") {
-      setPollingEnabled(true);
-    }
-  }, [streamStatus]);
-
-  useEffect(() => {
-    const poll = () => {
-      if (document.hidden) {
-        return;
-      }
-      loadOrders({ silent: true });
-    };
-
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        loadOrders({ silent: true });
-      }
-    };
-
-    const startPolling = () => {
-      if (!intervalRef.current) {
-        intervalRef.current = window.setInterval(poll, 5000);
-      }
-    };
-
-    const stopPolling = () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    if (!pollingEnabled) {
-      stopPolling();
-    } else {
-      startPolling();
-    }
-
-    return () => {
-      stopPolling();
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [loadOrders, pollingEnabled]);
 
   const summary = useMemo(() => {
     const today = new Date();
