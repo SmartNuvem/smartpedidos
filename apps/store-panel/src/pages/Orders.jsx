@@ -31,9 +31,6 @@ const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newOrderIds, setNewOrderIds] = useState([]);
-  const [streamStatus, setStreamStatus] = useState("connecting");
-  const [pollingEnabled, setPollingEnabled] = useState(false);
-  const intervalRef = useRef(null);
   const knownOrderIdsRef = useRef(new Set());
   const statusRef = useRef(status);
   const audioRef = useRef(null);
@@ -122,60 +119,7 @@ const Orders = () => {
   useOrdersStream({
     onOrderCreated: (event) => handleOrderEvent(event, { isCreated: true }),
     onOrderUpdated: (event) => handleOrderEvent(event, { isCreated: false }),
-    onConnectionChange: setStreamStatus,
   });
-
-  useEffect(() => {
-    if (streamStatus === "open") {
-      setPollingEnabled(false);
-      return;
-    }
-
-    if (streamStatus === "error" || streamStatus === "unsupported") {
-      setPollingEnabled(true);
-    }
-  }, [streamStatus]);
-
-  useEffect(() => {
-    const poll = () => {
-      if (document.hidden) {
-        return;
-      }
-      loadOrders(statusRef.current, { silent: true });
-    };
-
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        loadOrders(statusRef.current, { silent: true });
-      }
-    };
-
-    const startPolling = () => {
-      if (!intervalRef.current) {
-        intervalRef.current = window.setInterval(poll, 5000);
-      }
-    };
-
-    const stopPolling = () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    if (!pollingEnabled) {
-      stopPolling();
-    } else {
-      startPolling();
-    }
-
-    return () => {
-      stopPolling();
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [loadOrders, pollingEnabled]);
 
   return (
     <div className="space-y-6">
