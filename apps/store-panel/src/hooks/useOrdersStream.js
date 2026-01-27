@@ -33,7 +33,8 @@ const useOrdersStream = ({
         sourceRef.current = null;
       }
 
-      const source = new EventSource(buildStreamUrl());
+      onConnectionChange?.("connecting");
+      const source = new EventSource(buildStreamUrl(), { withCredentials: true });
       sourceRef.current = source;
 
       source.addEventListener("order.created", (event) => {

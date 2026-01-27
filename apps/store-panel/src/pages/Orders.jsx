@@ -32,7 +32,9 @@ const Orders = () => {
   const [error, setError] = useState("");
   const [newOrderIds, setNewOrderIds] = useState([]);
   const [streamStatus, setStreamStatus] = useState("connecting");
+  const [pollingEnabled, setPollingEnabled] = useState(false);
   const intervalRef = useRef(null);
+  const fallbackTimeoutRef = useRef(null);
   const knownOrderIdsRef = useRef(new Set());
   const statusRef = useRef(status);
   const audioRef = useRef(null);
@@ -97,15 +99,16 @@ const Orders = () => {
     (event, { isCreated }) => {
       try {
         const payload = JSON.parse(event.data);
-        if (!payload?.id) {
+        const orderId = payload?.orderId ?? payload?.id;
+        if (!orderId) {
           return;
         }
-        if (isCreated && knownOrderIdsRef.current.has(payload.id)) {
+        if (isCreated && knownOrderIdsRef.current.has(orderId)) {
           return;
         }
         if (isCreated) {
           setNewOrderIds((prev) =>
-            prev.includes(payload.id) ? prev : [...prev, payload.id]
+            prev.includes(orderId) ? prev : [...prev, orderId]
           );
           playNotification();
         }
@@ -122,6 +125,35 @@ const Orders = () => {
     onOrderUpdated: (event) => handleOrderEvent(event, { isCreated: false }),
     onConnectionChange: setStreamStatus,
   });
+
+  useEffect(() => {
+    if (streamStatus === "open") {
+      setPollingEnabled(false);
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (fallbackTimeoutRef.current) {
+      return;
+    }
+
+    fallbackTimeoutRef.current = window.setTimeout(() => {
+      fallbackTimeoutRef.current = null;
+      if (streamStatus !== "open") {
+        setPollingEnabled(true);
+      }
+    }, 10000);
+
+    return () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+    };
+  }, [streamStatus]);
 
   useEffect(() => {
     const poll = () => {
@@ -152,7 +184,7 @@ const Orders = () => {
 
     document.addEventListener("visibilitychange", handleVisibility);
 
-    if (streamStatus === "open") {
+    if (!pollingEnabled) {
       stopPolling();
     } else {
       startPolling();
@@ -162,7 +194,7 @@ const Orders = () => {
       stopPolling();
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [loadOrders, streamStatus]);
+  }, [loadOrders, pollingEnabled]);
 
   return (
     <div className="space-y-6">
