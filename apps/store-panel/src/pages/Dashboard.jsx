@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, formatCurrency, formatDateTime } from "../api";
+import useOrdersStream from "../hooks/useOrdersStream";
 
 const statusBadge = (status) => {
   switch (status) {
@@ -19,6 +20,29 @@ const Dashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [streamStatus, setStreamStatus] = useState("connecting");
+  const [pollingEnabled, setPollingEnabled] = useState(false);
+  const intervalRef = useRef(null);
+  const fallbackTimeoutRef = useRef(null);
+
+  const loadOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+    }
+    setError("");
+    try {
+      const ordersData = await api.getOrders();
+      setOrders(ordersData);
+    } catch {
+      if (!silent) {
+        setError("Não foi possível carregar os dados do painel.");
+      }
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -50,6 +74,82 @@ const Dashboard = () => {
       active = false;
     };
   }, []);
+
+  useOrdersStream({
+    onOrderCreated: () => loadOrders({ silent: true }),
+    onOrderUpdated: () => loadOrders({ silent: true }),
+    onConnectionChange: setStreamStatus,
+  });
+
+  useEffect(() => {
+    if (streamStatus === "open") {
+      setPollingEnabled(false);
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (fallbackTimeoutRef.current) {
+      return;
+    }
+
+    fallbackTimeoutRef.current = window.setTimeout(() => {
+      fallbackTimeoutRef.current = null;
+      if (streamStatus !== "open") {
+        setPollingEnabled(true);
+      }
+    }, 10000);
+
+    return () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+    };
+  }, [streamStatus]);
+
+  useEffect(() => {
+    const poll = () => {
+      if (document.hidden) {
+        return;
+      }
+      loadOrders({ silent: true });
+    };
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        loadOrders({ silent: true });
+      }
+    };
+
+    const startPolling = () => {
+      if (!intervalRef.current) {
+        intervalRef.current = window.setInterval(poll, 5000);
+      }
+    };
+
+    const stopPolling = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    if (!pollingEnabled) {
+      stopPolling();
+    } else {
+      startPolling();
+    }
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadOrders, pollingEnabled]);
 
   const summary = useMemo(() => {
     const today = new Date();

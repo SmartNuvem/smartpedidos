@@ -1,7 +1,5 @@
 import { useEffect, useRef } from "react";
-import { API_URL } from "../api";
-
-const buildStreamUrl = () => `${API_URL}/store/orders/stream`;
+const buildStreamUrl = () => "/api/store/orders/stream";
 
 const useOrdersStream = ({
   onOrderCreated,
