@@ -23,7 +23,6 @@ const Dashboard = () => {
   const [streamStatus, setStreamStatus] = useState("connecting");
   const [pollingEnabled, setPollingEnabled] = useState(false);
   const intervalRef = useRef(null);
-  const fallbackTimeoutRef = useRef(null);
 
   const loadOrders = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -84,30 +83,12 @@ const Dashboard = () => {
   useEffect(() => {
     if (streamStatus === "open") {
       setPollingEnabled(false);
-      if (fallbackTimeoutRef.current) {
-        clearTimeout(fallbackTimeoutRef.current);
-        fallbackTimeoutRef.current = null;
-      }
       return;
     }
 
-    if (fallbackTimeoutRef.current) {
-      return;
+    if (streamStatus === "error" || streamStatus === "unsupported") {
+      setPollingEnabled(true);
     }
-
-    fallbackTimeoutRef.current = window.setTimeout(() => {
-      fallbackTimeoutRef.current = null;
-      if (streamStatus !== "open") {
-        setPollingEnabled(true);
-      }
-    }, 10000);
-
-    return () => {
-      if (fallbackTimeoutRef.current) {
-        clearTimeout(fallbackTimeoutRef.current);
-        fallbackTimeoutRef.current = null;
-      }
-    };
   }, [streamStatus]);
 
   useEffect(() => {
