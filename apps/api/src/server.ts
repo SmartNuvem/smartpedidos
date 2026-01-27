@@ -777,6 +777,7 @@ const registerRoutes = () => {
 
     sendOrderStreamEvent(store.id, "order.created", {
       orderId: order.id,
+      storeId: store.id,
     });
 
     return reply.status(201).send({
@@ -1531,21 +1532,23 @@ const registerRoutes = () => {
       return reply.status(401).send({ message: "Unauthorized" });
     }
 
+    reply.hijack();
     reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
     reply.raw.setHeader("Connection", "keep-alive");
     reply.raw.setHeader("Keep-Alive", "timeout=120");
     reply.raw.setHeader("X-Accel-Buffering", "no");
     reply.raw.flushHeaders?.();
-    reply.raw.write("event: connected\ndata: {\"ok\": true}\n\n");
+    reply.raw.write(":ok\n\n");
     reply.raw.setTimeout(0);
 
     const clients = orderStreamClients.get(storeId) ?? new Set();
     clients.add(reply);
     orderStreamClients.set(storeId, clients);
+    const pingIntervalMs = 15000 + Math.floor(Math.random() * 10000);
     const pingInterval = setInterval(() => {
       try {
-        reply.raw.write(`: ping ${new Date().toISOString()}\n\n`);
+        reply.raw.write("event: ping\ndata: {}\n\n");
       } catch {
         const activeClients = orderStreamClients.get(storeId);
         activeClients?.delete(reply);
@@ -1555,7 +1558,7 @@ const registerRoutes = () => {
           orderStreamPingers.delete(reply);
         }
       }
-    }, 25000);
+    }, pingIntervalMs);
     orderStreamPingers.set(reply, pingInterval);
 
     request.raw.on("close", () => {
@@ -2343,6 +2346,7 @@ const registerRoutes = () => {
       totalCents: Math.round(updated.total.toNumber() * 100),
       customerName: updated.customerName,
       deliveryType: updated.fulfillmentType,
+      storeId,
     });
 
     return {
@@ -2428,6 +2432,7 @@ const registerRoutes = () => {
       totalCents: Math.round(updated.total.toNumber() * 100),
       customerName: updated.customerName,
       deliveryType: updated.fulfillmentType,
+      storeId: agent.storeId,
     });
 
     return {

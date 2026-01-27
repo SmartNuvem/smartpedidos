@@ -1,0 +1,32 @@
+# Example Traefik dynamic config for SSE streaming on /api/store/orders/stream
+http:
+  routers:
+    store-orders-sse:
+      rule: "Host(`smartpedidos.smartnuvem.com.br`) && Path(`/api/store/orders/stream`)"
+      entryPoints:
+        - websecure
+      service: api-service
+      tls:
+        options: sse-http1
+      middlewares:
+        - sse-no-compress
+
+  services:
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://api:3000"
+        responseForwarding:
+          flushInterval: 100ms
+
+  middlewares:
+    sse-no-compress:
+      compress:
+        excludedContentTypes:
+          - text/event-stream
+
+tls:
+  options:
+    sse-http1:
+      alpnProtocols:
+        - http/1.1
