@@ -39,7 +39,9 @@ const PublicOrder = () => {
       setLoading(true);
       setError("");
       try {
-        const response = await fetch(`${API_URL}/public/${slug}/menu`);
+        const response = await fetch(`${API_URL}/public/${slug}/menu`, {
+          credentials: "include",
+        });
         if (!response.ok) {
           throw new Error("Menu não encontrado.");
         }
@@ -373,6 +375,7 @@ const PublicOrder = () => {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
