@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, formatCurrency, formatDateTime } from "../api";
 import useOrdersStream from "../hooks/useOrdersStream";
 
@@ -20,25 +20,41 @@ const Dashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const knownOrderIdsRef = useRef(new Set());
 
-  const loadOrders = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
-      setLoading(true);
+  const normalizeOrderPatch = useCallback((payload) => {
+    if (!payload?.id) {
+      return null;
     }
-    setError("");
-    try {
-      const ordersData = await api.getOrders();
-      setOrders(ordersData);
-    } catch {
-      if (!silent) {
-        setError("Não foi possível carregar os dados do painel.");
-      }
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
+    return {
+      id: payload.id,
+      shortId: payload.id.slice(0, 6),
+      customerName: payload.customerName,
+      status: payload.status,
+      fulfillmentType: payload.deliveryType ?? payload.fulfillmentType,
+      total:
+        typeof payload.total === "number"
+          ? payload.total
+          : typeof payload.totalCents === "number"
+          ? payload.totalCents / 100
+          : undefined,
+      createdAt: payload.createdAt,
+    };
   }, []);
+
+  const mergeOrder = useCallback((existing, patch) => {
+    if (!patch) {
+      return existing;
+    }
+    const entries = Object.entries(patch).filter(
+      ([, value]) => value !== undefined
+    );
+    return { ...existing, ...Object.fromEntries(entries) };
+  }, []);
+
+  useEffect(() => {
+    knownOrderIdsRef.current = new Set(orders.map((order) => order.id));
+  }, [orders]);
 
   useEffect(() => {
     let active = true;
@@ -71,9 +87,61 @@ const Dashboard = () => {
     };
   }, []);
 
+  const handleOrderCreated = useCallback(async (payload) => {
+    const orderId = payload?.orderId ?? payload?.id;
+    if (!orderId || knownOrderIdsRef.current.has(orderId)) {
+      return;
+    }
+    try {
+      const order = await api.getOrder(orderId);
+      setOrders((prev) => {
+        if (prev.some((item) => item.id === order.id)) {
+          return prev;
+        }
+        return [order, ...prev];
+      });
+    } catch {
+      // ignore errors fetching new orders
+    }
+  }, []);
+
+  const handleOrderUpdated = useCallback(
+    async (payload) => {
+      const patch = normalizeOrderPatch(payload);
+      if (!patch?.id) {
+        return;
+      }
+      const shouldFetch = !knownOrderIdsRef.current.has(patch.id);
+      if (shouldFetch) {
+        try {
+          const order = await api.getOrder(patch.id);
+          setOrders((prev) => {
+            if (prev.some((item) => item.id === order.id)) {
+              return prev;
+            }
+            return [order, ...prev];
+          });
+        } catch {
+          // ignore errors fetching updated orders
+        }
+        return;
+      }
+      setOrders((prev) => {
+        const index = prev.findIndex((item) => item.id === patch.id);
+        if (index === -1) {
+          return prev;
+        }
+        const updated = [...prev];
+        updated[index] = mergeOrder(updated[index], patch);
+        return updated;
+      });
+    },
+    [mergeOrder, normalizeOrderPatch]
+  );
+
   useOrdersStream({
-    onOrderCreated: () => loadOrders({ silent: true }),
-    onOrderUpdated: () => loadOrders({ silent: true }),
+    onOrderCreated: handleOrderCreated,
+    onOrderUpdated: handleOrderUpdated,
   });
 
   const summary = useMemo(() => {
