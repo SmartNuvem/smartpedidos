@@ -1552,6 +1552,7 @@ const registerRoutes = () => {
     reply.raw.setHeader("Keep-Alive", "timeout=120");
     reply.raw.setHeader("X-Accel-Buffering", "no");
     reply.raw.flushHeaders?.();
+    reply.raw.write("retry: 10000\n");
     reply.raw.write(":ok\n\n");
     reply.raw.setTimeout(0);
 

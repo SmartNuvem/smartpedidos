@@ -6,7 +6,6 @@ const useOrdersStream = ({
   onOrderUpdated,
   onConnectionChange,
 } = {}) => {
-  const attemptRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
   const sourceRef = useRef(null);
 
@@ -17,12 +16,9 @@ const useOrdersStream = ({
     }
 
     let isActive = true;
+    const reconnectDelayMs = 10000;
     const connect = () => {
       if (!isActive) {
-        return;
-      }
-
-      if (reconnectTimeoutRef.current) {
         return;
       }
 
@@ -44,7 +40,6 @@ const useOrdersStream = ({
       });
 
       source.onopen = () => {
-        attemptRef.current = 0;
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
@@ -61,13 +56,10 @@ const useOrdersStream = ({
         if (reconnectTimeoutRef.current) {
           return;
         }
-        attemptRef.current += 1;
-        const baseDelay = Math.min(30000, 2000 * attemptRef.current);
-        const delay = baseDelay + Math.floor(Math.random() * 1000);
         reconnectTimeoutRef.current = window.setTimeout(() => {
           reconnectTimeoutRef.current = null;
           connect();
-        }, delay);
+        }, reconnectDelayMs);
       };
     };
 
