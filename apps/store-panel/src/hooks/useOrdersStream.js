@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 const buildStreamUrl = () => "/api/store/orders/stream";
 
 const useOrdersStream = ({
@@ -6,78 +6,87 @@ const useOrdersStream = ({
   onOrderUpdated,
   onConnectionChange,
 } = {}) => {
-  const reconnectTimeoutRef = useRef(null);
+  const [streamStatus, setStreamStatus] = useState("connecting");
+  const callbacksRef = useRef({
+    onOrderCreated,
+    onOrderUpdated,
+    onConnectionChange,
+  });
   const sourceRef = useRef(null);
 
   useEffect(() => {
+    callbacksRef.current = {
+      onOrderCreated,
+      onOrderUpdated,
+      onConnectionChange,
+    };
+  }, [onOrderCreated, onOrderUpdated, onConnectionChange]);
+
+  useEffect(() => {
     if (!window.EventSource) {
-      onConnectionChange?.("unsupported");
+      setStreamStatus("error");
+      callbacksRef.current.onConnectionChange?.("unsupported");
       return undefined;
     }
 
-    let isActive = true;
-    const reconnectDelayMs = 10000;
-    const connect = () => {
-      if (!isActive) {
+    setStreamStatus("connecting");
+    callbacksRef.current.onConnectionChange?.("connecting");
+    const source = new EventSource(buildStreamUrl());
+    sourceRef.current = source;
+
+    const dispatchPayload = (payload, typeOverride) => {
+      if (!payload) {
         return;
       }
-
-      if (sourceRef.current) {
-        sourceRef.current.close();
-        sourceRef.current = null;
+      const resolvedType = typeOverride || payload.type;
+      if (resolvedType === "order.created") {
+        callbacksRef.current.onOrderCreated?.(payload);
       }
-
-      onConnectionChange?.("connecting");
-      const source = new EventSource(buildStreamUrl(), { withCredentials: true });
-      sourceRef.current = source;
-
-      source.addEventListener("order.created", (event) => {
-        onOrderCreated?.(event);
-      });
-
-      source.addEventListener("order.updated", (event) => {
-        onOrderUpdated?.(event);
-      });
-
-      source.onopen = () => {
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = null;
-        }
-        onConnectionChange?.("open");
-      };
-
-      source.onerror = () => {
-        source.close();
-        onConnectionChange?.("error");
-        if (!isActive) {
-          return;
-        }
-        if (reconnectTimeoutRef.current) {
-          return;
-        }
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          reconnectTimeoutRef.current = null;
-          connect();
-        }, reconnectDelayMs);
-      };
+      if (resolvedType === "order.updated") {
+        callbacksRef.current.onOrderUpdated?.(payload);
+      }
     };
 
-    connect();
+    const handleEvent = (event, typeOverride) => {
+      try {
+        const payload = event?.data ? JSON.parse(event.data) : event;
+        dispatchPayload(payload, typeOverride);
+      } catch {
+        // ignore malformed events
+      }
+    };
+
+    source.addEventListener("order.created", (event) =>
+      handleEvent(event, "order.created")
+    );
+
+    source.addEventListener("order.updated", (event) =>
+      handleEvent(event, "order.updated")
+    );
+
+    source.onmessage = (event) => handleEvent(event, undefined);
+
+    source.onopen = () => {
+      setStreamStatus("open");
+      callbacksRef.current.onConnectionChange?.("open");
+    };
+
+    source.onerror = () => {
+      setStreamStatus("error");
+      callbacksRef.current.onConnectionChange?.("error");
+    };
 
     return () => {
-      isActive = false;
-      onConnectionChange?.("closed");
+      setStreamStatus("closed");
+      callbacksRef.current.onConnectionChange?.("closed");
       if (sourceRef.current) {
         sourceRef.current.close();
         sourceRef.current = null;
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
     };
-  }, [onConnectionChange, onOrderCreated, onOrderUpdated]);
+  }, []);
+
+  return { streamStatus };
 };
 
 export default useOrdersStream;

@@ -35,6 +35,36 @@ const Orders = () => {
   const statusRef = useRef(status);
   const audioRef = useRef(null);
 
+  const normalizeOrderPatch = useCallback((payload) => {
+    if (!payload?.id) {
+      return null;
+    }
+    return {
+      id: payload.id,
+      shortId: payload.id.slice(0, 6),
+      customerName: payload.customerName,
+      status: payload.status,
+      fulfillmentType: payload.deliveryType ?? payload.fulfillmentType,
+      total:
+        typeof payload.total === "number"
+          ? payload.total
+          : typeof payload.totalCents === "number"
+          ? payload.totalCents / 100
+          : undefined,
+      createdAt: payload.createdAt,
+    };
+  }, []);
+
+  const mergeOrder = useCallback((existing, patch) => {
+    if (!patch) {
+      return existing;
+    }
+    const entries = Object.entries(patch).filter(
+      ([, value]) => value !== undefined
+    );
+    return { ...existing, ...Object.fromEntries(entries) };
+  }, []);
+
   const loadOrders = useCallback(
     async (selectedStatus, { silent = false } = {}) => {
       if (!silent) {
@@ -60,6 +90,10 @@ const Orders = () => {
     statusRef.current = status;
     loadOrders(status);
   }, [loadOrders, status]);
+
+  useEffect(() => {
+    knownOrderIdsRef.current = new Set(orders.map((order) => order.id));
+  }, [orders]);
 
   const playNotification = useCallback(() => {
     try {
@@ -91,34 +125,80 @@ const Orders = () => {
     }
   }, []);
 
-  const handleOrderEvent = useCallback(
-    (event, { isCreated }) => {
+  const matchesStatusFilter = useCallback((orderStatus) => {
+    return !statusRef.current || orderStatus === statusRef.current;
+  }, []);
+
+  const handleOrderCreated = useCallback(
+    async (payload) => {
+      const orderId = payload?.orderId ?? payload?.id;
+      if (!orderId || knownOrderIdsRef.current.has(orderId)) {
+        return;
+      }
       try {
-        const payload = JSON.parse(event.data);
-        const orderId = payload?.orderId ?? payload?.id;
-        if (!orderId) {
-          return;
-        }
-        if (isCreated && knownOrderIdsRef.current.has(orderId)) {
-          return;
-        }
-        if (isCreated) {
+        const order = await api.getOrder(orderId);
+        let didInsert = false;
+        setOrders((prev) => {
+          if (!matchesStatusFilter(order.status)) {
+            return prev;
+          }
+          if (prev.some((item) => item.id === order.id)) {
+            return prev;
+          }
+          didInsert = true;
+          return [order, ...prev];
+        });
+        if (didInsert) {
           setNewOrderIds((prev) =>
             prev.includes(orderId) ? prev : [...prev, orderId]
           );
           playNotification();
         }
-        loadOrders(statusRef.current, { silent: true });
       } catch {
-        // ignore malformed events
+        // ignore errors fetching new orders
       }
     },
-    [loadOrders, playNotification]
+    [matchesStatusFilter, playNotification]
+  );
+
+  const handleOrderUpdated = useCallback(
+    async (payload) => {
+      const patch = normalizeOrderPatch(payload);
+      if (!patch?.id) {
+        return;
+      }
+      if (!knownOrderIdsRef.current.has(patch.id)) {
+        if (!matchesStatusFilter(patch.status)) {
+          return;
+        }
+        setOrders((prev) => {
+          if (prev.some((item) => item.id === patch.id)) {
+            return prev;
+          }
+          return [patch, ...prev];
+        });
+        return;
+      }
+      setOrders((prev) => {
+        const index = prev.findIndex((item) => item.id === patch.id);
+        if (index === -1) {
+          return prev;
+        }
+        const nextOrder = mergeOrder(prev[index], patch);
+        if (!matchesStatusFilter(nextOrder.status)) {
+          return prev.filter((item) => item.id !== nextOrder.id);
+        }
+        const updated = [...prev];
+        updated[index] = nextOrder;
+        return updated;
+      });
+    },
+    [matchesStatusFilter, mergeOrder, normalizeOrderPatch]
   );
 
   useOrdersStream({
-    onOrderCreated: (event) => handleOrderEvent(event, { isCreated: true }),
-    onOrderUpdated: (event) => handleOrderEvent(event, { isCreated: false }),
+    onOrderCreated: handleOrderCreated,
+    onOrderUpdated: handleOrderUpdated,
   });
 
   return (
