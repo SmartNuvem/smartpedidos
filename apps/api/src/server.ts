@@ -1535,9 +1535,10 @@ const registerRoutes = () => {
       return reply.status(401).send({ message: "Unauthorized" });
     }
 
-    reply.raw.setHeader("Content-Type", "text/event-stream");
-    reply.raw.setHeader("Cache-Control", "no-cache");
+    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
     reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("Keep-Alive", "timeout=120");
     reply.raw.setHeader("X-Accel-Buffering", "no");
     reply.raw.flushHeaders?.();
     reply.raw.write("event: connected\ndata: {\"ok\": true}\n\n");
@@ -1548,11 +1549,7 @@ const registerRoutes = () => {
     orderStreamClients.set(storeId, clients);
     const pingInterval = setInterval(() => {
       try {
-        reply.raw.write(
-          `event: ping\ndata: ${JSON.stringify({
-            ts: new Date().toISOString(),
-          })}\n\n`
-        );
+        reply.raw.write(`: ping ${new Date().toISOString()}\n\n`);
       } catch {
         const activeClients = orderStreamClients.get(storeId);
         activeClients?.delete(reply);
