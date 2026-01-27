@@ -31,7 +31,15 @@ const app = Fastify({
 const storeCookieName = "sp_store_token";
 const storeCookieMaxAge = 60 * 60 * 24 * 30;
 const cookieDomain = process.env.COOKIE_DOMAIN;
-const storeCookieSecure = process.env.NODE_ENV === "production";
+const storeCookieSameSite = (() => {
+  const normalized = process.env.COOKIE_SAMESITE?.toLowerCase();
+  if (normalized === "none" || normalized === "lax" || normalized === "strict") {
+    return normalized;
+  }
+  return process.env.NODE_ENV === "production" ? "none" : "lax";
+})();
+const storeCookieSecure =
+  process.env.NODE_ENV === "production" || storeCookieSameSite === "none";
 
 const orderStreamClients = new Map<string, Set<FastifyReply>>();
 const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
@@ -43,12 +51,17 @@ const parseOrigins = (value?: string) =>
     .filter(Boolean);
 
 const buildAllowedOrigins = () => {
-  const origins = new Set<string>([
-    "https://painel.smartpedidos.com.br",
-    "https://p.smartpedidos.com.br",
-    ...parseOrigins(process.env.STORE_PANEL_ORIGINS),
-    ...parseOrigins(process.env.PUBLIC_PANEL_ORIGINS),
-  ]);
+  const corsOrigins = parseOrigins(process.env.CORS_ORIGIN);
+  const baseOrigins =
+    corsOrigins.length > 0
+      ? corsOrigins
+      : [
+          "https://painel.smartpedidos.com.br",
+          "https://p.smartpedidos.com.br",
+          ...parseOrigins(process.env.STORE_PANEL_ORIGINS),
+          ...parseOrigins(process.env.PUBLIC_PANEL_ORIGINS),
+        ];
+  const origins = new Set<string>(baseOrigins);
 
   if (process.env.NODE_ENV !== "production") {
     origins.add("http://localhost:5173");
@@ -61,7 +74,7 @@ const buildAllowedOrigins = () => {
 const buildStoreCookieOptions = () => ({
   httpOnly: true,
   secure: storeCookieSecure,
-  sameSite: "lax" as const,
+  sameSite: storeCookieSameSite as "lax" | "none" | "strict",
   path: "/",
   maxAge: storeCookieMaxAge,
   ...(cookieDomain ? { domain: cookieDomain } : {}),
@@ -70,7 +83,7 @@ const buildStoreCookieOptions = () => ({
 const buildStoreLogoutCookieOptions = () => ({
   httpOnly: true,
   secure: storeCookieSecure,
-  sameSite: "lax" as const,
+  sameSite: storeCookieSameSite as "lax" | "none" | "strict",
   path: "/",
   maxAge: 0,
   ...(cookieDomain ? { domain: cookieDomain } : {}),

@@ -22,6 +22,8 @@ Edite o arquivo `.env` e ajuste:
 - `VITE_API_URL`: URL pública da API acessível pelo navegador (ex.: `http://192.168.2.63:3000`).
 - `VITE_API_PROXY_TARGET`: usado apenas no dev server do Vite quando `VITE_API_URL=/api` (ex.: `http://api:3000` no Docker ou `http://localhost:3000` fora do Docker).
 - `CORS_ORIGIN`: origem permitida do painel (ex.: `http://192.168.2.63:5173`). Aceita lista separada por vírgula.
+- `COOKIE_DOMAIN`: domínio do cookie de sessão da loja (ex.: `.smartnuvem.com.br` para compartilhar entre painel e API).
+- `COOKIE_SAMESITE`: controle de SameSite do cookie (`none`, `lax` ou `strict`). Em produção o padrão é `none`.
 
 Se preferir, deixe `VITE_API_URL=/api` para usar o proxy do Vite (útil no Docker). Nesse caso, a URL externa do painel continua `http://IP:5173`.
 
@@ -98,6 +100,28 @@ grep -R "auth/admin" -n /app/apps/api/dist/server.js
 ### `api:3000` não resolve no navegador
 
 Se o console do navegador mostrar `ERR_NAME_NOT_RESOLVED` para `api:3000`, defina `VITE_API_URL` com a URL pública da API (`http://IP:3000`) ou use `VITE_API_URL=/api` com `VITE_API_PROXY_TARGET` apontando para a API no Docker.
+
+### SSE (tempo real)
+
+Para SSE funcionar em produção com painel e API em domínios diferentes, configure `COOKIE_DOMAIN` para o domínio raiz (ex.: `.smartnuvem.com.br`) e use `CORS_ORIGIN` com a URL do painel. O painel deve usar `/api` para manter o mesmo domínio ao abrir o stream.
+
+Exemplo de validação via curl:
+
+```bash
+curl -i -c cookies.txt -X POST https://smartpedidos.smartnuvem.com.br/api/auth/store/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"loja@exemplo.com","password":"123456"}'
+
+curl -i -b cookies.txt https://smartpedidos.smartnuvem.com.br/api/store/orders/stream
+```
+
+Em outro terminal, crie um pedido público e observe o evento chegar no stream:
+
+```bash
+curl -X POST https://smartpedidos.smartnuvem.com.br/api/public/padaria-central/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"items":[{"productId":"33333333-3333-3333-3333-333333333333","qty":2}]}'
+```
 
 ## Fluxo completo (curl)
 
