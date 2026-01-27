@@ -10,6 +10,7 @@ const useOrdersStream = ({
 } = {}) => {
   const attemptRef = useRef(0);
   const reconnectTimeoutRef = useRef(null);
+  const sourceRef = useRef(null);
 
   useEffect(() => {
     if (!window.EventSource) {
@@ -18,14 +19,22 @@ const useOrdersStream = ({
     }
 
     let isActive = true;
-    let source;
-
     const connect = () => {
       if (!isActive) {
         return;
       }
 
-      source = new EventSource(buildStreamUrl());
+      if (reconnectTimeoutRef.current) {
+        return;
+      }
+
+      if (sourceRef.current) {
+        sourceRef.current.close();
+        sourceRef.current = null;
+      }
+
+      const source = new EventSource(buildStreamUrl());
+      sourceRef.current = source;
 
       source.addEventListener("order.created", (event) => {
         onOrderCreated?.(event);
@@ -37,17 +46,25 @@ const useOrdersStream = ({
 
       source.onopen = () => {
         attemptRef.current = 0;
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
         onConnectionChange?.("open");
       };
 
       source.onerror = () => {
-        source?.close();
+        source.close();
         onConnectionChange?.("error");
         if (!isActive) {
           return;
         }
+        if (reconnectTimeoutRef.current) {
+          return;
+        }
         attemptRef.current += 1;
-        const delay = Math.min(30000, 2000 * attemptRef.current);
+        const baseDelay = Math.min(30000, 2000 * attemptRef.current);
+        const delay = baseDelay + Math.floor(Math.random() * 1000);
         reconnectTimeoutRef.current = window.setTimeout(() => {
           reconnectTimeoutRef.current = null;
           connect();
@@ -60,7 +77,10 @@ const useOrdersStream = ({
     return () => {
       isActive = false;
       onConnectionChange?.("closed");
-      source?.close();
+      if (sourceRef.current) {
+        sourceRef.current.close();
+        sourceRef.current = null;
+      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
