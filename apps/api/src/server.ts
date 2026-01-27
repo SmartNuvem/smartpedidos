@@ -31,6 +31,7 @@ const app = Fastify({
 const storeCookieName = "sp_store_token";
 const storeCookieMaxAge = 60 * 60 * 24 * 30;
 const cookieDomain = process.env.COOKIE_DOMAIN;
+const storeCookieSecure = process.env.NODE_ENV === "production";
 
 const orderStreamClients = new Map<string, Set<FastifyReply>>();
 const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
@@ -59,8 +60,8 @@ const buildAllowedOrigins = () => {
 
 const buildStoreCookieOptions = () => ({
   httpOnly: true,
-  secure: true,
-  sameSite: "none" as const,
+  secure: storeCookieSecure,
+  sameSite: "lax" as const,
   path: "/",
   maxAge: storeCookieMaxAge,
   ...(cookieDomain ? { domain: cookieDomain } : {}),
@@ -68,8 +69,8 @@ const buildStoreCookieOptions = () => ({
 
 const buildStoreLogoutCookieOptions = () => ({
   httpOnly: true,
-  secure: true,
-  sameSite: "none" as const,
+  secure: storeCookieSecure,
+  sameSite: "lax" as const,
   path: "/",
   maxAge: 0,
   ...(cookieDomain ? { domain: cookieDomain } : {}),
@@ -775,12 +776,7 @@ const registerRoutes = () => {
     });
 
     sendOrderStreamEvent(store.id, "order.created", {
-      id: order.id,
-      shortCode: order.id.slice(0, 6),
-      createdAt: order.createdAt,
-      totalCents,
-      customerName,
-      type: order.fulfillmentType,
+      orderId: order.id,
     });
 
     return reply.status(201).send({
@@ -1559,7 +1555,7 @@ const registerRoutes = () => {
           orderStreamPingers.delete(reply);
         }
       }
-    }, 15000);
+    }, 25000);
     orderStreamPingers.set(reply, pingInterval);
 
     request.raw.on("close", () => {
