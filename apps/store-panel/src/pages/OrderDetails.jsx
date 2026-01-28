@@ -130,7 +130,7 @@ const OrderDetails = () => {
             <span
               className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(
                 order.status
-              )}`}
+              )} ${order.status === "NEW" ? "animate-pulse" : ""}`}
             >
               {order.status}
             </span>

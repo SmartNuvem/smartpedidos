@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const COOLDOWN_MS = 2000;
+const BEEP_DURATION_SEC = 0.22;
+const PAUSE_DURATION_SEC = 0.08;
+const ALERT_VOLUME = 0.16;
+const FADE_IN_SEC = 0.01;
+const FADE_OUT_SEC = 0.06;
 
 const useNewOrderSound = () => {
   const [unlocked, setUnlocked] = useState(false);
@@ -64,21 +69,39 @@ const useNewOrderSound = () => {
       }
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
+      const startTime = audioContext.currentTime;
+      const firstBeepEnd = startTime + BEEP_DURATION_SEC;
+      const secondBeepStart = firstBeepEnd + PAUSE_DURATION_SEC;
+      const secondBeepEnd = secondBeepStart + BEEP_DURATION_SEC;
+
       oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.2,
-        audioContext.currentTime + 0.01
+      oscillator.frequency.setValueAtTime(880, startTime);
+      gainNode.gain.setValueAtTime(0.0001, startTime);
+
+      gainNode.gain.linearRampToValueAtTime(
+        ALERT_VOLUME,
+        startTime + FADE_IN_SEC
       );
-      gainNode.gain.exponentialRampToValueAtTime(
+      gainNode.gain.linearRampToValueAtTime(
         0.0001,
-        audioContext.currentTime + 0.12
+        Math.max(firstBeepEnd - FADE_OUT_SEC, startTime + FADE_IN_SEC)
       );
+
+      gainNode.gain.setValueAtTime(0.0001, firstBeepEnd);
+      gainNode.gain.linearRampToValueAtTime(
+        ALERT_VOLUME,
+        secondBeepStart + FADE_IN_SEC
+      );
+      gainNode.gain.linearRampToValueAtTime(
+        0.0001,
+        Math.max(secondBeepEnd - FADE_OUT_SEC, secondBeepStart + FADE_IN_SEC)
+      );
+      gainNode.gain.setValueAtTime(0.0001, secondBeepEnd);
+
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.13);
+      oscillator.start(startTime);
+      oscillator.stop(secondBeepEnd + 0.02);
     } catch {
       // ignore audio errors
     }
