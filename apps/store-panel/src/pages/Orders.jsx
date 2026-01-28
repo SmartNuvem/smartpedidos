@@ -223,18 +223,32 @@ const Orders = () => {
 
   const handleMarkPrinting = useCallback(
     async (orderId) => {
+      setError("");
       setPrintingIds((prev) => {
         const next = new Set(prev);
         next.add(orderId);
         return next;
       });
-      setOrders((prev) =>
-        prev.map((order) =>
+      setOrders((prev) => {
+        const updated = prev.map((order) =>
           order.id === orderId ? { ...order, status: "PRINTING" } : order
-        )
-      );
+        );
+        if (statusRef.current && statusRef.current !== "PRINTING") {
+          return updated.filter((order) => order.id !== orderId);
+        }
+        return updated;
+      });
       try {
-        await api.markOrderPrinting(orderId);
+        const response = await api.markOrderPrinting(orderId);
+        if (response?.status) {
+          setOrders((prev) =>
+            prev.map((order) =>
+              order.id === orderId
+                ? { ...order, status: response.status }
+                : order
+            )
+          );
+        }
       } catch {
         setError("Não foi possível atualizar o status de impressão.");
         setOrders((prev) =>
@@ -338,7 +352,7 @@ const Orders = () => {
                   key={order.id}
                   className={`relative hover:bg-slate-50 ${
                     orderHighlights.has(order.id)
-                      ? "ring-2 ring-emerald-200 ring-inset"
+                      ? "ring-2 ring-red-500 ring-inset animate-pulse"
                       : ""
                   }`}
                 >
