@@ -2370,6 +2370,48 @@ const registerRoutes = () => {
     };
   });
 
+  app.patch("/store/orders/:id/printing", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id,
+        storeId,
+      },
+    });
+
+    if (!order) {
+      return reply.status(404).send({ message: "Order not found" });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { status: "PRINTING" },
+    });
+
+    sendOrderStreamEvent(storeId, "order.updated", {
+      id: updated.id,
+      createdAt: updated.createdAt,
+      status: updated.status,
+      totalCents: Math.round(updated.total.toNumber() * 100),
+      customerName: updated.customerName,
+      deliveryType: updated.fulfillmentType,
+      storeId,
+    });
+
+    return {
+      id: updated.id,
+      status: updated.status,
+      total: updated.total.toNumber(),
+    };
+  });
+
   app.get("/agent/orders", async (request) => {
     const querySchema = z.object({
       status: z.enum(["NEW", "PRINTING", "PRINTED"]).optional(),
