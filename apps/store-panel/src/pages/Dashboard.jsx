@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, formatCurrency, formatDateTime } from "../api";
+import useNewOrderSound from "../hooks/useNewOrderSound";
 import useOrdersStream from "../hooks/useOrdersStream";
 
 const statusBadge = (status) => {
@@ -21,6 +22,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const knownOrderIdsRef = useRef(new Set());
+  const { isSupported, isUnlocked, unlock, play } = useNewOrderSound();
 
   const normalizeOrderPatch = useCallback((payload) => {
     if (!payload?.id) {
@@ -87,23 +89,27 @@ const Dashboard = () => {
     };
   }, []);
 
-  const handleOrderCreated = useCallback(async (payload) => {
-    const orderId = payload?.orderId ?? payload?.id;
-    if (!orderId || knownOrderIdsRef.current.has(orderId)) {
-      return;
-    }
-    try {
-      const order = await api.getOrder(orderId);
-      setOrders((prev) => {
-        if (prev.some((item) => item.id === order.id)) {
-          return prev;
-        }
-        return [order, ...prev];
-      });
-    } catch {
-      // ignore errors fetching new orders
-    }
-  }, []);
+  const handleOrderCreated = useCallback(
+    async (payload) => {
+      const orderId = payload?.orderId ?? payload?.id;
+      if (!orderId || knownOrderIdsRef.current.has(orderId)) {
+        return;
+      }
+      try {
+        const order = await api.getOrder(orderId);
+        setOrders((prev) => {
+          if (prev.some((item) => item.id === order.id)) {
+            return prev;
+          }
+          return [order, ...prev];
+        });
+        play();
+      } catch {
+        // ignore errors fetching new orders
+      }
+    },
+    [play]
+  );
 
   const handleOrderUpdated = useCallback(
     async (payload) => {
@@ -167,6 +173,15 @@ const Dashboard = () => {
             <p className="text-sm text-slate-500">
               Resumo rápido do painel da loja.
             </p>
+            {!isUnlocked && isSupported ? (
+              <button
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-slate-300"
+                onClick={unlock}
+                type="button"
+              >
+                Ativar som
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -243,7 +258,7 @@ const Dashboard = () => {
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(
                       order.status
-                    )}`}
+                    )} ${order.status === "NEW" ? "animate-pulse" : ""}`}
                   >
                     {order.status}
                   </span>

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatCurrency, formatDateTime } from "../api";
+import Button from "../components/Button";
 import Select from "../components/Select";
 import Table from "../components/Table";
+import useNewOrderSound from "../hooks/useNewOrderSound";
 import useOrdersStream from "../hooks/useOrdersStream";
 
 const STATUS_OPTIONS = [
@@ -31,9 +33,12 @@ const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newOrderIds, setNewOrderIds] = useState([]);
+  const [highlightedIds, setHighlightedIds] = useState(() => new Set());
+  const [printingIds, setPrintingIds] = useState(() => new Set());
   const knownOrderIdsRef = useRef(new Set());
   const statusRef = useRef(status);
-  const audioRef = useRef(null);
+  const highlightTimersRef = useRef(new Map());
+  const { isSupported, isUnlocked, unlock, play } = useNewOrderSound();
 
   const normalizeOrderPatch = useCallback((payload) => {
     if (!payload?.id) {
@@ -95,38 +100,44 @@ const Orders = () => {
     knownOrderIdsRef.current = new Set(orders.map((order) => order.id));
   }, [orders]);
 
-  const playNotification = useCallback(() => {
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) {
-        return;
-      }
-      const audioContext = audioRef.current ?? new AudioContext();
-      audioRef.current = audioContext;
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.2,
-        audioContext.currentTime + 0.01
-      );
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.0001,
-        audioContext.currentTime + 0.2
-      );
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.21);
-    } catch {
-      // Audio may be blocked by the browser.
-    }
+  useEffect(() => {
+    return () => {
+      highlightTimersRef.current.forEach((timer) => {
+        clearTimeout(timer);
+      });
+      highlightTimersRef.current.clear();
+    };
   }, []);
 
   const matchesStatusFilter = useCallback((orderStatus) => {
     return !statusRef.current || orderStatus === statusRef.current;
+  }, []);
+
+  const highlightOrder = useCallback((orderId) => {
+    setHighlightedIds((prev) => {
+      if (prev.has(orderId)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+    const existingTimer = highlightTimersRef.current.get(orderId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    const timer = window.setTimeout(() => {
+      setHighlightedIds((prev) => {
+        if (!prev.has(orderId)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+      highlightTimersRef.current.delete(orderId);
+    }, 10000);
+    highlightTimersRef.current.set(orderId, timer);
   }, []);
 
   const handleOrderCreated = useCallback(
@@ -152,13 +163,14 @@ const Orders = () => {
           setNewOrderIds((prev) =>
             prev.includes(orderId) ? prev : [...prev, orderId]
           );
-          playNotification();
+          highlightOrder(orderId);
+          play();
         }
       } catch {
         // ignore errors fetching new orders
       }
     },
-    [matchesStatusFilter, playNotification]
+    [highlightOrder, matchesStatusFilter, play]
   );
 
   const handleOrderUpdated = useCallback(
@@ -177,6 +189,9 @@ const Orders = () => {
           }
           return [patch, ...prev];
         });
+        if (patch.status === "NEW") {
+          highlightOrder(patch.id);
+        }
         return;
       }
       setOrders((prev) => {
@@ -192,14 +207,51 @@ const Orders = () => {
         updated[index] = nextOrder;
         return updated;
       });
+      if (patch.status === "NEW") {
+        highlightOrder(patch.id);
+      }
     },
-    [matchesStatusFilter, mergeOrder, normalizeOrderPatch]
+    [highlightOrder, matchesStatusFilter, mergeOrder, normalizeOrderPatch]
   );
 
   useOrdersStream({
     onOrderCreated: handleOrderCreated,
     onOrderUpdated: handleOrderUpdated,
   });
+
+  const orderHighlights = useMemo(() => highlightedIds, [highlightedIds]);
+
+  const handleMarkPrinting = useCallback(
+    async (orderId) => {
+      setPrintingIds((prev) => {
+        const next = new Set(prev);
+        next.add(orderId);
+        return next;
+      });
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId ? { ...order, status: "PRINTING" } : order
+        )
+      );
+      try {
+        await api.markOrderPrinting(orderId);
+      } catch {
+        setError("Não foi possível atualizar o status de impressão.");
+        setOrders((prev) =>
+          prev.map((order) =>
+            order.id === orderId ? { ...order, status: "NEW" } : order
+          )
+        );
+      } finally {
+        setPrintingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+        });
+      }
+    },
+    [setOrders]
+  );
 
   return (
     <div className="space-y-6">
@@ -221,6 +273,15 @@ const Orders = () => {
             <p className="text-sm text-slate-500">
               Acompanhe e gerencie os pedidos da loja.
             </p>
+            {!isUnlocked && isSupported ? (
+              <button
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-slate-300"
+                onClick={unlock}
+                type="button"
+              >
+                Ativar som
+              </button>
+            ) : null}
           </div>
           <div className="min-w-[180px]">
             <Select
@@ -273,7 +334,14 @@ const Orders = () => {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-slate-50">
+                <tr
+                  key={order.id}
+                  className={`relative hover:bg-slate-50 ${
+                    orderHighlights.has(order.id)
+                      ? "ring-2 ring-emerald-200 ring-inset"
+                      : ""
+                  }`}
+                >
                   <td className="px-4 py-3 font-semibold text-slate-900">
                     #{order.shortId}
                   </td>
@@ -287,7 +355,7 @@ const Orders = () => {
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(
                         order.status
-                      )}`}
+                      )} ${order.status === "NEW" ? "animate-pulse" : ""}`}
                     >
                       {order.status}
                     </span>
@@ -296,12 +364,34 @@ const Orders = () => {
                     {formatDateTime(order.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-                      to={`/orders/${order.id}`}
-                    >
-                      Ver detalhes
-                    </Link>
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      {order.status === "NEW" ? (
+                        <Button
+                          variant="secondary"
+                          className="px-3 py-1 text-xs"
+                          onClick={() => handleMarkPrinting(order.id)}
+                          disabled={printingIds.has(order.id)}
+                        >
+                          {printingIds.has(order.id)
+                            ? "Imprimindo..."
+                            : "Imprimir"}
+                        </Button>
+                      ) : order.status === "PRINTING" ? (
+                        <span className="text-xs font-semibold text-amber-600">
+                          Imprimindo...
+                        </span>
+                      ) : order.status === "PRINTED" ? (
+                        <span className="text-xs font-semibold text-emerald-600">
+                          Impresso
+                        </span>
+                      ) : null}
+                      <Link
+                        className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+                        to={`/orders/${order.id}`}
+                      >
+                        Ver detalhes
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

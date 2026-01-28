@@ -81,6 +81,13 @@ export const api = {
     });
     return handleResponse(response);
   },
+  markOrderPrinting: async (id) => {
+    const response = await request(`${API_URL}/store/orders/${id}/printing`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   reprintOrder: async (id) => {
     const response = await request(`${API_URL}/store/orders/${id}/reprint`, {
       method: "POST",
