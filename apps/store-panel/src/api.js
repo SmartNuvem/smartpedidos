@@ -85,6 +85,7 @@ export const api = {
     const response = await request(`${API_URL}/store/orders/${id}/printing`, {
       method: "PATCH",
       headers: buildHeaders(),
+      body: JSON.stringify({}),
     });
     return handleResponse(response);
   },
