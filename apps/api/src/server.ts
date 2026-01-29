@@ -2378,6 +2378,8 @@ const registerRoutes = () => {
 
     const paramsSchema = z.object({ id: z.string().uuid() });
     const { id } = paramsSchema.parse(request.params);
+    const bodySchema = z.object({}).optional();
+    bodySchema.parse(request.body ?? {});
 
     const order = await prisma.order.findFirst({
       where: {
@@ -2407,8 +2409,12 @@ const registerRoutes = () => {
 
     return {
       id: updated.id,
+      shortId: updated.id.slice(0, 6),
+      customerName: updated.customerName,
       status: updated.status,
+      fulfillmentType: updated.fulfillmentType,
       total: updated.total.toNumber(),
+      createdAt: updated.createdAt,
     };
   });
 
