@@ -170,7 +170,8 @@ model Agent {
   storeId   String
   store     Store    @relation(fields: [storeId], references: [id])
   tokenHash String
-  active    Boolean  @default(true)
+  name      String?
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
