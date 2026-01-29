@@ -14,12 +14,8 @@ declare module "fastify" {
     agent?: {
       id: string;
       storeId: string;
-      name: string | null;
-      store: {
-        id: string;
-        name: string;
-        slug: string;
-      };
+      name: string;
+      isActive: boolean;
     };
   }
 }

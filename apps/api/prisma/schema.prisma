@@ -168,12 +168,13 @@ model OrderItemOption {
 model Agent {
   id        String   @id @default(uuid())
   storeId   String
-  store     Store    @relation(fields: [storeId], references: [id])
-  tokenHash String
-  name      String?
+  name      String
+  token     String   @unique
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  store     Store    @relation(fields: [storeId], references: [id])
 }
 
 model Admin {

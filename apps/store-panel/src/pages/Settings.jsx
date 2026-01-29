@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import Button from "../components/Button";
 import Input from "../components/Input";
+import Modal from "../components/Modal";
 
 const DAYS = [
   { key: "mon", label: "Segunda" },
@@ -18,11 +19,19 @@ const Settings = () => {
   const [deliveryAreas, setDeliveryAreas] = useState([]);
   const [hours, setHours] = useState(null);
   const [payment, setPayment] = useState(null);
+  const [agents, setAgents] = useState([]);
   const [error, setError] = useState("");
   const [savingHours, setSavingHours] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [areaSavingId, setAreaSavingId] = useState(null);
   const [areaError, setAreaError] = useState("");
+  const [agentsError, setAgentsError] = useState("");
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [agentSavingId, setAgentSavingId] = useState(null);
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
+  const [newAgentName, setNewAgentName] = useState("");
+  const [tokenReveal, setTokenReveal] = useState(null);
+  const [tokenCopyStatus, setTokenCopyStatus] = useState("");
   const [newArea, setNewArea] = useState({
     name: "",
     feeCents: 0,
@@ -34,6 +43,7 @@ const Settings = () => {
 
   useEffect(() => {
     let active = true;
+    const agentGuard = { active: true };
     const loadData = async () => {
       setError("");
       try {
@@ -58,12 +68,125 @@ const Settings = () => {
       }
     };
 
+    const loadAgents = async () => {
+      setAgentsLoading(true);
+      setAgentsError("");
+      try {
+        const agentsData = await api.getStoreAgents();
+        if (agentGuard.active) {
+          setAgents(agentsData);
+        }
+      } catch {
+        if (agentGuard.active) {
+          setAgentsError("Não foi possível carregar os agentes.");
+        }
+      } finally {
+        if (agentGuard.active) {
+          setAgentsLoading(false);
+        }
+      }
+    };
+
     loadData();
+    loadAgents();
 
     return () => {
       active = false;
+      agentGuard.active = false;
     };
   }, []);
+
+  const refreshAgents = async () => {
+    setAgentsLoading(true);
+    setAgentsError("");
+    try {
+      const agentsData = await api.getStoreAgents();
+      setAgents(agentsData);
+    } catch {
+      setAgentsError("Não foi possível carregar os agentes.");
+    } finally {
+      setAgentsLoading(false);
+    }
+  };
+
+  const handleCreateAgent = async () => {
+    if (!newAgentName.trim()) {
+      setAgentsError("Informe o nome do agente.");
+      return;
+    }
+    setAgentSavingId("new");
+    setAgentsError("");
+    try {
+      const created = await api.createStoreAgent({
+        name: newAgentName.trim(),
+      });
+      setTokenReveal({
+        token: created.token,
+        title: "Token do agente criado",
+      });
+      setTokenCopyStatus("");
+      setNewAgentName("");
+      setCreateAgentOpen(false);
+      await refreshAgents();
+    } catch {
+      setAgentsError("Não foi possível criar o agente.");
+    } finally {
+      setAgentSavingId(null);
+    }
+  };
+
+  const handleRotateToken = async (agent) => {
+    const confirmed = window.confirm(
+      `Deseja rotacionar o token do agente ${agent.name}?`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setAgentSavingId(agent.id);
+    setAgentsError("");
+    try {
+      const result = await api.rotateStoreAgentToken(agent.id);
+      setTokenReveal({
+        token: result.token,
+        title: "Novo token do agente",
+      });
+      setTokenCopyStatus("");
+      await refreshAgents();
+    } catch {
+      setAgentsError("Não foi possível rotacionar o token.");
+    } finally {
+      setAgentSavingId(null);
+    }
+  };
+
+  const handleToggleAgent = async (agent) => {
+    setAgentSavingId(agent.id);
+    setAgentsError("");
+    try {
+      const updated = await api.updateStoreAgent(agent.id, {
+        isActive: !agent.isActive,
+      });
+      setAgents((prev) =>
+        prev.map((item) => (item.id === agent.id ? updated : item))
+      );
+    } catch {
+      setAgentsError("Não foi possível atualizar o agente.");
+    } finally {
+      setAgentSavingId(null);
+    }
+  };
+
+  const handleCopyToken = async () => {
+    if (!tokenReveal?.token) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(tokenReveal.token);
+      setTokenCopyStatus("Token copiado!");
+    } catch {
+      setTokenCopyStatus("Não foi possível copiar o token.");
+    }
+  };
 
   const handleAreaChange = (id, field, value) => {
     setDeliveryAreas((prev) =>
@@ -183,6 +306,8 @@ const Settings = () => {
     }
   };
 
+  const isTokenCopyError = tokenCopyStatus.startsWith("Não");
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -216,6 +341,82 @@ const Settings = () => {
             {error || "Carregando..."}
           </p>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Agente de Impressão
+            </h3>
+            <p className="text-sm text-slate-500">
+              Este token deve ser usado no computador da loja para impressão
+              automática.
+            </p>
+          </div>
+          <Button onClick={() => setCreateAgentOpen(true)}>
+            Criar agente
+          </Button>
+        </div>
+
+        {agentsError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {agentsError}
+          </div>
+        ) : null}
+
+        <div className="mt-4 space-y-4">
+          {agentsLoading ? (
+            <p className="text-sm text-slate-500">Carregando agentes...</p>
+          ) : null}
+
+          {!agentsLoading && agents.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Nenhum agente cadastrado ainda.
+            </p>
+          ) : null}
+
+          {agents.map((agent) => (
+            <div
+              key={agent.id}
+              className="grid gap-4 rounded-xl border border-slate-200 p-4 lg:grid-cols-[2fr_1fr_2fr_auto]"
+            >
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  {agent.name}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Status: {agent.isActive ? "Ativo" : "Inativo"}
+                </p>
+              </div>
+              <div className="text-sm text-slate-700">
+                {agent.isActive ? "Liberado" : "Pausado"}
+              </div>
+              <Input
+                label="Token"
+                value={agent.tokenMasked}
+                readOnly
+                className="font-mono"
+              />
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => handleRotateToken(agent)}
+                  disabled={agentSavingId === agent.id}
+                >
+                  Rotacionar token
+                </Button>
+                <Button
+                  variant={agent.isActive ? "danger" : "primary"}
+                  onClick={() => handleToggleAgent(agent)}
+                  disabled={agentSavingId === agent.id}
+                >
+                  {agent.isActive ? "Desativar" : "Ativar"}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -561,6 +762,79 @@ const Settings = () => {
           </p>
         )}
       </div>
+
+      <Modal
+        open={createAgentOpen}
+        title="Criar agente de impressão"
+        onClose={() => setCreateAgentOpen(false)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setCreateAgentOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCreateAgent}
+              disabled={agentSavingId === "new"}
+            >
+              Criar
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Nome do agente"
+          value={newAgentName}
+          onChange={(event) => setNewAgentName(event.target.value)}
+          placeholder="Ex: Caixa 1"
+        />
+      </Modal>
+
+      <Modal
+        open={Boolean(tokenReveal)}
+        title={tokenReveal?.title ?? "Token do agente"}
+        onClose={() => {
+          setTokenReveal(null);
+          setTokenCopyStatus("");
+        }}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setTokenReveal(null);
+                setTokenCopyStatus("");
+              }}
+            >
+              Fechar
+            </Button>
+            {tokenReveal?.token ? (
+              <Button onClick={handleCopyToken}>Copiar token</Button>
+            ) : null}
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          Guarde este token, ele não será mostrado novamente.
+        </p>
+        <Input
+          label="Token completo"
+          value={tokenReveal?.token ?? ""}
+          readOnly
+          className="font-mono"
+        />
+        {tokenCopyStatus ? (
+          <p
+            className={`text-sm ${
+              isTokenCopyError ? "text-rose-600" : "text-emerald-600"
+            }`}
+          >
+            {tokenCopyStatus}
+          </p>
+        ) : null}
+      </Modal>
     </div>
   );
 };

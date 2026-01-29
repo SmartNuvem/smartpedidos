@@ -102,6 +102,35 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getStoreAgents: async () => {
+    const response = await request(`${API_URL}/store/agents`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  createStoreAgent: async (payload) => {
+    const response = await request(`${API_URL}/store/agents`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  rotateStoreAgentToken: async (id) => {
+    const response = await request(`${API_URL}/store/agents/${id}/rotate-token`, {
+      method: "POST",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  updateStoreAgent: async (id, payload) => {
+    const response = await request(`${API_URL}/store/agents/${id}`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
   getDeliveryAreas: async () => {
     const response = await request(`${API_URL}/store/delivery-areas`, {
       headers: buildHeaders(),
