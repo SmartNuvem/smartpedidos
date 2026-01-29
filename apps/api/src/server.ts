@@ -8,9 +8,9 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import {
   authenticateAgent,
-  generateToken,
   getBearerToken,
-  hashToken,
+  generateAgentToken,
+  maskToken,
   requireAdmin,
 } from "./auth";
 import { buildOrderPdf } from "./pdf";
@@ -1129,6 +1129,7 @@ const registerRoutes = () => {
     }
 
     (request as typeof request & { agent: typeof agent }).agent = agent;
+    request.storeId = agent.storeId;
   });
 
   app.addHook("preHandler", async (request, reply) => {
@@ -1160,6 +1161,132 @@ const registerRoutes = () => {
       email: store.email,
       isActive: store.isActive,
     };
+  });
+
+  app.post("/store/agents", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      name: z.string().min(1),
+    });
+
+    const { name } = bodySchema.parse(request.body);
+    const token = generateAgentToken();
+
+    const agent = await prisma.agent.create({
+      data: {
+        storeId,
+        name,
+        token,
+      },
+    });
+
+    return reply.status(201).send({
+      id: agent.id,
+      name: agent.name,
+      token,
+      isActive: agent.isActive,
+      createdAt: agent.createdAt,
+    });
+  });
+
+  app.get("/store/agents", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const agents = await prisma.agent.findMany({
+      where: { storeId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return agents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      isActive: agent.isActive,
+      tokenMasked: maskToken(agent.token),
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+    }));
+  });
+
+  app.post("/store/agents/:id/rotate-token", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const agent = await prisma.agent.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!agent) {
+      return reply.status(404).send({ message: "Agent not found" });
+    }
+
+    const token = generateAgentToken();
+    const updated = await prisma.agent.update({
+      where: { id },
+      data: { token },
+    });
+
+    return reply.send({
+      token,
+      agent: {
+        id: updated.id,
+        name: updated.name,
+        isActive: updated.isActive,
+        tokenMasked: maskToken(updated.token),
+        updatedAt: updated.updatedAt,
+      },
+    });
+  });
+
+  app.patch("/store/agents/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      isActive: z.boolean().optional(),
+      name: z.string().min(1).optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { isActive, name } = bodySchema.parse(request.body);
+
+    const agent = await prisma.agent.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!agent) {
+      return reply.status(404).send({ message: "Agent not found" });
+    }
+
+    const updated = await prisma.agent.update({
+      where: { id },
+      data: {
+        isActive: isActive ?? agent.isActive,
+        name: name ?? agent.name,
+      },
+    });
+
+    return reply.send({
+      id: updated.id,
+      name: updated.name,
+      isActive: updated.isActive,
+      tokenMasked: maskToken(updated.token),
+      updatedAt: updated.updatedAt,
+    });
   });
 
   app.get("/store/delivery-areas", async (request, reply) => {
@@ -2420,18 +2547,14 @@ const registerRoutes = () => {
 
   app.get("/agent/me", async (request) => {
     const agent = (request as typeof request & {
-      agent: { id: string; storeId: string; name: string | null; store: any };
+      agent: { id: string; storeId: string; name: string; isActive: boolean };
     }).agent;
 
     return {
       id: agent.id,
       name: agent.name,
       storeId: agent.storeId,
-      store: {
-        id: agent.store.id,
-        name: agent.store.name,
-        slug: agent.store.slug,
-      },
+      isActive: agent.isActive,
     };
   });
 
@@ -2448,7 +2571,7 @@ const registerRoutes = () => {
     const orders = await prisma.order.findMany({
       where: {
         storeId: agent.storeId,
-        status: status ?? "NEW",
+        status: status ?? "PRINTING",
       },
       include: {
         items: {
@@ -2645,18 +2768,6 @@ const registerRoutes = () => {
     return reply.send(pdf);
   });
 
-  app.post("/agent/rotate-agent-token", async (request) => {
-    const agent = (request as typeof request & { agent: { id: string } }).agent;
-    const token = generateToken();
-    const tokenHash = hashToken(token);
-
-    await prisma.agent.update({
-      where: { id: agent.id },
-      data: { tokenHash },
-    });
-
-    return { token };
-  });
 };
 
 const start = async () => {

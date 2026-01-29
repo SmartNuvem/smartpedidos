@@ -2,11 +2,17 @@ import crypto from "node:crypto";
 import { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "./prisma";
 
-export const hashToken = (token: string) =>
-  crypto.createHash("sha256").update(token).digest("hex");
+export const generateAgentToken = () =>
+  `agt_${crypto.randomBytes(32).toString("hex")}`;
 
-export const generateToken = () =>
-  `agt_${crypto.randomBytes(24).toString("hex")}`;
+export const maskToken = (token: string) => {
+  if (!token.startsWith("agt_")) {
+    return "agt_****";
+  }
+
+  const suffix = token.slice(-4);
+  return `agt_****${suffix}`;
+};
 
 export const getAgentToken = (request: FastifyRequest) => {
   const header = request.headers["x-agent-token"];
@@ -46,14 +52,10 @@ export const authenticateAgent = async (request: FastifyRequest) => {
     return null;
   }
 
-  const tokenHash = hashToken(token);
   return prisma.agent.findFirst({
     where: {
-      tokenHash,
+      token,
       isActive: true,
-    },
-    include: {
-      store: true,
     },
   });
 };
