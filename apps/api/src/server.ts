@@ -2418,12 +2418,30 @@ const registerRoutes = () => {
     };
   });
 
+  app.get("/agent/me", async (request) => {
+    const agent = (request as typeof request & {
+      agent: { id: string; storeId: string; name: string | null; store: any };
+    }).agent;
+
+    return {
+      id: agent.id,
+      name: agent.name,
+      storeId: agent.storeId,
+      store: {
+        id: agent.store.id,
+        name: agent.store.name,
+        slug: agent.store.slug,
+      },
+    };
+  });
+
   app.get("/agent/orders", async (request) => {
     const querySchema = z.object({
       status: z.enum(["NEW", "PRINTING", "PRINTED"]).optional(),
+      limit: z.coerce.number().int().min(1).max(50).optional(),
     });
 
-    const { status } = querySchema.parse(request.query);
+    const { status, limit } = querySchema.parse(request.query);
     const agent = (request as typeof request & { agent: { storeId: string } })
       .agent;
 
@@ -2442,6 +2460,7 @@ const registerRoutes = () => {
       orderBy: {
         createdAt: "desc",
       },
+      take: limit ?? 10,
     });
 
     return orders.map((order) => ({
@@ -2485,6 +2504,92 @@ const registerRoutes = () => {
     const updated = await prisma.order.update({
       where: { id },
       data: { status },
+    });
+
+    sendOrderStreamEvent(agent.storeId, "order.updated", {
+      id: updated.id,
+      createdAt: updated.createdAt,
+      status: updated.status,
+      totalCents: Math.round(updated.total.toNumber() * 100),
+      customerName: updated.customerName,
+      deliveryType: updated.fulfillmentType,
+      storeId: agent.storeId,
+    });
+
+    return {
+      id: updated.id,
+      status: updated.status,
+      total: updated.total.toNumber(),
+    };
+  });
+
+  app.post("/agent/orders/:id/printed", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id,
+        storeId: agent.storeId,
+      },
+    });
+
+    if (!order) {
+      return reply.status(404).send({ message: "Order not found" });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { status: "PRINTED" },
+    });
+
+    sendOrderStreamEvent(agent.storeId, "order.updated", {
+      id: updated.id,
+      createdAt: updated.createdAt,
+      status: updated.status,
+      totalCents: Math.round(updated.total.toNumber() * 100),
+      customerName: updated.customerName,
+      deliveryType: updated.fulfillmentType,
+      storeId: agent.storeId,
+    });
+
+    return {
+      id: updated.id,
+      status: updated.status,
+      total: updated.total.toNumber(),
+    };
+  });
+
+  app.post("/agent/orders/:id/failed", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z
+      .object({
+        reason: z.string().max(500).optional(),
+        resetStatus: z.boolean().optional(),
+      })
+      .optional();
+    const { id } = paramsSchema.parse(request.params);
+    const { resetStatus } = bodySchema.parse(request.body ?? {}) ?? {};
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id,
+        storeId: agent.storeId,
+      },
+    });
+
+    if (!order) {
+      return reply.status(404).send({ message: "Order not found" });
+    }
+
+    const nextStatus = resetStatus ? "NEW" : order.status;
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { status: nextStatus },
     });
 
     sendOrderStreamEvent(agent.storeId, "order.updated", {

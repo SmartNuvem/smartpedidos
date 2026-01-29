@@ -5,7 +5,26 @@ import { prisma } from "./prisma";
 export const hashToken = (token: string) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
-export const generateToken = () => crypto.randomBytes(24).toString("hex");
+export const generateToken = () =>
+  `agt_${crypto.randomBytes(24).toString("hex")}`;
+
+export const getAgentToken = (request: FastifyRequest) => {
+  const header = request.headers["x-agent-token"];
+  if (!header) {
+    return null;
+  }
+
+  const token = Array.isArray(header) ? header[0] : header;
+  if (!token || typeof token !== "string") {
+    return null;
+  }
+
+  if (!token.startsWith("agt_")) {
+    return null;
+  }
+
+  return token;
+};
 
 export const getBearerToken = (request: FastifyRequest) => {
   const header = request.headers.authorization;
@@ -22,7 +41,7 @@ export const getBearerToken = (request: FastifyRequest) => {
 };
 
 export const authenticateAgent = async (request: FastifyRequest) => {
-  const token = getBearerToken(request);
+  const token = getAgentToken(request);
   if (!token) {
     return null;
   }
@@ -31,7 +50,7 @@ export const authenticateAgent = async (request: FastifyRequest) => {
   return prisma.agent.findFirst({
     where: {
       tokenHash,
-      active: true,
+      isActive: true,
     },
     include: {
       store: true,
