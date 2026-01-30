@@ -23,6 +23,8 @@ const Settings = () => {
   const [error, setError] = useState("");
   const [savingHours, setSavingHours] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [savingAutoPrint, setSavingAutoPrint] = useState(false);
+  const [autoPrintError, setAutoPrintError] = useState("");
   const [areaSavingId, setAreaSavingId] = useState(null);
   const [areaError, setAreaError] = useState("");
   const [agentsError, setAgentsError] = useState("");
@@ -306,6 +308,24 @@ const Settings = () => {
     }
   };
 
+  const handleSaveAutoPrint = async () => {
+    if (!store) {
+      return;
+    }
+    setSavingAutoPrint(true);
+    setAutoPrintError("");
+    try {
+      const updated = await api.updateStore({
+        autoPrintEnabled: Boolean(store.autoPrintEnabled),
+      });
+      setStore(updated);
+    } catch {
+      setAutoPrintError("Não foi possível salvar a impressão automática.");
+    } finally {
+      setSavingAutoPrint(false);
+    }
+  };
+
   const isTokenCopyError = tokenCopyStatus.startsWith("Não");
 
   return (
@@ -338,6 +358,52 @@ const Settings = () => {
           </div>
         ) : (
           <p className="text-sm text-slate-500">
+            {error || "Carregando..."}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Impressão automática
+            </h3>
+            <p className="text-sm text-slate-500">
+              O agente precisa estar rodando no computador da loja.
+            </p>
+          </div>
+          <Button
+            onClick={handleSaveAutoPrint}
+            disabled={savingAutoPrint || !store}
+          >
+            {savingAutoPrint ? "Salvando..." : "Salvar impressão"}
+          </Button>
+        </div>
+        {autoPrintError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {autoPrintError}
+          </div>
+        ) : null}
+        {store ? (
+          <div className="mt-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={Boolean(store.autoPrintEnabled)}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev
+                      ? { ...prev, autoPrintEnabled: event.target.checked }
+                      : prev
+                  )
+                }
+              />
+              Impressão automática (não depende do painel aberto)
+            </label>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
             {error || "Carregando..."}
           </p>
         )}
