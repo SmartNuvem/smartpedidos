@@ -2633,8 +2633,22 @@ const registerRoutes = () => {
     return orders.map((order) => ({
       id: order.id,
       status: order.status,
-      total: order.total.toNumber(),
       createdAt: order.createdAt,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      fulfillmentType: order.fulfillmentType,
+      paymentMethod: order.paymentMethod,
+      changeForCents: order.changeForCents,
+      paidStatus: order.paidStatus,
+      deliveryFeeCents: order.deliveryFeeCents,
+      notes: order.notes,
+      addressLine: order.addressLine,
+      addressNumber: order.addressNumber,
+      addressNeighborhood: order.addressNeighborhood,
+      addressCity: order.addressCity,
+      addressReference: order.addressReference,
+      total: order.total.toNumber(),
+      totalCents: Math.round(order.total.toNumber() * 100),
       items: order.items.map((item) => ({
         id: item.id,
         productId: item.productId,
@@ -2644,6 +2658,60 @@ const registerRoutes = () => {
         notes: item.notes,
       })),
     }));
+  });
+
+  app.get("/agent/orders/:id", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id,
+        storeId: agent.storeId,
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return reply.status(404).send({ message: "Order not found" });
+    }
+
+    return {
+      id: order.id,
+      status: order.status,
+      createdAt: order.createdAt,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      fulfillmentType: order.fulfillmentType,
+      paymentMethod: order.paymentMethod,
+      changeForCents: order.changeForCents,
+      paidStatus: order.paidStatus,
+      deliveryFeeCents: order.deliveryFeeCents,
+      notes: order.notes,
+      addressLine: order.addressLine,
+      addressNumber: order.addressNumber,
+      addressNeighborhood: order.addressNeighborhood,
+      addressCity: order.addressCity,
+      addressReference: order.addressReference,
+      items: order.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        name: item.product.name,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        notes: item.notes,
+      })),
+      total: order.total.toNumber(),
+      totalCents: Math.round(order.total.toNumber() * 100),
+    };
   });
 
   app.patch("/agent/orders/:id", async (request, reply) => {
