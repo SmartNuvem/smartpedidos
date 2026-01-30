@@ -47,6 +47,7 @@ model Store {
   email           String?               @unique
   passwordHash    String?
   isActive        Boolean               @default(true)
+  autoPrintEnabled Boolean              @default(false)
   categories      Category[]
   orders          Order[]
   agents          Agent[]

@@ -738,11 +738,12 @@ const registerRoutes = () => {
       });
     }
 
+    const initialStatus = store.autoPrintEnabled ? "PRINTING" : "NEW";
     const order = await prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
           storeId: store.id,
-          status: "NEW",
+          status: initialStatus,
           fulfillmentType: normalizedOrderType,
           customerName,
           customerPhone,
@@ -791,6 +792,7 @@ const registerRoutes = () => {
     sendOrderStreamEvent(store.id, "order.created", {
       orderId: order.id,
       storeId: store.id,
+      status: order.status,
     });
 
     return reply.status(201).send({
@@ -1160,7 +1162,37 @@ const registerRoutes = () => {
       slug: store.slug,
       email: store.email,
       isActive: store.isActive,
+      autoPrintEnabled: store.autoPrintEnabled,
     };
+  });
+
+  app.patch("/store/me", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      autoPrintEnabled: z.boolean().optional(),
+    });
+
+    const payload = bodySchema.parse(request.body ?? {});
+
+    const store = await prisma.store.update({
+      where: { id: storeId },
+      data: {
+        autoPrintEnabled: payload.autoPrintEnabled ?? undefined,
+      },
+    });
+
+    return reply.send({
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+      email: store.email,
+      isActive: store.isActive,
+      autoPrintEnabled: store.autoPrintEnabled,
+    });
   });
 
   app.post("/store/agents", async (request, reply) => {
@@ -2517,6 +2549,18 @@ const registerRoutes = () => {
 
     if (!order) {
       return reply.status(404).send({ message: "Order not found" });
+    }
+
+    if (order.status !== "NEW") {
+      return reply.send({
+        id: order.id,
+        shortId: order.id.slice(0, 6),
+        customerName: order.customerName,
+        status: order.status,
+        fulfillmentType: order.fulfillmentType,
+        total: order.total.toNumber(),
+        createdAt: order.createdAt,
+      });
     }
 
     const updated = await prisma.order.update({
