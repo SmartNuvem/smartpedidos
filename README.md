@@ -24,10 +24,28 @@ Edite o arquivo `.env` e ajuste:
 - `CORS_ORIGIN`: origem permitida do painel (ex.: `http://192.168.2.63:5173`). Aceita lista separada por vírgula.
 - `COOKIE_DOMAIN`: domínio do cookie de sessão da loja (ex.: `.smartnuvem.com.br` para compartilhar entre painel e API).
 - `COOKIE_SAMESITE`: controle de SameSite do cookie (`none`, `lax` ou `strict`). Em produção o padrão é `none`.
+- `MAINTENANCE_TOKEN`: token usado para autorizar rotinas internas de manutenção (ex.: limpeza automática de pedidos antigos).
 
 Se preferir, deixe `VITE_API_URL=/api` para usar o proxy do Vite (útil no Docker). Nesse caso, a URL externa do painel continua `http://IP:5173`.
 
 Em produção, o Traefik deve rotear `PathPrefix(/api)` para o serviço `api:3000` com `stripPrefix`, garantindo que o painel acesse a API por `/api` no mesmo domínio.
+
+## Limpeza automática de pedidos antigos
+
+A API expõe um endpoint interno protegido para remover pedidos antigos com status `PRINTED` (por padrão, com mais de 7 dias):
+
+```
+POST /internal/maintenance/purge-old-orders
+```
+
+Exemplo de chamada manual:
+
+```bash
+curl -X POST http://localhost:3000/internal/maintenance/purge-old-orders \
+  -H 'x-maintenance-token: change-me'
+```
+
+Para rodar automaticamente, configure um cron externo (ex.: 1x por dia) chamando o endpoint com o `MAINTENANCE_TOKEN` configurado no `.env`.
 
 ## Criando o schema do banco (Prisma)
 

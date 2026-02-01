@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { OpenOverride, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./prisma";
+import { purgeOldOrders } from "./jobs/purgeOldOrders";
 import {
   authenticateAgent,
   getBearerToken,
@@ -105,6 +106,14 @@ const buildStoreLogoutCookieOptions = () => ({
   maxAge: 0,
   ...(cookieDomain ? { domain: cookieDomain } : {}),
 });
+
+const getMaintenanceToken = (request: FastifyRequest) => {
+  const header = request.headers["x-maintenance-token"];
+  if (Array.isArray(header)) {
+    return header[0];
+  }
+  return header;
+};
 
 const sendOrderStreamEvent = (
   storeId: string,
@@ -344,6 +353,24 @@ const registerRoutes = () => {
   app.decorateRequest("storeId", null);
 
   app.get("/health", async () => ({ status: "ok" }));
+
+  app.post("/internal/maintenance/purge-old-orders", async (request, reply) => {
+    const maintenanceToken = process.env.MAINTENANCE_TOKEN;
+    if (!maintenanceToken) {
+      app.log.error("MAINTENANCE_TOKEN is not set");
+      return reply
+        .status(500)
+        .send({ message: "Maintenance token not configured" });
+    }
+
+    const providedToken = getMaintenanceToken(request);
+    if (!providedToken || providedToken !== maintenanceToken) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const result = await purgeOldOrders(prisma, { logger: app.log });
+    return reply.send({ ok: true, ...result });
+  });
 
   app.get("/public/:slug/menu", async (request, reply) => {
     const paramsSchema = z.object({ slug: z.string() });
