@@ -178,6 +178,51 @@ const normalizeOptionGroupRules = ({
   };
 };
 
+type AvailabilityWindowInput = {
+  startMinute: number;
+  endMinute: number;
+  active?: boolean;
+};
+
+const normalizeAvailabilityWindows = (windows: AvailabilityWindowInput[]) => {
+  const normalized = windows.map((window) => ({
+    startMinute: Math.floor(window.startMinute),
+    endMinute: Math.floor(window.endMinute),
+    active: window.active ?? true,
+  }));
+
+  for (const window of normalized) {
+    if (
+      !Number.isFinite(window.startMinute) ||
+      !Number.isFinite(window.endMinute)
+    ) {
+      return {
+        ok: false as const,
+        message: "Informe horários válidos para a disponibilidade.",
+      };
+    }
+    if (
+      window.startMinute < 0 ||
+      window.startMinute >= 1440 ||
+      window.endMinute <= 0 ||
+      window.endMinute > 1440
+    ) {
+      return {
+        ok: false as const,
+        message: "Os horários devem estar entre 00:00 e 23:59.",
+      };
+    }
+    if (window.startMinute >= window.endMinute) {
+      return {
+        ok: false as const,
+        message: "O horário inicial deve ser menor que o horário final.",
+      };
+    }
+  }
+
+  return { ok: true as const, windows: normalized };
+};
+
 type StoreHoursData = {
   timezone: string;
   monOpen: string | null;
@@ -402,6 +447,10 @@ const registerRoutes = () => {
             products: {
               where: { active: true },
               include: {
+                availabilityWindows: {
+                  where: { active: true },
+                  orderBy: { startMinute: "asc" },
+                },
                 optionGroups: {
                   include: {
                     items: {
@@ -428,8 +477,10 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Store not found" });
     }
 
-    const storeTimezone = store.hours?.timezone ?? defaultHours.timezone;
+    const storeTimezone =
+      store.timezone ?? store.hours?.timezone ?? defaultHours.timezone;
     const currentWeekdayIndex = getLocalWeekdayIndex(storeTimezone);
+    const { minutes: currentMinutes } = getLocalTimeParts(storeTimezone);
     const isProductAvailableToday = (availableDays: number[]) => {
       if (availableDays.length === 0) {
         return true;
@@ -438,6 +489,21 @@ const registerRoutes = () => {
         return true;
       }
       return availableDays.includes(currentWeekdayIndex);
+    };
+    const isProductAvailableNow = (
+      windows: { startMinute: number; endMinute: number }[]
+    ) => {
+      if (windows.length === 0) {
+        return true;
+      }
+      if (Number.isNaN(currentMinutes)) {
+        return true;
+      }
+      return windows.some(
+        (window) =>
+          window.startMinute <= currentMinutes &&
+          currentMinutes < window.endMinute
+      );
     };
 
     const hours = store.hours
@@ -491,7 +557,11 @@ const registerRoutes = () => {
         id: category.id,
         name: category.name,
         products: category.products
-          .filter((product) => isProductAvailableToday(product.availableDays))
+          .filter(
+            (product) =>
+              isProductAvailableToday(product.availableDays) &&
+              isProductAvailableNow(product.availabilityWindows)
+          )
           .map((product) => ({
             id: product.id,
             name: product.name,
@@ -1825,10 +1895,19 @@ const registerRoutes = () => {
       closedMessage: payload.closedMessage ?? null,
     };
 
-    const hours = await prisma.storeHours.upsert({
-      where: { storeId },
-      create: createData,
-      update: updateData,
+    const hours = await prisma.$transaction(async (tx) => {
+      const upserted = await tx.storeHours.upsert({
+        where: { storeId },
+        create: createData,
+        update: updateData,
+      });
+      if (payload.timezone) {
+        await tx.store.update({
+          where: { id: storeId },
+          data: { timezone: payload.timezone },
+        });
+      }
+      return upserted;
     });
 
     return reply.send({
@@ -2139,6 +2218,7 @@ const registerRoutes = () => {
       },
       include: {
         category: true,
+        availabilityWindows: { orderBy: { startMinute: "asc" } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -2149,6 +2229,12 @@ const registerRoutes = () => {
       price: product.price.toNumber(),
       active: product.active,
       availableDays: product.availableDays,
+      availabilityWindows: product.availabilityWindows.map((window) => ({
+        id: window.id,
+        startMinute: window.startMinute,
+        endMinute: window.endMinute,
+        active: window.active,
+      })),
       categoryId: product.categoryId,
       categoryName: product.category.name,
       createdAt: product.createdAt,
@@ -2168,13 +2254,41 @@ const registerRoutes = () => {
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
+      availabilityWindows: z
+        .array(
+          z.object({
+            startMinute: z.number().int().min(0).max(1439),
+            endMinute: z.number().int().min(1).max(1440),
+            active: z.boolean().optional(),
+          })
+        )
+        .optional(),
     });
 
-    const { name, categoryId, price, active, availableDays } = bodySchema.parse(
+    const {
+      name,
+      categoryId,
+      price,
+      active,
+      availableDays,
+      availabilityWindows,
+    } = bodySchema.parse(
       request.body
     );
     const normalizedAvailableDays =
       availableDays && availableDays.length > 0 ? availableDays : [];
+    const normalizedAvailabilityWindows =
+      availabilityWindows === undefined
+        ? undefined
+        : normalizeAvailabilityWindows(availabilityWindows);
+    if (
+      normalizedAvailabilityWindows &&
+      normalizedAvailabilityWindows.ok === false
+    ) {
+      return reply
+        .status(400)
+        .send({ message: normalizedAvailabilityWindows.message });
+    }
 
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId },
@@ -2191,7 +2305,20 @@ const registerRoutes = () => {
         active: active ?? true,
         categoryId,
         availableDays: normalizedAvailableDays,
+        availabilityWindows:
+          normalizedAvailabilityWindows &&
+          normalizedAvailabilityWindows.ok === true &&
+          normalizedAvailabilityWindows.windows.length > 0
+            ? {
+                create: normalizedAvailabilityWindows.windows.map((window) => ({
+                  startMinute: window.startMinute,
+                  endMinute: window.endMinute,
+                  active: window.active,
+                })),
+              }
+            : undefined,
       },
+      include: { availabilityWindows: { orderBy: { startMinute: "asc" } } },
     });
 
     return reply.status(201).send({
@@ -2200,6 +2327,12 @@ const registerRoutes = () => {
       price: product.price.toNumber(),
       active: product.active,
       availableDays: product.availableDays,
+      availabilityWindows: product.availabilityWindows.map((window) => ({
+        id: window.id,
+        startMinute: window.startMinute,
+        endMinute: window.endMinute,
+        active: window.active,
+      })),
       categoryId: product.categoryId,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
@@ -2219,21 +2352,50 @@ const registerRoutes = () => {
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
+      availabilityWindows: z
+        .array(
+          z.object({
+            startMinute: z.number().int().min(0).max(1439),
+            endMinute: z.number().int().min(1).max(1440),
+            active: z.boolean().optional(),
+          })
+        )
+        .optional(),
     });
 
     const { id } = paramsSchema.parse(request.params);
-    const { name, price, categoryId, active, availableDays } = bodySchema.parse(
+    const {
+      name,
+      price,
+      categoryId,
+      active,
+      availableDays,
+      availabilityWindows,
+    } = bodySchema.parse(
       request.body
     );
     const normalizedAvailableDays =
       availableDays && availableDays.length > 0 ? availableDays : [];
+    const normalizedAvailabilityWindows =
+      availabilityWindows === undefined
+        ? undefined
+        : normalizeAvailabilityWindows(availabilityWindows);
+    if (
+      normalizedAvailabilityWindows &&
+      normalizedAvailabilityWindows.ok === false
+    ) {
+      return reply
+        .status(400)
+        .send({ message: normalizedAvailabilityWindows.message });
+    }
 
     if (
       !name &&
       price === undefined &&
       !categoryId &&
       active === undefined &&
-      availableDays === undefined
+      availableDays === undefined &&
+      availabilityWindows === undefined
     ) {
       return reply.status(400).send({ message: "No changes provided" });
     }
@@ -2260,18 +2422,46 @@ const registerRoutes = () => {
       }
     }
 
-    const updated = await prisma.product.update({
-      where: { id },
-      data: {
-        name: name ?? product.name,
-        price: price ?? product.price,
-        active: active ?? product.active,
-        categoryId: categoryId ?? product.categoryId,
-        availableDays:
-          availableDays === undefined
-            ? product.availableDays
-            : normalizedAvailableDays,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedProduct = await tx.product.update({
+        where: { id },
+        data: {
+          name: name ?? product.name,
+          price: price ?? product.price,
+          active: active ?? product.active,
+          categoryId: categoryId ?? product.categoryId,
+          availableDays:
+            availableDays === undefined
+              ? product.availableDays
+              : normalizedAvailableDays,
+        },
+      });
+
+      if (
+        normalizedAvailabilityWindows &&
+        normalizedAvailabilityWindows.ok === true
+      ) {
+        await tx.productAvailabilityWindow.deleteMany({
+          where: { productId: id },
+        });
+        if (normalizedAvailabilityWindows.windows.length > 0) {
+          await tx.productAvailabilityWindow.createMany({
+            data: normalizedAvailabilityWindows.windows.map((window) => ({
+              productId: id,
+              startMinute: window.startMinute,
+              endMinute: window.endMinute,
+              active: window.active,
+            })),
+          });
+        }
+      }
+
+      return updatedProduct;
+    });
+
+    const updatedWindows = await prisma.productAvailabilityWindow.findMany({
+      where: { productId: updated.id },
+      orderBy: { startMinute: "asc" },
     });
 
     return {
@@ -2280,6 +2470,12 @@ const registerRoutes = () => {
       price: updated.price.toNumber(),
       active: updated.active,
       availableDays: updated.availableDays,
+      availabilityWindows: updatedWindows.map((window) => ({
+        id: window.id,
+        startMinute: window.startMinute,
+        endMinute: window.endMinute,
+        active: window.active,
+      })),
       categoryId: updated.categoryId,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
