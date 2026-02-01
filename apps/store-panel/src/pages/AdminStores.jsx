@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { adminApi } from "../api";
 import Button from "../components/Button";
 import Input from "../components/Input";
@@ -18,6 +19,7 @@ const AdminStores = () => {
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -200,6 +202,13 @@ const AdminStores = () => {
                 </td>
                 <td className="px-4 py-4 text-right text-sm">
                   <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => navigate(`/admin/stores/${store.id}`)}
+                    >
+                      Detalhes
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"

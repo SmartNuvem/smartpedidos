@@ -5,6 +5,7 @@ import { getAdminToken } from "./auth";
 import AdminLayout from "./components/AdminLayout";
 import Layout from "./components/Layout";
 import AdminLogin from "./pages/AdminLogin";
+import AdminStoreDetails from "./pages/AdminStoreDetails";
 import AdminStores from "./pages/AdminStores";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -69,6 +70,16 @@ const App = () => (
     <Route path="/p/:slug" element={<PublicOrder />} />
     <Route path="/login" element={<Login />} />
     <Route path="/admin/login" element={<AdminLogin />} />
+    <Route
+      path="/admin/stores/:id"
+      element={
+        <RequireAdmin>
+          <AdminLayout>
+            <AdminStoreDetails />
+          </AdminLayout>
+        </RequireAdmin>
+      }
+    />
     <Route
       path="/admin/stores"
       element={

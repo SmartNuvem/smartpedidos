@@ -1204,6 +1204,54 @@ const registerRoutes = () => {
     );
   });
 
+  app.get("/admin/stores/:id/stats/week", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [ordersLast7Days, ordersToday, lastOrder] = await Promise.all([
+      prisma.order.count({
+        where: {
+          storeId: id,
+          createdAt: {
+            gte: sevenDaysAgo,
+          },
+        },
+      }),
+      prisma.order.count({
+        where: {
+          storeId: id,
+          createdAt: {
+            gte: startOfToday,
+          },
+        },
+      }),
+      prisma.order.findFirst({
+        where: {
+          storeId: id,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    return reply.send({
+      storeId: id,
+      ordersLast7Days,
+      ordersToday,
+      lastOrderAt: lastOrder?.createdAt ?? null,
+    });
+  });
+
   app.post("/admin/stores", async (request, reply) => {
     const bodySchema = z.object({
       name: z.string().min(1),
