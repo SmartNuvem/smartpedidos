@@ -31,6 +31,8 @@ const PublicOrder = () => {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
+  const allowPickup = menu?.store?.allowPickup ?? true;
+  const allowDelivery = menu?.store?.allowDelivery ?? true;
 
   const optionGroups = optionProduct?.optionGroups ?? [];
 
@@ -81,6 +83,23 @@ const PublicOrder = () => {
       setPixCopied(false);
     }
   }, [paymentMethod]);
+
+  useEffect(() => {
+    if (!menu) {
+      return;
+    }
+    if (!allowPickup && allowDelivery) {
+      setFulfillmentType("DELIVERY");
+    } else if (!allowDelivery && allowPickup) {
+      setFulfillmentType("PICKUP");
+    } else if (!allowPickup && !allowDelivery) {
+      setFulfillmentType("PICKUP");
+    }
+    if (!allowDelivery) {
+      setDeliveryAreaId("");
+      setAddress(initialAddress);
+    }
+  }, [menu, allowPickup, allowDelivery]);
 
   const createCartItemId = () => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -302,11 +321,13 @@ const PublicOrder = () => {
     );
   };
 
-  const isDelivery = fulfillmentType === "DELIVERY";
+  const isDelivery = fulfillmentType === "DELIVERY" && allowDelivery;
   const deliveryFeeCents =
     isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
   const totalCents = subtotalCents + deliveryFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
+  const isFulfillmentAllowed =
+    fulfillmentType === "PICKUP" ? allowPickup : allowDelivery;
   const changeForValue = Number(
     changeFor.replace(/\./g, "").replace(",", ".")
   );
@@ -325,8 +346,8 @@ const PublicOrder = () => {
     paymentMethod &&
     isStoreOpen &&
     isChangeValid &&
-    (!isDelivery ||
-      (deliveryAreaId && address.line.trim()));
+    isFulfillmentAllowed &&
+    (!isDelivery || (deliveryAreaId && address.line.trim()));
   const currentGroup = optionGroups[optionStep];
   const currentGroupValidation = currentGroup
     ? getGroupValidation(currentGroup)
@@ -346,10 +367,11 @@ const PublicOrder = () => {
     setSubmitting(true);
     setError("");
     try {
+      const selectedFulfillmentType = isDelivery ? "DELIVERY" : "PICKUP";
       const payload = {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
-        orderType: fulfillmentType,
+        orderType: selectedFulfillmentType,
         notes: notes.trim() || undefined,
         paymentMethod,
         changeForCents:
@@ -650,29 +672,34 @@ const PublicOrder = () => {
               Tipo de pedido
             </h3>
             <div className="flex gap-2">
-              <button
-                className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
-                  fulfillmentType === "PICKUP"
-                    ? "border-blue-600 bg-blue-50 text-blue-700"
-                    : "border-slate-200 text-slate-600"
-                }`}
-                onClick={() => {
-                  setFulfillmentType("PICKUP");
-                  setDeliveryAreaId("");
-                }}
-              >
-                Retirar
-              </button>
-              <button
-                className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
-                  fulfillmentType === "DELIVERY"
-                    ? "border-blue-600 bg-blue-50 text-blue-700"
-                    : "border-slate-200 text-slate-600"
-                }`}
-                onClick={() => setFulfillmentType("DELIVERY")}
-              >
-                Entrega
-              </button>
+              {allowPickup ? (
+                <button
+                  className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
+                    fulfillmentType === "PICKUP"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => {
+                    setFulfillmentType("PICKUP");
+                    setDeliveryAreaId("");
+                    setAddress(initialAddress);
+                  }}
+                >
+                  Retirar
+                </button>
+              ) : null}
+              {allowDelivery ? (
+                <button
+                  className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
+                    fulfillmentType === "DELIVERY"
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : "border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => setFulfillmentType("DELIVERY")}
+                >
+                  Entrega
+                </button>
+              ) : null}
             </div>
           </div>
 

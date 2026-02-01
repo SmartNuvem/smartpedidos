@@ -25,6 +25,8 @@ const Settings = () => {
   const [savingPayment, setSavingPayment] = useState(false);
   const [savingAutoPrint, setSavingAutoPrint] = useState(false);
   const [autoPrintError, setAutoPrintError] = useState("");
+  const [savingFulfillment, setSavingFulfillment] = useState(false);
+  const [fulfillmentError, setFulfillmentError] = useState("");
   const [areaSavingId, setAreaSavingId] = useState(null);
   const [areaError, setAreaError] = useState("");
   const [agentsError, setAgentsError] = useState("");
@@ -344,6 +346,33 @@ const Settings = () => {
     }
   };
 
+  const handleSaveFulfillment = async () => {
+    if (!store) {
+      return;
+    }
+    const nextAllowPickup = Boolean(store.allowPickup);
+    const nextAllowDelivery = Boolean(store.allowDelivery);
+    if (!nextAllowPickup && !nextAllowDelivery) {
+      setFulfillmentError("Selecione pelo menos uma forma de atendimento.");
+      return;
+    }
+    setSavingFulfillment(true);
+    setFulfillmentError("");
+    try {
+      const updated = await api.updateStoreSettings({
+        allowPickup: nextAllowPickup,
+        allowDelivery: nextAllowDelivery,
+      });
+      setStore((prev) => (prev ? { ...prev, ...updated } : prev));
+    } catch (err) {
+      setFulfillmentError(
+        err?.message || "Não foi possível salvar as formas de atendimento."
+      );
+    } finally {
+      setSavingFulfillment(false);
+    }
+  };
+
   const isTokenCopyError = tokenCopyStatus.startsWith("Não");
 
   return (
@@ -376,6 +405,64 @@ const Settings = () => {
           </div>
         ) : (
           <p className="text-sm text-slate-500">
+            {error || "Carregando..."}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Formas de atendimento
+            </h3>
+            <p className="text-sm text-slate-500">
+              Defina se a loja aceita retirada e/ou entrega.
+            </p>
+          </div>
+          <Button
+            onClick={handleSaveFulfillment}
+            disabled={savingFulfillment || !store}
+          >
+            {savingFulfillment ? "Salvando..." : "Salvar atendimento"}
+          </Button>
+        </div>
+        {fulfillmentError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {fulfillmentError}
+          </div>
+        ) : null}
+        {store ? (
+          <div className="mt-4 flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={Boolean(store.allowPickup)}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev ? { ...prev, allowPickup: event.target.checked } : prev
+                  )
+                }
+              />
+              Aceita retirada
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={Boolean(store.allowDelivery)}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev
+                      ? { ...prev, allowDelivery: event.target.checked }
+                      : prev
+                  )
+                }
+              />
+              Aceita entrega
+            </label>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
             {error || "Carregando..."}
           </p>
         )}
