@@ -19,10 +19,13 @@ const Settings = () => {
   const [deliveryAreas, setDeliveryAreas] = useState([]);
   const [hours, setHours] = useState(null);
   const [payment, setPayment] = useState(null);
+  const [salonSettings, setSalonSettings] = useState(null);
   const [agents, setAgents] = useState([]);
   const [error, setError] = useState("");
   const [savingHours, setSavingHours] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [savingSalon, setSavingSalon] = useState(false);
+  const [salonError, setSalonError] = useState("");
   const [savingAutoPrint, setSavingAutoPrint] = useState(false);
   const [autoPrintError, setAutoPrintError] = useState("");
   const [savingFulfillment, setSavingFulfillment] = useState(false);
@@ -52,12 +55,13 @@ const Settings = () => {
     const loadData = async () => {
       setError("");
       try {
-        const [storeData, areasData, hoursData, paymentData] =
+        const [storeData, areasData, hoursData, paymentData, salonData] =
           await Promise.all([
             api.getStore(),
             api.getDeliveryAreas(),
             api.getStoreHours(),
             api.getPaymentSettings(),
+            api.getSalonSettings(),
           ]);
         if (!active) {
           return;
@@ -66,6 +70,7 @@ const Settings = () => {
         setDeliveryAreas(areasData);
         setHours(hoursData);
         setPayment(paymentData);
+        setSalonSettings(salonData);
       } catch {
         if (active) {
           setError("Não foi possível carregar as configurações.");
@@ -328,6 +333,27 @@ const Settings = () => {
     }
   };
 
+  const handleSaveSalon = async () => {
+    if (!salonSettings) {
+      return;
+    }
+    setSavingSalon(true);
+    setSalonError("");
+    try {
+      const updated = await api.updateSalonSettings({
+        salonEnabled: Boolean(salonSettings.salonEnabled),
+        salonTableCount: Math.max(0, Number(salonSettings.salonTableCount || 0)),
+      });
+      setSalonSettings(updated);
+    } catch (err) {
+      setSalonError(
+        err?.message || "Não foi possível salvar as configurações do salão."
+      );
+    } finally {
+      setSavingSalon(false);
+    }
+  };
+
   const handleSaveAutoPrint = async () => {
     if (!store) {
       return;
@@ -506,6 +532,65 @@ const Settings = () => {
               />
               Impressão automática (não depende do painel aberto)
             </label>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
+            {error || "Carregando..."}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Salão / Mesas
+            </h3>
+            <p className="text-sm text-slate-500">
+              Habilite o modo salão e defina a quantidade de mesas.
+            </p>
+          </div>
+          <Button onClick={handleSaveSalon} disabled={savingSalon}>
+            {savingSalon ? "Salvando..." : "Salvar salão"}
+          </Button>
+        </div>
+        {salonError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {salonError}
+          </div>
+        ) : null}
+        {salonSettings ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={Boolean(salonSettings.salonEnabled)}
+                onChange={(event) =>
+                  setSalonSettings((prev) =>
+                    prev
+                      ? { ...prev, salonEnabled: event.target.checked }
+                      : prev
+                  )
+                }
+              />
+              Habilitar modo salão
+            </label>
+            <Input
+              label="Quantidade de mesas"
+              type="number"
+              min="0"
+              value={salonSettings.salonTableCount ?? 0}
+              onChange={(event) =>
+                setSalonSettings((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        salonTableCount: Number(event.target.value || 0),
+                      }
+                    : prev
+                )
+              }
+            />
           </div>
         ) : (
           <p className="mt-4 text-sm text-slate-500">

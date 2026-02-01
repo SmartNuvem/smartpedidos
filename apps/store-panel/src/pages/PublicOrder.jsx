@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { API_URL, formatCurrency } from "../api";
 import Modal from "../components/Modal";
 
@@ -118,6 +118,9 @@ const reconcileCartItems = (items, menu) => {
 
 const PublicOrder = () => {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
+  const tableId = searchParams.get("table");
+  const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -270,6 +273,9 @@ const PublicOrder = () => {
     if (!menu) {
       return;
     }
+    if (isDineIn) {
+      return;
+    }
     if (!allowPickup && allowDelivery) {
       setFulfillmentType("DELIVERY");
     } else if (!allowDelivery && allowPickup) {
@@ -281,7 +287,7 @@ const PublicOrder = () => {
       setDeliveryAreaId("");
       setAddress(initialAddress);
     }
-  }, [menu, allowPickup, allowDelivery]);
+  }, [menu, allowPickup, allowDelivery, isDineIn]);
 
   const createCartItemId = () => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -512,13 +518,19 @@ const PublicOrder = () => {
     );
   };
 
-  const isDelivery = fulfillmentType === "DELIVERY" && allowDelivery;
+  const isDineInOrder = isDineIn;
+  const isDelivery =
+    !isDineInOrder && fulfillmentType === "DELIVERY" && allowDelivery;
   const deliveryFeeCents =
     isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
   const totalCents = subtotalCents + deliveryFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
   const isFulfillmentAllowed =
-    fulfillmentType === "PICKUP" ? allowPickup : allowDelivery;
+    isDineInOrder
+      ? true
+      : fulfillmentType === "PICKUP"
+        ? allowPickup
+        : allowDelivery;
   const changeForValue = Number(
     changeFor.replace(/\./g, "").replace(",", ".")
   );
@@ -532,14 +544,14 @@ const PublicOrder = () => {
     changeForCents >= totalCents;
   const isFormValid =
     cartItems.length > 0 &&
-    customerName.trim().length > 0 &&
-    customerPhone.trim().length > 0 &&
+    (isDineInOrder ||
+      (customerName.trim().length > 0 && customerPhone.trim().length > 0)) &&
     paymentMethod &&
     isStoreOpen &&
     isChangeValid &&
     isFulfillmentAllowed &&
     !hasUnavailableItems &&
-    (!isDelivery || (deliveryAreaId && address.line.trim()));
+    (isDineInOrder || !isDelivery || (deliveryAreaId && address.line.trim()));
   const currentGroup = optionGroups[optionStep];
   const currentGroupValidation = currentGroup
     ? getGroupValidation(currentGroup)
@@ -561,9 +573,9 @@ const PublicOrder = () => {
     try {
       const selectedFulfillmentType = isDelivery ? "DELIVERY" : "PICKUP";
       const payload = {
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        orderType: selectedFulfillmentType,
+        customerName: customerName.trim() || undefined,
+        customerPhone: customerPhone.trim() || undefined,
+        orderType: isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
         notes: notes.trim() || undefined,
         paymentMethod,
         changeForCents:
@@ -582,6 +594,9 @@ const PublicOrder = () => {
         payload.deliveryAreaId = deliveryAreaId;
         payload.addressLine = address.line.trim();
         payload.addressRef = address.reference.trim() || undefined;
+      }
+      if (isDineInOrder) {
+        payload.tableId = tableId;
       }
 
       const response = await fetch(`${API_URL}/public/${slug}/orders`, {
@@ -672,6 +687,11 @@ const PublicOrder = () => {
           >
             {isStoreOpen ? "Aberto" : "Fechado"}
           </span>
+          {isDineInOrder ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              Pedido na mesa
+            </span>
+          ) : null}
         </div>
         <p className="text-sm text-slate-500">
           Monte seu pedido e envie direto para a loja.
@@ -919,59 +939,68 @@ const PublicOrder = () => {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">
-              Seus dados
-            </h3>
-            <input
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              placeholder="Nome completo"
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-            />
-            <input
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              placeholder="WhatsApp / Telefone"
-              value={customerPhone}
-              onChange={(event) => setCustomerPhone(event.target.value)}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">
-              Tipo de pedido
-            </h3>
-            <div className="flex gap-2">
-              {allowPickup ? (
-                <button
-                  className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
-                    fulfillmentType === "PICKUP"
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
-                  onClick={() => {
-                    setFulfillmentType("PICKUP");
-                    setDeliveryAreaId("");
-                    setAddress(initialAddress);
-                  }}
-                >
-                  Retirar
-                </button>
-              ) : null}
-              {allowDelivery ? (
-                <button
-                  className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
-                    fulfillmentType === "DELIVERY"
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
-                  onClick={() => setFulfillmentType("DELIVERY")}
-                >
-                  Entrega
-                </button>
-              ) : null}
+          {!isDineInOrder ? (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Seus dados
+              </h3>
+              <input
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                placeholder="Nome completo"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+              />
+              <input
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                placeholder="WhatsApp / Telefone"
+                value={customerPhone}
+                onChange={(event) => setCustomerPhone(event.target.value)}
+              />
             </div>
-          </div>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Pedido para mesa. Você pode finalizar sem informar nome ou
+              telefone.
+            </div>
+          )}
+
+          {!isDineInOrder ? (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Tipo de pedido
+              </h3>
+              <div className="flex gap-2">
+                {allowPickup ? (
+                  <button
+                    className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
+                      fulfillmentType === "PICKUP"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                    onClick={() => {
+                      setFulfillmentType("PICKUP");
+                      setDeliveryAreaId("");
+                      setAddress(initialAddress);
+                    }}
+                  >
+                    Retirar
+                  </button>
+                ) : null}
+                {allowDelivery ? (
+                  <button
+                    className={`flex-1 rounded-full border px-3 py-2 text-sm font-semibold ${
+                      fulfillmentType === "DELIVERY"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                    onClick={() => setFulfillmentType("DELIVERY")}
+                  >
+                    Entrega
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {isDelivery ? (
             <div className="space-y-3">

@@ -11,6 +11,8 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Orders from "./pages/Orders";
 import OrderDetails from "./pages/OrderDetails";
+import Salon from "./pages/Salon";
+import SalonTable from "./pages/SalonTable";
 import Settings from "./pages/Settings";
 import Categories from "./pages/Categories";
 import Products from "./pages/Products";
@@ -147,6 +149,26 @@ const App = () => (
         <RequireAuth>
           <Layout>
             <Settings />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/store/salon"
+      element={
+        <RequireAuth>
+          <Layout>
+            <Salon />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/store/salon/tables/:id"
+      element={
+        <RequireAuth>
+          <Layout>
+            <SalonTable />
           </Layout>
         </RequireAuth>
       }
