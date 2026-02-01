@@ -10,6 +10,15 @@ http:
         options: sse-http1
       middlewares:
         - sse-no-compress
+    public-menu-sse:
+      rule: "Host(`smartpedidos.smartnuvem.com.br`) && PathPrefix(`/api/public/`) && PathSuffix(`/menu/stream`)"
+      entryPoints:
+        - websecure
+      service: api-service
+      tls:
+        options: sse-http1
+      middlewares:
+        - sse-no-compress
 
   services:
     api-service:

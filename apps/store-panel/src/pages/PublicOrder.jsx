@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { API_URL, formatCurrency } from "../api";
 import Modal from "../components/Modal";
@@ -6,6 +6,114 @@ import Modal from "../components/Modal";
 const initialAddress = {
   line: "",
   reference: "",
+};
+
+const reconcileCartItems = (items, menu) => {
+  if (!menu) {
+    return items;
+  }
+  const productMap = new Map();
+  menu.categories.forEach((category) => {
+    category.products.forEach((product) => {
+      productMap.set(product.id, product);
+    });
+  });
+
+  return items.map((item) => {
+    const product = productMap.get(item.productId);
+    if (!product) {
+      return { ...item, unavailable: true };
+    }
+
+    const optionGroups = product.optionGroups ?? [];
+    const selections = item.optionSelections ?? [];
+    const selectionMap = new Map(
+      selections.map((selection) => [selection.groupId, selection.itemIds])
+    );
+    let optionsValid = true;
+    let optionTotalCents = 0;
+    const normalizedOptions = [];
+
+    if (optionGroups.length === 0 && selections.length > 0) {
+      optionsValid = false;
+    }
+
+    optionGroups.forEach((group) => {
+      const selectedIds = selectionMap.get(group.id) ?? [];
+      const minRequired = group.required
+        ? Math.max(group.minSelect ?? 0, 1)
+        : group.minSelect ?? 0;
+      const maxAllowed =
+        group.type === "SINGLE"
+          ? 1
+          : group.maxSelect > 0
+            ? group.maxSelect
+            : Number.POSITIVE_INFINITY;
+
+      if (selectedIds.length < minRequired || selectedIds.length > maxAllowed) {
+        optionsValid = false;
+      }
+
+      if (selectedIds.length === 0) {
+        return;
+      }
+
+      const itemMap = new Map(group.items.map((option) => [option.id, option]));
+      const selectedItems = selectedIds
+        .map((optionId) => itemMap.get(optionId))
+        .filter(Boolean);
+
+      if (selectedItems.length !== selectedIds.length) {
+        optionsValid = false;
+        return;
+      }
+
+      selectedItems.forEach((option) => {
+        optionTotalCents += option.priceDeltaCents;
+      });
+
+      normalizedOptions.push({
+        groupId: group.id,
+        groupName: group.name,
+        items: selectedItems.map((option) => ({
+          id: option.id,
+          name: option.name,
+          priceDeltaCents: option.priceDeltaCents,
+        })),
+      });
+    });
+
+    const invalidSelection = selections.some(
+      (selection) =>
+        !optionGroups.some((group) => group.id === selection.groupId)
+    );
+    if (invalidSelection) {
+      optionsValid = false;
+    }
+
+    const missingRequired = optionGroups.some((group) => {
+      const minRequired = group.required
+        ? Math.max(group.minSelect ?? 0, 1)
+        : group.minSelect ?? 0;
+      return minRequired > 0 && !selectionMap.has(group.id);
+    });
+    if (missingRequired) {
+      optionsValid = false;
+    }
+
+    const updatedItem = {
+      ...item,
+      name: product.name,
+      priceCents: product.priceCents + optionTotalCents,
+      options:
+        normalizedOptions.length > 0 ? normalizedOptions : item.options ?? [],
+    };
+
+    return {
+      ...updatedItem,
+      unavailable: !optionsValid,
+    };
+  });
 };
 
 const PublicOrder = () => {
@@ -36,9 +144,14 @@ const PublicOrder = () => {
 
   const optionGroups = optionProduct?.optionGroups ?? [];
 
-  useEffect(() => {
-    const loadMenu = async () => {
-      setLoading(true);
+  const fetchMenu = useCallback(
+    async ({ showLoading = false } = {}) => {
+      if (!slug) {
+        return;
+      }
+      if (showLoading) {
+        setLoading(true);
+      }
       setError("");
       try {
         const response = await fetch(`${API_URL}/public/${slug}/menu`, {
@@ -49,17 +162,39 @@ const PublicOrder = () => {
         }
         const data = await response.json();
         setMenu(data);
+        setCartItems((prev) => reconcileCartItems(prev, data));
       } catch (err) {
         setError(err.message || "Não foi possível carregar o menu.");
       } finally {
-        setLoading(false);
+        if (showLoading) {
+          setLoading(false);
+        }
       }
-    };
+    },
+    [slug]
+  );
 
-    if (slug) {
-      loadMenu();
+  useEffect(() => {
+    fetchMenu({ showLoading: true });
+  }, [fetchMenu]);
+
+  useEffect(() => {
+    if (!slug) {
+      return undefined;
     }
-  }, [slug]);
+    const source = new EventSource(
+      `${API_URL}/public/${slug}/menu/stream`,
+      { withCredentials: true }
+    );
+    const handleMenuUpdate = () => {
+      fetchMenu();
+    };
+    source.addEventListener("menu-updated", handleMenuUpdate);
+    return () => {
+      source.removeEventListener("menu-updated", handleMenuUpdate);
+      source.close();
+    };
+  }, [fetchMenu, slug]);
 
   useEffect(() => {
     if (!menu?.payment) {
@@ -192,6 +327,11 @@ const PublicOrder = () => {
       ),
     [cartItems]
   );
+  const unavailableItems = useMemo(
+    () => cartItems.filter((item) => item.unavailable),
+    [cartItems]
+  );
+  const hasUnavailableItems = unavailableItems.length > 0;
 
   const selectedDeliveryArea = useMemo(() => {
     if (!menu?.deliveryAreas) {
@@ -313,6 +453,10 @@ const PublicOrder = () => {
     setCartItems((prev) => prev.filter((item) => item.id !== itemId));
   };
 
+  const handleRemoveUnavailableItems = () => {
+    setCartItems((prev) => prev.filter((item) => !item.unavailable));
+  };
+
   const handleItemNotes = (itemId, value) => {
     setCartItems((prev) =>
       prev.map((item) =>
@@ -347,6 +491,7 @@ const PublicOrder = () => {
     isStoreOpen &&
     isChangeValid &&
     isFulfillmentAllowed &&
+    !hasUnavailableItems &&
     (!isDelivery || (deliveryAreaId && address.line.trim()));
   const currentGroup = optionGroups[optionStep];
   const currentGroupValidation = currentGroup
@@ -547,6 +692,20 @@ const PublicOrder = () => {
             </p>
           </div>
 
+          {hasUnavailableItems ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              <p className="font-semibold">
+                Alguns itens ficaram indisponíveis. Remova para continuar.
+              </p>
+              <button
+                className="mt-2 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700"
+                onClick={handleRemoveUnavailableItems}
+              >
+                Remover itens indisponíveis
+              </button>
+            </div>
+          ) : null}
+
           {cartItems.length === 0 ? (
             <p className="text-sm text-slate-500">
               Seu carrinho está vazio.
@@ -557,9 +716,16 @@ const PublicOrder = () => {
                 <div key={item.id} className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">
-                        {item.name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900">
+                          {item.name}
+                        </p>
+                        {item.unavailable ? (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                            Indisponível
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-sm text-slate-500">
                         {formatCurrency(item.priceCents / 100)}
                       </p>
@@ -588,10 +754,11 @@ const PublicOrder = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        className="h-8 w-8 rounded-full border border-slate-200 text-slate-600"
+                        className="h-8 w-8 rounded-full border border-slate-200 text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() =>
                           handleQuantityChange(item.id, -1)
                         }
+                        disabled={item.unavailable}
                       >
                         -
                       </button>
@@ -599,10 +766,11 @@ const PublicOrder = () => {
                         {item.quantity}
                       </span>
                       <button
-                        className="h-8 w-8 rounded-full border border-slate-200 text-slate-600"
+                        className="h-8 w-8 rounded-full border border-slate-200 text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() =>
                           handleQuantityChange(item.id, 1)
                         }
+                        disabled={item.unavailable}
                       >
                         +
                       </button>
@@ -616,6 +784,7 @@ const PublicOrder = () => {
                     onChange={(event) =>
                       handleItemNotes(item.id, event.target.value)
                     }
+                    disabled={item.unavailable}
                   />
                   <button
                     className="text-xs font-semibold text-rose-500"
