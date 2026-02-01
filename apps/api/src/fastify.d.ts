@@ -1,11 +1,4 @@
 import "fastify";
-import "@fastify/jwt";
-
-type JwtUser = {
-  role?: string;
-  storeId?: string;
-  sub?: string;
-};
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -17,12 +10,5 @@ declare module "fastify" {
       name: string;
       isActive: boolean;
     };
-  }
-}
-
-declare module "@fastify/jwt" {
-  interface FastifyJWT {
-    payload: JwtUser;
-    user: JwtUser;
   }
 }

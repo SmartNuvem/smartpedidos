@@ -15,6 +15,7 @@ import {
   requireAdmin,
 } from "./auth";
 import { buildOrderPdf } from "./pdf";
+import type { JwtUser } from "./types/jwt";
 
 const slugRegex = /^[a-z0-9-]+$/;
 
@@ -547,11 +548,8 @@ const calculateIsOpenNow = (hours: StoreHoursData) => {
 
 const getStoreIdFromToken = (token: string) => {
   try {
-    const payload = app.jwt.verify<{
-      role?: string;
-      storeId?: string;
-    }>(token);
-    if (payload.role !== "store" || !payload.storeId) {
+    const payload = app.jwt.verify<JwtUser>(token);
+    if (payload.role !== "STORE" || !payload.storeId) {
       return null;
     }
     return payload.storeId;
@@ -562,14 +560,11 @@ const getStoreIdFromToken = (token: string) => {
 
 const getSalonAccessStoreIdFromToken = (token: string) => {
   try {
-    const payload = app.jwt.verify<{
-      role?: string;
-      storeId?: string;
-    }>(token);
+    const payload = app.jwt.verify<JwtUser>(token);
     if (!payload.storeId) {
       return null;
     }
-    if (payload.role === "store" || payload.role === "WAITER") {
+    if (payload.role === "STORE" || payload.role === "WAITER") {
       return payload.storeId;
     }
     return null;
@@ -968,6 +963,7 @@ const registerRoutes = () => {
 
     const waiterToken = await reply.jwtSign(
       {
+        id: store.id,
         role: "WAITER",
         storeId: store.id,
         slug: store.slug,
@@ -1414,7 +1410,7 @@ const registerRoutes = () => {
     }
 
     const token = app.jwt.sign(
-      { role: "store", storeId: store.id },
+      { id: store.id, role: "STORE", storeId: store.id },
       { sub: store.id }
     );
 
@@ -1468,8 +1464,8 @@ const registerRoutes = () => {
     });
 
     const token = await reply.jwtSign(
-      { sub: admin.id, role: "admin" },
-      { expiresIn: "7d" }
+      { id: admin.id, role: "ADMIN" },
+      { expiresIn: "7d", sub: admin.id }
     );
 
     return reply.send({ admin, token });
@@ -1494,8 +1490,8 @@ const registerRoutes = () => {
     }
 
     const token = await reply.jwtSign(
-      { sub: admin.id, role: "admin" },
-      { expiresIn: "7d" }
+      { id: admin.id, role: "ADMIN" },
+      { expiresIn: "7d", sub: admin.id }
     );
 
     return reply.send({
