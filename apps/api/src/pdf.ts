@@ -86,26 +86,15 @@ export const buildOrderPdf = (order: OrderReceipt) => {
     const lineTotalCents = item.unitPriceCents * item.quantity;
     doc.text(`${item.quantity}x ${item.product.name}`);
     if (item.options && item.options.length > 0) {
-      const groupedOptions = item.options.reduce((acc, option) => {
-        if (!acc[option.groupName]) {
-          acc[option.groupName] = [];
-        }
-        acc[option.groupName].push(option);
-        return acc;
-      }, {} as Record<string, OrderItemOption[]>);
-
       doc.fontSize(8);
-      Object.entries(groupedOptions).forEach(([groupName, options]) => {
-        const description = options
-          .map((option) => {
-            const priceLabel =
-              option.priceDeltaCents > 0
-                ? ` (+${currency.format(option.priceDeltaCents / 100)})`
-                : "";
-            return `${option.itemName}${priceLabel}`;
-          })
-          .join(", ");
-        doc.text(`- ${groupName}: ${description}`, { indent: 8 });
+      item.options.forEach((option) => {
+        const priceLabel =
+          option.priceDeltaCents > 0
+            ? ` (+${currency.format(option.priceDeltaCents / 100)})`
+            : "";
+        doc.text(`• ${option.groupName}: ${option.itemName}${priceLabel}`, {
+          indent: 8,
+        });
       });
       doc.fontSize(10);
     }
