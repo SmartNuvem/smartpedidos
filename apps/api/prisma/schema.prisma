@@ -74,6 +74,7 @@ model Product {
   name       String
   price      Decimal     @db.Decimal(10, 2)
   active     Boolean     @default(true)
+  availableDays Int[]?
   categoryId String
   category   Category    @relation(fields: [categoryId], references: [id])
   orderItems OrderItem[]
