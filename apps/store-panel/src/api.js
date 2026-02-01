@@ -347,6 +347,15 @@ export const adminApi = {
     });
     return handleResponse(response);
   },
+  getStoreWeekStats: async (id) => {
+    const response = await request(
+      `${API_URL}/admin/stores/${id}/stats/week`,
+      {
+        headers: buildAdminHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
   createStore: async (payload) => {
     const response = await request(`${API_URL}/admin/stores`, {
       method: "POST",
