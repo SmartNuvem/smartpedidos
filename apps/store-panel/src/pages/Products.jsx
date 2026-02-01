@@ -420,7 +420,7 @@ const Products = () => {
         price: priceValue,
         active: formState.active,
         availableDays: formState.availableEveryday
-          ? null
+          ? []
           : formState.availableDays,
       };
       if (editingProduct) {
