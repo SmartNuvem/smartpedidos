@@ -137,6 +137,7 @@ model Order {
   deliveryAreaId      String?
   deliveryArea        DeliveryArea?   @relation(fields: [deliveryAreaId], references: [id])
   tableId             String?
+  tableSessionId      String?
   table               SalonTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
   deliveryFeeCents    Int             @default(0)
   paymentMethod       PaymentMethod   @default(CASH)
@@ -146,6 +147,8 @@ model Order {
   items               OrderItem[]
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+
+  @@index([tableId, tableSessionId])
 }
 
 model OrderItem {
@@ -295,6 +298,7 @@ model SalonTable {
   status    TableStatus @default(FREE)
   openedAt  DateTime?
   closedAt  DateTime?
+  currentSessionId String?
   orders    Order[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt

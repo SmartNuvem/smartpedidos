@@ -3,6 +3,7 @@ import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 import { OpenOverride, Prisma, TableStatus } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./prisma";
@@ -997,7 +998,7 @@ const registerRoutes = () => {
       addressCity: z.string().min(1).optional(),
       addressRef: z.string().min(1).optional(),
       tableId: z.string().uuid().optional(),
-      paymentMethod: z.enum(["PIX", "CASH", "CARD"]),
+      paymentMethod: z.enum(["PIX", "CASH", "CARD"]).optional(),
       changeForCents: z.number().int().nonnegative().optional(),
       items: z
         .array(
@@ -1115,6 +1116,7 @@ const registerRoutes = () => {
       });
     }
 
+    let tableSessionId: string | null = null;
     if (isDineIn) {
       if (!tableId) {
         return reply.status(400).send({
@@ -1132,6 +1134,18 @@ const registerRoutes = () => {
           message: "A mesa deve estar aberta para lançar pedidos.",
         });
       }
+      if (!selectedTable.currentSessionId) {
+        return reply.status(400).send({
+          message: "A mesa precisa ter uma sessão ativa para receber pedidos.",
+        });
+      }
+      tableSessionId = selectedTable.currentSessionId;
+    }
+
+    if (!isDineIn && !paymentMethod) {
+      return reply
+        .status(400)
+        .send({ message: "Forma de pagamento obrigatória." });
     }
 
     const paymentSettings = store.paymentSettings ?? {
@@ -1140,15 +1154,17 @@ const registerRoutes = () => {
       acceptCard: true,
     };
 
-    const paymentAllowed =
-      (paymentMethod === "PIX" && paymentSettings.acceptPix) ||
-      (paymentMethod === "CASH" && paymentSettings.acceptCash) ||
-      (paymentMethod === "CARD" && paymentSettings.acceptCard);
+    if (!isDineIn && paymentMethod) {
+      const paymentAllowed =
+        (paymentMethod === "PIX" && paymentSettings.acceptPix) ||
+        (paymentMethod === "CASH" && paymentSettings.acceptCash) ||
+        (paymentMethod === "CARD" && paymentSettings.acceptCard);
 
-    if (!paymentAllowed) {
-      return reply
-        .status(400)
-        .send({ message: "Forma de pagamento indisponível." });
+      if (!paymentAllowed) {
+        return reply
+          .status(400)
+          .send({ message: "Forma de pagamento indisponível." });
+      }
     }
 
     const normalizedAddressLine = addressLine ?? address?.line ?? null;
@@ -1310,6 +1326,7 @@ const registerRoutes = () => {
     const total = totalCents / 100;
 
     if (
+      !isDineIn &&
       paymentMethod === "CASH" &&
       changeForCents !== undefined &&
       changeForCents < totalCents
@@ -1320,6 +1337,9 @@ const registerRoutes = () => {
     }
 
     const initialStatus = store.autoPrintEnabled ? "PRINTING" : "NEW";
+    const effectivePaymentMethod = isDineIn
+      ? paymentMethod ?? "CASH"
+      : paymentMethod!;
     const order = await prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
@@ -1338,10 +1358,13 @@ const registerRoutes = () => {
             isDelivery ? normalizedAddressRef : null,
           deliveryAreaId: isDelivery ? deliveryAreaId ?? null : null,
           tableId: isDineIn ? tableId ?? null : null,
+          tableSessionId: isDineIn ? tableSessionId : null,
           deliveryFeeCents,
-          paymentMethod,
+          paymentMethod: effectivePaymentMethod,
           changeForCents:
-            paymentMethod === "CASH" ? changeForCents ?? null : null,
+            !isDineIn && paymentMethod === "CASH"
+              ? changeForCents ?? null
+              : null,
           total,
         },
       });
@@ -2712,26 +2735,42 @@ const registerRoutes = () => {
       where: { storeId },
       orderBy: { number: "asc" },
     });
-    const tableIds = tables.map((table) => table.id);
-    const totals = tableIds.length
+    const activeSessions = tables
+      .filter(
+        (table) =>
+          table.status === TableStatus.OPEN && table.currentSessionId
+      )
+      .map((table) => ({
+        tableId: table.id,
+        tableSessionId: table.currentSessionId!,
+      }));
+    const totals = activeSessions.length
       ? await prisma.order.groupBy({
-          by: ["tableId"],
+          by: ["tableId", "tableSessionId"],
           where: {
             storeId,
             orderType: "DINE_IN",
-            tableId: { in: tableIds },
+            OR: activeSessions.map((session) => ({
+              tableId: session.tableId,
+              tableSessionId: session.tableSessionId,
+            })),
           },
           _sum: { total: true },
           _max: { createdAt: true },
         })
       : [];
     const totalsMap = new Map(
-      totals.map((item) => [item.tableId, item])
+      totals.map((item) => [`${item.tableId}:${item.tableSessionId}`, item])
     );
 
     return reply.send(
       tables.map((table) => {
-        const summary = totalsMap.get(table.id);
+        const summary =
+          table.status === TableStatus.OPEN && table.currentSessionId
+            ? totalsMap.get(
+                `${table.id}:${table.currentSessionId}`
+              )
+            : undefined;
         const total = summary?._sum.total
           ? summary._sum.total.toNumber()
           : 0;
@@ -2776,23 +2815,27 @@ const registerRoutes = () => {
     }
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const orders = await prisma.order.findMany({
-      where: {
-        storeId,
-        orderType: "DINE_IN",
-        tableId: table.id,
-        createdAt: { gte: sevenDaysAgo },
-      },
-      include: {
-        items: {
-          include: {
-            product: true,
-            options: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const orders =
+      table.status === TableStatus.OPEN && table.currentSessionId
+        ? await prisma.order.findMany({
+            where: {
+              storeId,
+              orderType: "DINE_IN",
+              tableId: table.id,
+              tableSessionId: table.currentSessionId,
+              createdAt: { gte: sevenDaysAgo },
+            },
+            include: {
+              items: {
+                include: {
+                  product: true,
+                  options: true,
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
 
     const total = orders.reduce(
       (acc, order) => acc + order.total.toNumber(),
@@ -2859,7 +2902,7 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Mesa não encontrada." });
     }
 
-    if (table.status === TableStatus.OPEN) {
+    if (table.status === TableStatus.OPEN && table.currentSessionId) {
       return reply.send({ ok: true });
     }
 
@@ -2869,6 +2912,7 @@ const registerRoutes = () => {
         status: TableStatus.OPEN,
         openedAt: new Date(),
         closedAt: null,
+        currentSessionId: randomUUID(),
       },
     });
 
@@ -2914,6 +2958,7 @@ const registerRoutes = () => {
         status: TableStatus.FREE,
         closedAt: new Date(),
         openedAt: null,
+        currentSessionId: null,
       },
     });
 
