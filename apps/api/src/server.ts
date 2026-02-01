@@ -4458,6 +4458,121 @@ const registerRoutes = () => {
     return reply.send(pdf);
   });
 
+  app.get("/agent/print-jobs", async (request) => {
+    const querySchema = z.object({
+      status: z.nativeEnum(PrintJobStatus).default(PrintJobStatus.QUEUED),
+      type: z.nativeEnum(PrintJobType).optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(20),
+    });
+    const { status, type, limit } = querySchema.parse(request.query);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const printJobs = await prisma.printJob.findMany({
+      where: {
+        storeId: agent.storeId,
+        status,
+        ...(type ? { type } : {}),
+      },
+      orderBy: { createdAt: "asc" },
+      take: limit,
+    });
+
+    return printJobs.map((job) => ({
+      id: job.id,
+      type: job.type,
+      status: job.status,
+      tableId: job.tableId,
+      tableSessionId: job.tableSessionId,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+    }));
+  });
+
+  app.get("/agent/print-jobs/:id/pdf", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const printJob = await prisma.printJob.findFirst({
+      where: { id, storeId: agent.storeId },
+      include: { store: true },
+    });
+
+    if (!printJob) {
+      return reply.status(404).send({ message: "Impressão não encontrada." });
+    }
+
+    if (printJob.type !== PrintJobType.CASHIER_TABLE_SUMMARY) {
+      return reply.status(400).send({
+        message: "Este job não possui resumo de mesa.",
+      });
+    }
+
+    if (!printJob.tableId) {
+      return reply.status(400).send({
+        message: "Mesa não informada para este job.",
+      });
+    }
+
+    const table = await prisma.salonTable.findFirst({
+      where: { id: printJob.tableId, storeId: printJob.storeId },
+      select: { number: true },
+    });
+
+    if (!table) {
+      return reply.status(404).send({ message: "Mesa não encontrada." });
+    }
+
+    const summary = await buildTableSessionSummary(prisma, {
+      storeId: printJob.storeId,
+      tableId: printJob.tableId,
+      tableSessionId: printJob.tableSessionId,
+    });
+
+    const pdf = buildTableSummaryPdf({
+      store: printJob.store,
+      tableNumber: table.number,
+      items: summary.items,
+      totalCents: summary.totalCents,
+      closedAt: printJob.createdAt,
+    });
+
+    reply.header("Content-Type", "application/pdf");
+    reply.header(
+      "Content-Disposition",
+      `inline; filename=table-summary-${printJob.id}.pdf`
+    );
+
+    return reply.send(pdf);
+  });
+
+  app.post("/agent/print-jobs/:id/printed", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const printJob = await prisma.printJob.findFirst({
+      where: { id, storeId: agent.storeId },
+    });
+
+    if (!printJob) {
+      return reply.status(404).send({ message: "Impressão não encontrada." });
+    }
+
+    const updated = await prisma.printJob.update({
+      where: { id: printJob.id },
+      data: { status: PrintJobStatus.PRINTED },
+    });
+
+    return {
+      id: updated.id,
+      status: updated.status,
+    };
+  });
+
 };
 
 const start = async () => {
