@@ -484,6 +484,8 @@ const registerRoutes = () => {
         slug: store.slug,
         isOpenNow: store.hours ? calculateIsOpenNow(hours) : true,
         closedMessage: hours.closedMessage,
+        allowPickup: store.allowPickup,
+        allowDelivery: store.allowDelivery,
       },
       categories: store.categories.map((category) => ({
         id: category.id,
@@ -598,6 +600,18 @@ const registerRoutes = () => {
 
     if (!store || !store.isActive) {
       return reply.status(404).send({ message: "Store not found" });
+    }
+
+    if (normalizedOrderType === "DELIVERY" && !store.allowDelivery) {
+      return reply.status(400).send({
+        message: "Entrega indisponível para esta loja.",
+      });
+    }
+
+    if (normalizedOrderType === "PICKUP" && !store.allowPickup) {
+      return reply.status(400).send({
+        message: "Retirada indisponível para esta loja.",
+      });
     }
 
     const hours = store.hours
@@ -1309,6 +1323,8 @@ const registerRoutes = () => {
       email: store.email,
       isActive: store.isActive,
       autoPrintEnabled: store.autoPrintEnabled,
+      allowPickup: store.allowPickup,
+      allowDelivery: store.allowDelivery,
     };
   });
 
@@ -1338,6 +1354,56 @@ const registerRoutes = () => {
       email: store.email,
       isActive: store.isActive,
       autoPrintEnabled: store.autoPrintEnabled,
+      allowPickup: store.allowPickup,
+      allowDelivery: store.allowDelivery,
+    });
+  });
+
+  app.patch("/store/settings", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      allowPickup: z.boolean().optional(),
+      allowDelivery: z.boolean().optional(),
+    });
+
+    const payload = bodySchema.parse(request.body ?? {});
+
+    const current = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: {
+        allowPickup: true,
+        allowDelivery: true,
+      },
+    });
+
+    if (!current) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const nextAllowPickup = payload.allowPickup ?? current.allowPickup;
+    const nextAllowDelivery = payload.allowDelivery ?? current.allowDelivery;
+
+    if (!nextAllowPickup && !nextAllowDelivery) {
+      return reply.status(400).send({
+        message: "Selecione pelo menos uma forma de atendimento.",
+      });
+    }
+
+    const store = await prisma.store.update({
+      where: { id: storeId },
+      data: {
+        allowPickup: payload.allowPickup ?? undefined,
+        allowDelivery: payload.allowDelivery ?? undefined,
+      },
+    });
+
+    return reply.send({
+      allowPickup: store.allowPickup,
+      allowDelivery: store.allowDelivery,
     });
   });
 

@@ -109,6 +109,14 @@ export const api = {
     });
     return handleResponse(response);
   },
+  updateStoreSettings: async (payload) => {
+    const response = await request(`${API_URL}/store/settings`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
   getStoreAgents: async () => {
     const response = await request(`${API_URL}/store/agents`, {
       headers: buildHeaders(),

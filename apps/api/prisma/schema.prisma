@@ -48,6 +48,8 @@ model Store {
   passwordHash    String?
   isActive        Boolean               @default(true)
   autoPrintEnabled Boolean              @default(false)
+  allowPickup     Boolean               @default(true)
+  allowDelivery   Boolean               @default(true)
   categories      Category[]
   orders          Order[]
   agents          Agent[]
