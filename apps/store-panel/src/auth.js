@@ -11,6 +11,15 @@ export const clearToken = () => {
   localStorage.removeItem(TOKEN_KEY);
 };
 
+export const logout = (navigate) => {
+  clearToken();
+  if (typeof navigate === "function") {
+    navigate("/login", { replace: true });
+  } else if (typeof window !== "undefined") {
+    window.location.assign("/login");
+  }
+};
+
 export const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
 
 export const setAdminToken = (token) => {

@@ -64,7 +64,6 @@ export const api = {
   logout: async () => {
     const response = await request(`${API_URL}/auth/store/logout`, {
       method: "POST",
-      headers: buildHeaders(),
     });
     return handleResponse(response);
   },
