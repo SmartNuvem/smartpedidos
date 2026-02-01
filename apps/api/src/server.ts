@@ -262,6 +262,23 @@ const getLocalTimeParts = (timezone: string) => {
   };
 };
 
+const getLocalWeekdayIndex = (timezone: string) => {
+  const { weekday } = getLocalTimeParts(timezone);
+  if (!weekday) {
+    return null;
+  }
+  const dayIndexMap: Record<string, number> = {
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+    Sun: 7,
+  };
+  return dayIndexMap[weekday] ?? null;
+};
+
 const calculateIsOpenNow = (hours: StoreHoursData) => {
   if (hours.isOpenNowOverride === OpenOverride.FORCE_OPEN) {
     return true;
@@ -411,6 +428,18 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Store not found" });
     }
 
+    const storeTimezone = store.hours?.timezone ?? defaultHours.timezone;
+    const currentWeekdayIndex = getLocalWeekdayIndex(storeTimezone);
+    const isProductAvailableToday = (availableDays: number[] | null) => {
+      if (!availableDays || availableDays.length === 0) {
+        return true;
+      }
+      if (!currentWeekdayIndex) {
+        return true;
+      }
+      return availableDays.includes(currentWeekdayIndex);
+    };
+
     const hours = store.hours
       ? {
           timezone: store.hours.timezone,
@@ -459,28 +488,30 @@ const registerRoutes = () => {
       categories: store.categories.map((category) => ({
         id: category.id,
         name: category.name,
-        products: category.products.map((product) => ({
-          id: product.id,
-          name: product.name,
-          priceCents: Math.round(product.price.toNumber() * 100),
-          active: product.active,
-          optionGroups: product.optionGroups.map((group) => ({
-            id: group.id,
-            name: group.name,
-            type: group.type,
-            required: group.required,
-            minSelect: group.minSelect,
-            maxSelect: group.maxSelect,
-            sortOrder: group.sortOrder,
-            items: group.items.map((item) => ({
-              id: item.id,
-              name: item.name,
-              priceDeltaCents: item.priceDeltaCents,
-              isActive: item.isActive,
-              sortOrder: item.sortOrder,
+        products: category.products
+          .filter((product) => isProductAvailableToday(product.availableDays))
+          .map((product) => ({
+            id: product.id,
+            name: product.name,
+            priceCents: Math.round(product.price.toNumber() * 100),
+            active: product.active,
+            optionGroups: product.optionGroups.map((group) => ({
+              id: group.id,
+              name: group.name,
+              type: group.type,
+              required: group.required,
+              minSelect: group.minSelect,
+              maxSelect: group.maxSelect,
+              sortOrder: group.sortOrder,
+              items: group.items.map((item) => ({
+                id: item.id,
+                name: item.name,
+                priceDeltaCents: item.priceDeltaCents,
+                isActive: item.isActive,
+                sortOrder: item.sortOrder,
+              })),
             })),
           })),
-        })),
       })),
       deliveryAreas: store.deliveryAreas.map((area) => ({
         id: area.id,
@@ -2051,6 +2082,7 @@ const registerRoutes = () => {
       name: product.name,
       price: product.price.toNumber(),
       active: product.active,
+      availableDays: product.availableDays,
       categoryId: product.categoryId,
       categoryName: product.category.name,
       createdAt: product.createdAt,
@@ -2069,9 +2101,17 @@ const registerRoutes = () => {
       categoryId: z.string().uuid(),
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
+      availableDays: z
+        .array(z.number().int().min(1).max(7))
+        .optional()
+        .nullable(),
     });
 
-    const { name, categoryId, price, active } = bodySchema.parse(request.body);
+    const { name, categoryId, price, active, availableDays } = bodySchema.parse(
+      request.body
+    );
+    const normalizedAvailableDays =
+      availableDays && availableDays.length > 0 ? availableDays : null;
 
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId },
@@ -2087,6 +2127,7 @@ const registerRoutes = () => {
         price,
         active: active ?? true,
         categoryId,
+        availableDays: normalizedAvailableDays,
       },
     });
 
@@ -2095,6 +2136,7 @@ const registerRoutes = () => {
       name: product.name,
       price: product.price.toNumber(),
       active: product.active,
+      availableDays: product.availableDays,
       categoryId: product.categoryId,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
@@ -2113,12 +2155,26 @@ const registerRoutes = () => {
       price: z.number().nonnegative().optional(),
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
+      availableDays: z
+        .array(z.number().int().min(1).max(7))
+        .optional()
+        .nullable(),
     });
 
     const { id } = paramsSchema.parse(request.params);
-    const { name, price, categoryId, active } = bodySchema.parse(request.body);
+    const { name, price, categoryId, active, availableDays } = bodySchema.parse(
+      request.body
+    );
+    const normalizedAvailableDays =
+      availableDays && availableDays.length > 0 ? availableDays : null;
 
-    if (!name && price === undefined && !categoryId && active === undefined) {
+    if (
+      !name &&
+      price === undefined &&
+      !categoryId &&
+      active === undefined &&
+      availableDays === undefined
+    ) {
       return reply.status(400).send({ message: "No changes provided" });
     }
 
@@ -2151,6 +2207,10 @@ const registerRoutes = () => {
         price: price ?? product.price,
         active: active ?? product.active,
         categoryId: categoryId ?? product.categoryId,
+        availableDays:
+          availableDays === undefined
+            ? product.availableDays
+            : normalizedAvailableDays,
       },
     });
 
@@ -2159,6 +2219,7 @@ const registerRoutes = () => {
       name: updated.name,
       price: updated.price.toNumber(),
       active: updated.active,
+      availableDays: updated.availableDays,
       categoryId: updated.categoryId,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,

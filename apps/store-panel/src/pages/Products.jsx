@@ -58,6 +58,16 @@ const normalizeGroupRules = (group) => {
   };
 };
 
+const dayOptions = [
+  { label: "Seg", value: 1 },
+  { label: "Ter", value: 2 },
+  { label: "Qua", value: 3 },
+  { label: "Qui", value: 4 },
+  { label: "Sex", value: 5 },
+  { label: "Sáb", value: 6 },
+  { label: "Dom", value: 7 },
+];
+
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -85,6 +95,8 @@ const Products = () => {
     categoryId: "",
     price: "",
     active: true,
+    availableEveryday: true,
+    availableDays: [],
   });
   const [toast, setToast] = useState(null);
 
@@ -121,17 +133,23 @@ const Products = () => {
       categoryId: categories[0]?.id ?? "",
       price: "",
       active: true,
+      availableEveryday: true,
+      availableDays: [],
     });
     setModalOpen(true);
   };
 
   const openEdit = (product) => {
+    const availableDays = product.availableDays ?? [];
+    const availableEveryday = availableDays.length === 0;
     setEditingProduct(product);
     setFormState({
       name: product.name,
       categoryId: product.categoryId,
       price: formatDecimal(product.price),
       active: product.active,
+      availableEveryday,
+      availableDays,
     });
     setModalOpen(true);
   };
@@ -387,6 +405,13 @@ const Products = () => {
       setToast({ message: "Preencha todos os campos obrigatórios.", variant: "error" });
       return;
     }
+    if (!formState.availableEveryday && formState.availableDays.length === 0) {
+      setToast({
+        message: "Selecione ao menos um dia de disponibilidade.",
+        variant: "error",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -394,6 +419,9 @@ const Products = () => {
         categoryId: formState.categoryId,
         price: priceValue,
         active: formState.active,
+        availableDays: formState.availableEveryday
+          ? null
+          : formState.availableDays,
       };
       if (editingProduct) {
         await api.updateProduct(editingProduct.id, payload);
@@ -575,6 +603,50 @@ const Products = () => {
             <option value="true">Ativo</option>
             <option value="false">Inativo</option>
           </Select>
+          <div className="rounded-xl border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-slate-700">
+              Disponibilidade
+            </h3>
+            <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={formState.availableEveryday}
+                onChange={(event) =>
+                  handleChange("availableEveryday", event.target.checked)
+                }
+              />
+              Disponível todos os dias
+            </label>
+            {!formState.availableEveryday ? (
+              <div className="mt-4 grid gap-2 sm:grid-cols-4">
+                {dayOptions.map((day) => (
+                  <label
+                    key={day.value}
+                    className="flex items-center gap-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formState.availableDays.includes(day.value)}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        handleChange(
+                          "availableDays",
+                          checked
+                            ? [...formState.availableDays, day.value].sort(
+                                (a, b) => a - b
+                              )
+                            : formState.availableDays.filter(
+                                (value) => value !== day.value
+                              )
+                        );
+                      }}
+                    />
+                    {day.label}
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </form>
       </Modal>
 

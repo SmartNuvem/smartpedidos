@@ -6,6 +6,5 @@ pnpm-lock.yaml
 package-lock.json
 yarn.lock
 apps/api/dist
-apps/api/prisma/migrations
 coverage
 .DS_Store
