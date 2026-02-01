@@ -50,6 +50,7 @@ model Store {
   autoPrintEnabled Boolean              @default(false)
   allowPickup     Boolean               @default(true)
   allowDelivery   Boolean               @default(true)
+  timezone        String                @default("America/Sao_Paulo")
   categories      Category[]
   orders          Order[]
   agents          Agent[]
@@ -81,8 +82,22 @@ model Product {
   category   Category    @relation(fields: [categoryId], references: [id])
   orderItems OrderItem[]
   optionGroups ProductOptionGroup[]
+  availabilityWindows ProductAvailabilityWindow[]
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
+}
+
+model ProductAvailabilityWindow {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  startMinute Int
+  endMinute   Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([productId])
 }
 
 model Order {

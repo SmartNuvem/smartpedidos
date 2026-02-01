@@ -30,6 +30,29 @@ const parseIntValue = (value, fallback = 0) => {
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+const parseTimeToMinutes = (value) => {
+  if (!value) {
+    return null;
+  }
+  const [hours, minutes] = value.split(":").map((part) => Number(part));
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+  return hours * 60 + minutes;
+};
+
+const formatMinutesToTime = (minutes) => {
+  if (minutes === null || minutes === undefined) {
+    return "";
+  }
+  const safeMinutes = Math.max(0, Math.min(1439, minutes));
+  const hours = Math.floor(safeMinutes / 60)
+    .toString()
+    .padStart(2, "0");
+  const mins = (safeMinutes % 60).toString().padStart(2, "0");
+  return `${hours}:${mins}`;
+};
+
 const normalizeGroupRules = (group) => {
   const minSelect = parseIntValue(group.minSelect ?? 0, 0);
   const maxSelect = parseIntValue(group.maxSelect ?? 0, 0);
@@ -97,6 +120,7 @@ const Products = () => {
     active: true,
     availableEveryday: true,
     availableDays: [],
+    availabilityWindows: [],
   });
   const [toast, setToast] = useState(null);
 
@@ -135,6 +159,7 @@ const Products = () => {
       active: true,
       availableEveryday: true,
       availableDays: [],
+      availabilityWindows: [],
     });
     setModalOpen(true);
   };
@@ -142,6 +167,7 @@ const Products = () => {
   const openEdit = (product) => {
     const availableDays = product.availableDays ?? [];
     const availableEveryday = availableDays.length === 0;
+    const availabilityWindows = product.availabilityWindows ?? [];
     setEditingProduct(product);
     setFormState({
       name: product.name,
@@ -150,6 +176,7 @@ const Products = () => {
       active: product.active,
       availableEveryday,
       availableDays,
+      availabilityWindows,
     });
     setModalOpen(true);
   };
@@ -396,6 +423,34 @@ const Products = () => {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleAvailabilityWindowChange = (index, field, value) => {
+    setFormState((prev) => ({
+      ...prev,
+      availabilityWindows: prev.availabilityWindows.map((window, idx) =>
+        idx === index ? { ...window, [field]: value } : window
+      ),
+    }));
+  };
+
+  const handleAddAvailabilityWindow = () => {
+    setFormState((prev) => ({
+      ...prev,
+      availabilityWindows: [
+        ...prev.availabilityWindows,
+        { startMinute: null, endMinute: null, active: true },
+      ],
+    }));
+  };
+
+  const handleRemoveAvailabilityWindow = (index) => {
+    setFormState((prev) => ({
+      ...prev,
+      availabilityWindows: prev.availabilityWindows.filter(
+        (_, idx) => idx !== index
+      ),
+    }));
+  };
+
   const handleSubmit = async (event) => {
     if (event) {
       event.preventDefault();
@@ -412,6 +467,19 @@ const Products = () => {
       });
       return;
     }
+    const invalidWindow = formState.availabilityWindows.find(
+      (window) =>
+        window.startMinute === null ||
+        window.endMinute === null ||
+        window.startMinute >= window.endMinute
+    );
+    if (invalidWindow) {
+      setToast({
+        message: "Verifique os horários de disponibilidade.",
+        variant: "error",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -422,6 +490,11 @@ const Products = () => {
         availableDays: formState.availableEveryday
           ? []
           : formState.availableDays,
+        availabilityWindows: formState.availabilityWindows.map((window) => ({
+          startMinute: window.startMinute,
+          endMinute: window.endMinute,
+          active: window.active,
+        })),
       };
       if (editingProduct) {
         await api.updateProduct(editingProduct.id, payload);
@@ -646,6 +719,82 @@ const Products = () => {
                 ))}
               </div>
             ) : null}
+            <div className="mt-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-slate-700">
+                  Horários do dia
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleAddAvailabilityWindow}
+                >
+                  Adicionar horário
+                </Button>
+              </div>
+              {formState.availabilityWindows.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Sem horários definidos (produto disponível o dia todo).
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {formState.availabilityWindows.map((window, index) => (
+                    <div
+                      key={`window-${index}`}
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                    >
+                      <div className="grid gap-3 md:grid-cols-4 md:items-end">
+                        <Input
+                          label="Início"
+                          type="time"
+                          value={formatMinutesToTime(window.startMinute)}
+                          onChange={(event) =>
+                            handleAvailabilityWindowChange(
+                              index,
+                              "startMinute",
+                              parseTimeToMinutes(event.target.value)
+                            )
+                          }
+                        />
+                        <Input
+                          label="Fim"
+                          type="time"
+                          value={formatMinutesToTime(window.endMinute)}
+                          onChange={(event) =>
+                            handleAvailabilityWindowChange(
+                              index,
+                              "endMinute",
+                              parseTimeToMinutes(event.target.value)
+                            )
+                          }
+                        />
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 md:pb-2">
+                          <input
+                            type="checkbox"
+                            checked={window.active}
+                            onChange={(event) =>
+                              handleAvailabilityWindowChange(
+                                index,
+                                "active",
+                                event.target.checked
+                              )
+                            }
+                          />
+                          Janela ativa
+                        </label>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          onClick={() => handleRemoveAvailabilityWindow(index)}
+                        >
+                          Remover
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </form>
       </Modal>
