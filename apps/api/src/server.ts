@@ -37,7 +37,8 @@ app.addContentTypeParser(
       return;
     }
     try {
-      done(null, JSON.parse(body));
+      const rawBody = typeof body === "string" ? body : body.toString("utf8");
+      done(null, JSON.parse(rawBody));
     } catch (error) {
       done(error as Error);
     }
