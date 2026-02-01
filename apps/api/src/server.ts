@@ -61,6 +61,7 @@ const storeCookieSecure =
 
 const orderStreamClients = new Map<string, Set<FastifyReply>>();
 const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
+const menuStreamClients = new Map<string, Set<FastifyReply>>();
 
 const parseOrigins = (value?: string) =>
   (value ?? "")
@@ -139,6 +140,49 @@ const sendOrderStreamEvent = (
   });
   if (storeStreams.size === 0) {
     orderStreamClients.delete(storeId);
+  }
+};
+
+const subscribeMenuStream = (slug: string, reply: FastifyReply) => {
+  const clients = menuStreamClients.get(slug) ?? new Set();
+  clients.add(reply);
+  menuStreamClients.set(slug, clients);
+};
+
+const unsubscribeMenuStream = (slug: string, reply: FastifyReply) => {
+  const clients = menuStreamClients.get(slug);
+  if (!clients) {
+    return;
+  }
+  clients.delete(reply);
+  if (clients.size === 0) {
+    menuStreamClients.delete(slug);
+  }
+};
+
+const emitMenuStreamEvent = (slug: string) => {
+  const clients = menuStreamClients.get(slug);
+  if (!clients) {
+    return;
+  }
+  const payload = {
+    slug,
+    at: new Date().toISOString(),
+  };
+  const message = `event: menu-updated\ndata: ${JSON.stringify(payload)}\n\n`;
+  Array.from(clients).forEach((client) => {
+    if (client.raw.writableEnded) {
+      clients.delete(client);
+      return;
+    }
+    try {
+      client.raw.write(message);
+    } catch {
+      clients.delete(client);
+    }
+  });
+  if (clients.size === 0) {
+    menuStreamClients.delete(slug);
   }
 };
 
@@ -411,6 +455,16 @@ const requireStoreAuth = async (
   request.storeId = storeId;
 };
 
+const emitMenuUpdateByStoreId = async (storeId: string) => {
+  const store = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { slug: true },
+  });
+  if (store?.slug) {
+    emitMenuStreamEvent(store.slug);
+  }
+};
+
 const registerRoutes = () => {
   app.decorateRequest("storeId", null);
 
@@ -593,6 +647,39 @@ const registerRoutes = () => {
       hours,
       payment: paymentSettings,
     };
+  });
+
+  app.get("/public/:slug/menu/stream", async (request, reply) => {
+    const paramsSchema = z.object({ slug: z.string() });
+    const { slug } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { slug },
+      select: { id: true, isActive: true },
+    });
+
+    if (!store || !store.isActive) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    reply.hijack();
+    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+    reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("Keep-Alive", "timeout=120");
+    reply.raw.setHeader("X-Accel-Buffering", "no");
+    reply.raw.flushHeaders?.();
+    reply.raw.write("retry: 10000\n");
+    reply.raw.write(":ok\n\n");
+    reply.raw.setTimeout(0);
+
+    subscribeMenuStream(slug, reply);
+
+    request.raw.on("close", () => {
+      unsubscribeMenuStream(slug, reply);
+    });
+
+    return reply.raw;
   });
 
   app.post("/public/:slug/orders", async (request, reply) => {
@@ -2151,6 +2238,8 @@ const registerRoutes = () => {
       },
     });
 
+    await emitMenuUpdateByStoreId(storeId);
+
     return reply.status(201).send({
       id: category.id,
       name: category.name,
@@ -2194,6 +2283,8 @@ const registerRoutes = () => {
         active: active ?? category.active,
       },
     });
+
+    await emitMenuUpdateByStoreId(storeId);
 
     return {
       id: updated.id,
@@ -2320,6 +2411,8 @@ const registerRoutes = () => {
       },
       include: { availabilityWindows: { orderBy: { startMinute: "asc" } } },
     });
+
+    await emitMenuUpdateByStoreId(storeId);
 
     return reply.status(201).send({
       id: product.id,
@@ -2464,6 +2557,8 @@ const registerRoutes = () => {
       orderBy: { startMinute: "asc" },
     });
 
+    await emitMenuUpdateByStoreId(storeId);
+
     return {
       id: updated.id,
       name: updated.name,
@@ -2581,6 +2676,8 @@ const registerRoutes = () => {
       },
     });
 
+    await emitMenuUpdateByStoreId(storeId);
+
     return reply.status(201).send({
       id: group.id,
       productId: group.productId,
@@ -2652,6 +2749,8 @@ const registerRoutes = () => {
       },
     });
 
+    await emitMenuUpdateByStoreId(storeId);
+
     return reply.send({
       id: updated.id,
       productId: updated.productId,
@@ -2687,6 +2786,7 @@ const registerRoutes = () => {
     }
 
     await prisma.productOptionGroup.delete({ where: { id: groupId } });
+    await emitMenuUpdateByStoreId(storeId);
     return reply.status(204).send();
   });
 
@@ -2765,6 +2865,8 @@ const registerRoutes = () => {
       },
     });
 
+    await emitMenuUpdateByStoreId(storeId);
+
     return reply.status(201).send({
       id: item.id,
       groupId: item.groupId,
@@ -2826,6 +2928,8 @@ const registerRoutes = () => {
         },
       });
 
+      await emitMenuUpdateByStoreId(storeId);
+
       return reply.send({
         id: updated.id,
         groupId: updated.groupId,
@@ -2871,6 +2975,7 @@ const registerRoutes = () => {
       }
 
       await prisma.productOptionItem.delete({ where: { id: itemId } });
+      await emitMenuUpdateByStoreId(storeId);
       return reply.status(204).send();
     }
   );
