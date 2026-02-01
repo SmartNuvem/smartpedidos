@@ -430,8 +430,8 @@ const registerRoutes = () => {
 
     const storeTimezone = store.hours?.timezone ?? defaultHours.timezone;
     const currentWeekdayIndex = getLocalWeekdayIndex(storeTimezone);
-    const isProductAvailableToday = (availableDays: number[] | null) => {
-      if (!availableDays || availableDays.length === 0) {
+    const isProductAvailableToday = (availableDays: number[]) => {
+      if (availableDays.length === 0) {
         return true;
       }
       if (!currentWeekdayIndex) {
@@ -2101,17 +2101,14 @@ const registerRoutes = () => {
       categoryId: z.string().uuid(),
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
-      availableDays: z
-        .array(z.number().int().min(1).max(7))
-        .optional()
-        .nullable(),
+      availableDays: z.array(z.number().int().min(1).max(7)).optional(),
     });
 
     const { name, categoryId, price, active, availableDays } = bodySchema.parse(
       request.body
     );
     const normalizedAvailableDays =
-      availableDays && availableDays.length > 0 ? availableDays : null;
+      availableDays && availableDays.length > 0 ? availableDays : [];
 
     const category = await prisma.category.findFirst({
       where: { id: categoryId, storeId },
@@ -2155,10 +2152,7 @@ const registerRoutes = () => {
       price: z.number().nonnegative().optional(),
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
-      availableDays: z
-        .array(z.number().int().min(1).max(7))
-        .optional()
-        .nullable(),
+      availableDays: z.array(z.number().int().min(1).max(7)).optional(),
     });
 
     const { id } = paramsSchema.parse(request.params);
@@ -2166,7 +2160,7 @@ const registerRoutes = () => {
       request.body
     );
     const normalizedAvailableDays =
-      availableDays && availableDays.length > 0 ? availableDays : null;
+      availableDays && availableDays.length > 0 ? availableDays : [];
 
     if (
       !name &&
