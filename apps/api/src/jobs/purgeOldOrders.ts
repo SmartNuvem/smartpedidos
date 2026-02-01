@@ -31,6 +31,7 @@ export const purgeOldOrders = async (
   prisma: PrismaClient,
   options: PurgeOldOrdersOptions = {}
 ): Promise<PurgeOldOrdersResult> => {
+  const logger = options.logger;
   const retentionDays = options.retentionDays ?? 7;
   const now = options.now ?? new Date();
   const cutoffDate = new Date(now.getTime() - retentionDays * DAY_IN_MS);
