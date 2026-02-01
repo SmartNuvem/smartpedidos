@@ -7,13 +7,11 @@ import useSalonStream from "../hooks/useSalonStream";
 const statusStyles = {
   FREE: "bg-emerald-100 text-emerald-700",
   OPEN: "bg-blue-100 text-blue-700",
-  CLOSED: "bg-slate-100 text-slate-600",
 };
 
 const statusLabels = {
   FREE: "Livre",
   OPEN: "Aberta",
-  CLOSED: "Fechada",
 };
 
 const Salon = () => {
@@ -177,7 +175,7 @@ const Salon = () => {
                     onClick={() => handleOpen(table)}
                     disabled={actionId === table.id}
                   >
-                    {table.status === "CLOSED" ? "Reabrir" : "Abrir mesa"}
+                    Abrir mesa
                   </Button>
                 )}
               </div>
