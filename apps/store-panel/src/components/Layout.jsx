@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { clearToken } from "../auth";
+import { logout } from "../auth";
 import Button from "./Button";
 
 const linkClass = ({ isActive }) =>
@@ -19,8 +19,7 @@ const Layout = ({ children }) => {
     } catch {
       // ignore logout errors
     } finally {
-      clearToken();
-      navigate("/login");
+      logout(navigate);
     }
   };
 

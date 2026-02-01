@@ -28,6 +28,22 @@ const app = Fastify({
   logger: true,
 });
 
+app.addContentTypeParser(
+  "application/json",
+  { parseAs: "string" },
+  (_request, body, done) => {
+    if (!body) {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(body));
+    } catch (error) {
+      done(error as Error);
+    }
+  }
+);
+
 const storeCookieName = "sp_store_token";
 const storeCookieMaxAge = 60 * 60 * 24 * 30;
 const cookieDomain = process.env.COOKIE_DOMAIN;
@@ -850,8 +866,8 @@ const registerRoutes = () => {
   });
 
   app.post("/auth/store/logout", async (_request, reply) => {
-    reply.setCookie(storeCookieName, "", buildStoreLogoutCookieOptions());
-    return reply.send({ ok: true });
+    reply.clearCookie(storeCookieName, buildStoreLogoutCookieOptions());
+    return reply.status(204).send();
   });
 
   app.post("/auth/admin/bootstrap", async (request, reply) => {
