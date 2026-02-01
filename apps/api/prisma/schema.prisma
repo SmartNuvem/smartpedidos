@@ -16,6 +16,7 @@ enum OrderStatus {
 enum FulfillmentType {
   PICKUP
   DELIVERY
+  DINE_IN
 }
 
 enum PaymentMethod {
@@ -40,6 +41,18 @@ enum OptionGroupType {
   MULTI
 }
 
+enum OrderType {
+  PICKUP
+  DELIVERY
+  DINE_IN
+}
+
+enum TableStatus {
+  FREE
+  OPEN
+  CLOSED
+}
+
 model Store {
   id              String                @id @default(uuid())
   name            String
@@ -50,9 +63,12 @@ model Store {
   autoPrintEnabled Boolean              @default(false)
   allowPickup     Boolean               @default(true)
   allowDelivery   Boolean               @default(true)
+  salonEnabled    Boolean               @default(false)
+  salonTableCount Int                   @default(0)
   timezone        String                @default("America/Sao_Paulo")
   categories      Category[]
   orders          Order[]
+  tables          SalonTable[]
   agents          Agent[]
   deliveryAreas   DeliveryArea[]
   hours           StoreHours?
@@ -107,8 +123,9 @@ model Order {
   store               Store           @relation(fields: [storeId], references: [id])
   status              OrderStatus     @default(NEW)
   fulfillmentType     FulfillmentType
-  customerName        String
-  customerPhone       String
+  orderType           OrderType       @default(PICKUP)
+  customerName        String?
+  customerPhone       String?
   notes               String?
   addressLine         String?
   addressNumber       String?
@@ -117,6 +134,8 @@ model Order {
   addressReference    String?
   deliveryAreaId      String?
   deliveryArea        DeliveryArea?   @relation(fields: [deliveryAreaId], references: [id])
+  tableId             String?
+  table               SalonTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
   deliveryFeeCents    Int             @default(0)
   paymentMethod       PaymentMethod   @default(CASH)
   changeForCents      Int?
@@ -264,4 +283,20 @@ model StorePaymentSettings {
   pixName    String?
   pixBank    String?
   updatedAt  DateTime @updatedAt
+}
+
+model SalonTable {
+  id        String      @id @default(uuid())
+  storeId   String
+  store     Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  number    Int
+  status    TableStatus @default(FREE)
+  openedAt  DateTime?
+  closedAt  DateTime?
+  orders    Order[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([storeId, number])
+  @@index([storeId])
 }

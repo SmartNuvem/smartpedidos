@@ -3,7 +3,7 @@ import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
-import { OpenOverride, Prisma } from "@prisma/client";
+import { OpenOverride, Prisma, TableStatus } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { purgeOldOrders } from "./jobs/purgeOldOrders";
@@ -62,6 +62,8 @@ const storeCookieSecure =
 const orderStreamClients = new Map<string, Set<FastifyReply>>();
 const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
 const menuStreamClients = new Map<string, Set<FastifyReply>>();
+const salonStreamClients = new Map<string, Set<FastifyReply>>();
+const salonStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
 
 const parseOrigins = (value?: string) =>
   (value ?? "")
@@ -185,6 +187,32 @@ const emitMenuStreamEvent = (slug: string, reason: MenuUpdateReason) => {
   }
 };
 
+const sendSalonStreamEvent = (
+  storeId: string,
+  payload: { reason: "open" | "close" | "order_created" | "settings" }
+) => {
+  const storeStreams = salonStreamClients.get(storeId);
+  if (!storeStreams) {
+    return;
+  }
+  const message = `event: tables_updated\ndata: ${JSON.stringify(payload)}\n\n`;
+  storeStreams.forEach((client) => {
+    try {
+      client.raw.write(message);
+    } catch {
+      const ping = salonStreamPingers.get(client);
+      if (ping) {
+        clearInterval(ping);
+        salonStreamPingers.delete(client);
+      }
+      storeStreams.delete(client);
+    }
+  });
+  if (storeStreams.size === 0) {
+    salonStreamClients.delete(storeId);
+  }
+};
+
 const normalizeOptionGroupRules = ({
   type,
   required,
@@ -219,6 +247,54 @@ const normalizeOptionGroupRules = ({
     minSelect: normalizedMin,
     maxSelect: normalizedMax,
   };
+};
+
+const syncSalonTables = async (
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  desiredCount: number
+) => {
+  const normalizedCount = Math.max(0, desiredCount);
+  const existingTables = await tx.salonTable.findMany({
+    where: { storeId },
+    select: { number: true, status: true },
+  });
+  const existingNumbers = new Set(existingTables.map((table) => table.number));
+  const missingNumbers = Array.from({ length: normalizedCount }, (_, index) => {
+    const number = index + 1;
+    return existingNumbers.has(number) ? null : number;
+  }).filter((number): number is number => number !== null);
+
+  if (missingNumbers.length > 0) {
+    await tx.salonTable.createMany({
+      data: missingNumbers.map((number) => ({
+        storeId,
+        number,
+      })),
+    });
+  }
+
+  const removableTables = existingTables.filter(
+    (table) => table.number > normalizedCount
+  );
+  if (removableTables.length > 0) {
+    const hasOpenTable = removableTables.some(
+      (table) => table.status === TableStatus.OPEN
+    );
+    if (hasOpenTable) {
+      throw new Error(
+        "Não é possível reduzir a quantidade de mesas enquanto houver mesas abertas."
+      );
+    }
+    await tx.salonTable.deleteMany({
+      where: {
+        storeId,
+        number: {
+          gt: normalizedCount,
+        },
+      },
+    });
+  }
 };
 
 type AvailabilityWindowInput = {
@@ -772,10 +848,10 @@ const registerRoutes = () => {
       reference: z.string().min(1).optional(),
     });
     const bodySchema = z.object({
-      customerName: z.string().min(1),
-      customerPhone: z.string().min(1),
-      orderType: z.enum(["PICKUP", "DELIVERY"]).optional(),
-      fulfillmentType: z.enum(["PICKUP", "DELIVERY"]).optional(),
+      customerName: z.string().min(1).optional(),
+      customerPhone: z.string().min(1).optional(),
+      orderType: z.enum(["PICKUP", "DELIVERY", "DINE_IN"]).optional(),
+      fulfillmentType: z.enum(["PICKUP", "DELIVERY", "DINE_IN"]).optional(),
       notes: z.string().min(1).optional(),
       address: addressSchema.optional(),
       deliveryAreaId: z.string().uuid().optional(),
@@ -784,6 +860,7 @@ const registerRoutes = () => {
       addressNeighborhood: z.string().min(1).optional(),
       addressCity: z.string().min(1).optional(),
       addressRef: z.string().min(1).optional(),
+      tableId: z.string().uuid().optional(),
       paymentMethod: z.enum(["PIX", "CASH", "CARD"]),
       changeForCents: z.number().int().nonnegative().optional(),
       items: z
@@ -820,12 +897,14 @@ const registerRoutes = () => {
       addressNeighborhood,
       addressCity,
       addressRef,
+      tableId,
       paymentMethod,
       changeForCents,
     } = bodySchema.parse(request.body);
 
     const normalizedOrderType = orderType ?? fulfillmentType ?? "PICKUP";
     const isDelivery = normalizedOrderType === "DELIVERY";
+    const isDineIn = normalizedOrderType === "DINE_IN";
 
     const store = await prisma.store.findUnique({
       where: { slug },
@@ -837,6 +916,12 @@ const registerRoutes = () => {
 
     if (!store || !store.isActive) {
       return reply.status(404).send({ message: "Store not found" });
+    }
+
+    if (isDineIn && !store.salonEnabled) {
+      return reply.status(400).send({
+        message: "Modo salão não está habilitado para esta loja.",
+      });
     }
 
     if (normalizedOrderType === "DELIVERY" && !store.allowDelivery) {
@@ -886,6 +971,31 @@ const registerRoutes = () => {
       return reply.status(400).send({
         message: hours.closedMessage || "A loja está fechada no momento.",
       });
+    }
+
+    if (!isDineIn && (!customerName || !customerPhone)) {
+      return reply.status(400).send({
+        message: "Informe nome e telefone do cliente.",
+      });
+    }
+
+    if (isDineIn) {
+      if (!tableId) {
+        return reply.status(400).send({
+          message: "Mesa obrigatória para pedidos no salão.",
+        });
+      }
+      const selectedTable = await prisma.salonTable.findFirst({
+        where: { id: tableId, storeId: store.id },
+      });
+      if (!selectedTable) {
+        return reply.status(404).send({ message: "Mesa não encontrada." });
+      }
+      if (selectedTable.status !== TableStatus.OPEN) {
+        return reply.status(400).send({
+          message: "A mesa deve estar aberta para lançar pedidos.",
+        });
+      }
     }
 
     const paymentSettings = store.paymentSettings ?? {
@@ -1080,8 +1190,9 @@ const registerRoutes = () => {
           storeId: store.id,
           status: initialStatus,
           fulfillmentType: normalizedOrderType,
-          customerName,
-          customerPhone,
+          orderType: normalizedOrderType,
+          customerName: customerName ?? null,
+          customerPhone: customerPhone ?? null,
           notes: notes ?? null,
           addressLine: isDelivery ? normalizedAddressLine : null,
           addressNumber: isDelivery ? normalizedAddressNumber : null,
@@ -1090,6 +1201,7 @@ const registerRoutes = () => {
           addressReference:
             isDelivery ? normalizedAddressRef : null,
           deliveryAreaId: isDelivery ? deliveryAreaId ?? null : null,
+          tableId: isDineIn ? tableId ?? null : null,
           deliveryFeeCents,
           paymentMethod,
           changeForCents:
@@ -1129,6 +1241,9 @@ const registerRoutes = () => {
       storeId: store.id,
       status: order.status,
     });
+    if (isDineIn) {
+      sendSalonStreamEvent(store.id, { reason: "order_created" });
+    }
 
     return reply.status(201).send({
       orderId: order.id,
@@ -2285,6 +2400,355 @@ const registerRoutes = () => {
     });
 
     return reply.raw;
+  });
+
+  app.get("/store/salon/stream", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    reply.hijack();
+    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+    reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("Keep-Alive", "timeout=120");
+    reply.raw.setHeader("X-Accel-Buffering", "no");
+    reply.raw.flushHeaders?.();
+    reply.raw.write("retry: 10000\n");
+    reply.raw.write(":ok\n\n");
+    reply.raw.setTimeout(0);
+
+    const clients = salonStreamClients.get(storeId) ?? new Set();
+    clients.add(reply);
+    salonStreamClients.set(storeId, clients);
+    const pingIntervalMs = 25000 + Math.floor(Math.random() * 5000);
+    const pingInterval = setInterval(() => {
+      try {
+        reply.raw.write("event: ping\ndata: {}\n\n");
+      } catch {
+        const activeClients = salonStreamClients.get(storeId);
+        activeClients?.delete(reply);
+        const ping = salonStreamPingers.get(reply);
+        if (ping) {
+          clearInterval(ping);
+          salonStreamPingers.delete(reply);
+        }
+      }
+    }, pingIntervalMs);
+    salonStreamPingers.set(reply, pingInterval);
+
+    request.raw.on("close", () => {
+      const activeClients = salonStreamClients.get(storeId);
+      if (!activeClients) {
+        return;
+      }
+      activeClients.delete(reply);
+      if (activeClients.size === 0) {
+        salonStreamClients.delete(storeId);
+      }
+      const ping = salonStreamPingers.get(reply);
+      if (ping) {
+        clearInterval(ping);
+        salonStreamPingers.delete(reply);
+      }
+    });
+
+    return reply.raw;
+  });
+
+  app.get("/store/salon/settings", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salonEnabled: true, salonTableCount: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    return reply.send({
+      salonEnabled: store.salonEnabled,
+      salonTableCount: store.salonTableCount,
+    });
+  });
+
+  app.patch("/store/salon/settings", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      salonEnabled: z.boolean().optional(),
+      salonTableCount: z.number().int().nonnegative().optional(),
+    });
+
+    const payload = bodySchema.parse(request.body ?? {});
+
+    try {
+      const store = await prisma.$transaction(async (tx) => {
+        const updated = await tx.store.update({
+          where: { id: storeId },
+          data: {
+            salonEnabled: payload.salonEnabled ?? undefined,
+            salonTableCount: payload.salonTableCount ?? undefined,
+          },
+          select: { salonEnabled: true, salonTableCount: true },
+        });
+
+        if (payload.salonTableCount !== undefined) {
+          await syncSalonTables(tx, storeId, payload.salonTableCount);
+        }
+
+        return updated;
+      });
+
+      sendSalonStreamEvent(storeId, { reason: "settings" });
+
+      return reply.send({
+        salonEnabled: store.salonEnabled,
+        salonTableCount: store.salonTableCount,
+      });
+    } catch (error) {
+      return reply.status(400).send({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível atualizar as mesas.",
+      });
+    }
+  });
+
+  app.get("/store/salon/tables", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salonEnabled: true },
+    });
+    if (!store?.salonEnabled) {
+      return reply.status(400).send({
+        message: "Modo salão não está habilitado para esta loja.",
+      });
+    }
+
+    const tables = await prisma.salonTable.findMany({
+      where: { storeId },
+      orderBy: { number: "asc" },
+    });
+    const tableIds = tables.map((table) => table.id);
+    const totals = tableIds.length
+      ? await prisma.order.groupBy({
+          by: ["tableId"],
+          where: {
+            storeId,
+            orderType: "DINE_IN",
+            tableId: { in: tableIds },
+          },
+          _sum: { total: true },
+          _max: { createdAt: true },
+        })
+      : [];
+    const totalsMap = new Map(
+      totals.map((item) => [item.tableId, item])
+    );
+
+    return reply.send(
+      tables.map((table) => {
+        const summary = totalsMap.get(table.id);
+        const total = summary?._sum.total
+          ? summary._sum.total.toNumber()
+          : 0;
+        const lastOrderAt = summary?._max.createdAt ?? null;
+        return {
+          id: table.id,
+          number: table.number,
+          status: table.status,
+          openedAt: table.openedAt,
+          closedAt: table.closedAt,
+          total,
+          lastOrderAt,
+        };
+      })
+    );
+  });
+
+  app.get("/store/salon/tables/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salonEnabled: true },
+    });
+    if (!store?.salonEnabled) {
+      return reply.status(400).send({
+        message: "Modo salão não está habilitado para esta loja.",
+      });
+    }
+
+    const table = await prisma.salonTable.findFirst({
+      where: { id, storeId },
+    });
+    if (!table) {
+      return reply.status(404).send({ message: "Mesa não encontrada." });
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const orders = await prisma.order.findMany({
+      where: {
+        storeId,
+        orderType: "DINE_IN",
+        tableId: table.id,
+        createdAt: { gte: sevenDaysAgo },
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+            options: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const total = orders.reduce(
+      (acc, order) => acc + order.total.toNumber(),
+      0
+    );
+    const lastOrderAt = orders[0]?.createdAt ?? null;
+
+    return reply.send({
+      table: {
+        id: table.id,
+        number: table.number,
+        status: table.status,
+        openedAt: table.openedAt,
+        closedAt: table.closedAt,
+        total,
+        lastOrderAt,
+      },
+      orders: orders.map((order) => ({
+        id: order.id,
+        shortId: order.id.slice(0, 6),
+        status: order.status,
+        total: order.total.toNumber(),
+        createdAt: order.createdAt,
+        items: order.items.map((item) => ({
+          id: item.id,
+          name: item.product.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPriceCents / 100,
+          notes: item.notes,
+          options: item.options.map((option) => ({
+            id: option.id,
+            groupName: option.groupName,
+            itemName: option.itemName,
+            priceDeltaCents: option.priceDeltaCents,
+          })),
+        })),
+      })),
+    });
+  });
+
+  app.post("/store/salon/tables/:id/open", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salonEnabled: true },
+    });
+    if (!store?.salonEnabled) {
+      return reply.status(400).send({
+        message: "Modo salão não está habilitado para esta loja.",
+      });
+    }
+
+    const table = await prisma.salonTable.findFirst({
+      where: { id, storeId },
+    });
+    if (!table) {
+      return reply.status(404).send({ message: "Mesa não encontrada." });
+    }
+
+    if (table.status === TableStatus.OPEN) {
+      return reply.send({ ok: true });
+    }
+
+    await prisma.salonTable.update({
+      where: { id: table.id },
+      data: {
+        status: TableStatus.OPEN,
+        openedAt: new Date(),
+        closedAt: null,
+      },
+    });
+
+    sendSalonStreamEvent(storeId, { reason: "open" });
+    return reply.send({ ok: true });
+  });
+
+  app.post("/store/salon/tables/:id/close", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salonEnabled: true },
+    });
+    if (!store?.salonEnabled) {
+      return reply.status(400).send({
+        message: "Modo salão não está habilitado para esta loja.",
+      });
+    }
+
+    const table = await prisma.salonTable.findFirst({
+      where: { id, storeId },
+    });
+    if (!table) {
+      return reply.status(404).send({ message: "Mesa não encontrada." });
+    }
+
+    if (table.status !== TableStatus.OPEN) {
+      return reply.send({ ok: true });
+    }
+
+    await prisma.salonTable.update({
+      where: { id: table.id },
+      data: {
+        status: TableStatus.CLOSED,
+        closedAt: new Date(),
+      },
+    });
+
+    sendSalonStreamEvent(storeId, { reason: "close" });
+    return reply.send({ ok: true });
   });
 
   app.get("/store/orders", async (request, reply) => {

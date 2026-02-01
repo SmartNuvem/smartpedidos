@@ -41,6 +41,9 @@ const Layout = ({ children }) => {
             <NavLink to="/products" className={linkClass}>
               Produtos
             </NavLink>
+            <NavLink to="/store/salon" className={linkClass}>
+              Salão
+            </NavLink>
             <NavLink to="/settings" className={linkClass}>
               Configurações
             </NavLink>

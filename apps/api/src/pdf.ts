@@ -30,14 +30,20 @@ export const buildOrderPdf = (order: OrderReceipt) => {
   });
 
   const fulfillmentLabel =
-    order.fulfillmentType === "DELIVERY" ? "ENTREGA" : "RETIRAR";
+    order.fulfillmentType === "DELIVERY"
+      ? "ENTREGA"
+      : order.fulfillmentType === "DINE_IN"
+        ? "SALÃO"
+        : "RETIRAR";
+  const customerName = order.customerName ?? "-";
+  const customerPhone = order.customerPhone ?? "-";
 
   doc.fontSize(14).text(order.store.name, { align: "center" });
   doc.moveDown(0.5);
   doc.fontSize(10).text(`Pedido: ${order.id}`);
   doc.text(`Data: ${formatDate(order.createdAt)}`);
-  doc.text(`Cliente: ${order.customerName}`);
-  doc.text(`Telefone: ${order.customerPhone}`);
+  doc.text(`Cliente: ${customerName}`);
+  doc.text(`Telefone: ${customerPhone}`);
   doc.text(`Tipo: ${fulfillmentLabel}`);
 
   if (order.fulfillmentType === "DELIVERY") {

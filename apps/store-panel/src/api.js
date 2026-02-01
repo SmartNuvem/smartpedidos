@@ -210,6 +210,52 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getSalonSettings: async () => {
+    const response = await request(`${API_URL}/store/salon/settings`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  updateSalonSettings: async (payload) => {
+    const response = await request(`${API_URL}/store/salon/settings`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  getSalonTables: async () => {
+    const response = await request(`${API_URL}/store/salon/tables`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  getSalonTable: async (id) => {
+    const response = await request(`${API_URL}/store/salon/tables/${id}`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  openSalonTable: async (id) => {
+    const response = await request(
+      `${API_URL}/store/salon/tables/${id}/open`,
+      {
+        method: "POST",
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
+  closeSalonTable: async (id) => {
+    const response = await request(
+      `${API_URL}/store/salon/tables/${id}/close`,
+      {
+        method: "POST",
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
   getCategories: async () => {
     const response = await request(`${API_URL}/store/categories`, {
       headers: buildHeaders(),
