@@ -160,16 +160,15 @@ const unsubscribeMenuStream = (slug: string, reply: FastifyReply) => {
   }
 };
 
-const emitMenuStreamEvent = (slug: string) => {
+const emitMenuStreamEvent = (slug: string, reason: MenuUpdateReason) => {
   const clients = menuStreamClients.get(slug);
   if (!clients) {
     return;
   }
   const payload = {
-    slug,
-    at: new Date().toISOString(),
+    reason,
   };
-  const message = `event: menu-updated\ndata: ${JSON.stringify(payload)}\n\n`;
+  const message = `event: menu_updated\ndata: ${JSON.stringify(payload)}\n\n`;
   Array.from(clients).forEach((client) => {
     if (client.raw.writableEnded) {
       clients.delete(client);
@@ -368,6 +367,56 @@ const getLocalWeekdayIndex = (timezone: string) => {
   return dayIndexMap[weekday] ?? null;
 };
 
+const getNextAvailabilityChangeMinutes = ({
+  availableDays,
+  windows,
+  currentWeekdayIndex,
+  currentMinutes,
+}: {
+  availableDays: number[];
+  windows: { startMinute: number; endMinute: number }[];
+  currentWeekdayIndex: number | null;
+  currentMinutes: number;
+}) => {
+  if (!currentWeekdayIndex || Number.isNaN(currentMinutes)) {
+    return null;
+  }
+
+  const isDayAvailable = (dayIndex: number) =>
+    availableDays.length === 0 || availableDays.includes(dayIndex);
+
+  if (availableDays.length === 0 && windows.length === 0) {
+    return null;
+  }
+
+  let nextMinutes = Number.POSITIVE_INFINITY;
+  for (let offset = 0; offset <= 7; offset += 1) {
+    const dayIndex = ((currentWeekdayIndex - 1 + offset) % 7) + 1;
+    if (!isDayAvailable(dayIndex)) {
+      continue;
+    }
+
+    const dayOffsetMinutes = offset * 1440;
+    const candidates =
+      windows.length === 0
+        ? [0, 1440]
+        : windows.flatMap((window) => [window.startMinute, window.endMinute]);
+
+    for (const minute of candidates) {
+      const diff = dayOffsetMinutes + minute - currentMinutes;
+      if (diff > 0 && diff < nextMinutes) {
+        nextMinutes = diff;
+      }
+    }
+  }
+
+  if (!Number.isFinite(nextMinutes)) {
+    return null;
+  }
+
+  return nextMinutes;
+};
+
 const calculateIsOpenNow = (hours: StoreHoursData) => {
   if (hours.isOpenNowOverride === OpenOverride.FORCE_OPEN) {
     return true;
@@ -455,13 +504,18 @@ const requireStoreAuth = async (
   request.storeId = storeId;
 };
 
-const emitMenuUpdateByStoreId = async (storeId: string) => {
+type MenuUpdateReason = "promo" | "product_update" | "schedule";
+
+const emitMenuUpdateByStoreId = async (
+  storeId: string,
+  reason: MenuUpdateReason = "product_update"
+) => {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     select: { slug: true },
   });
   if (store?.slug) {
-    emitMenuStreamEvent(store.slug);
+    emitMenuStreamEvent(store.slug, reason);
   }
 };
 
@@ -559,6 +613,30 @@ const registerRoutes = () => {
           currentMinutes < window.endMinute
       );
     };
+    let nextRefreshInMinutes: number | null = null;
+    store.categories.forEach((category) => {
+      category.products.forEach((product) => {
+        const nextChangeMinutes = getNextAvailabilityChangeMinutes({
+          availableDays: product.availableDays,
+          windows: product.availabilityWindows,
+          currentWeekdayIndex,
+          currentMinutes,
+        });
+        if (
+          nextChangeMinutes !== null &&
+          (nextRefreshInMinutes === null ||
+            nextChangeMinutes < nextRefreshInMinutes)
+        ) {
+          nextRefreshInMinutes = nextChangeMinutes;
+        }
+      });
+    });
+    const nextRefreshAt =
+      nextRefreshInMinutes === null
+        ? null
+        : new Date(
+            Date.now() + nextRefreshInMinutes * 60 * 1000
+          ).toISOString();
 
     const hours = store.hours
       ? {
@@ -621,6 +699,7 @@ const registerRoutes = () => {
             name: product.name,
             priceCents: Math.round(product.price.toNumber() * 100),
             active: product.active,
+            isPromo: product.isPromo,
             optionGroups: product.optionGroups.map((group) => ({
               id: group.id,
               name: group.name,
@@ -646,6 +725,7 @@ const registerRoutes = () => {
       })),
       hours,
       payment: paymentSettings,
+      nextRefreshAt,
     };
   });
 
@@ -2367,6 +2447,7 @@ const registerRoutes = () => {
       name: product.name,
       price: product.price.toNumber(),
       active: product.active,
+      isPromo: product.isPromo,
       availableDays: product.availableDays,
       availabilityWindows: product.availabilityWindows.map((window) => ({
         id: window.id,
@@ -2392,6 +2473,7 @@ const registerRoutes = () => {
       categoryId: z.string().uuid(),
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
+      isPromo: z.boolean().optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -2409,6 +2491,7 @@ const registerRoutes = () => {
       categoryId,
       price,
       active,
+      isPromo,
       availableDays,
       availabilityWindows,
     } = bodySchema.parse(
@@ -2442,6 +2525,7 @@ const registerRoutes = () => {
         name,
         price,
         active: active ?? true,
+        isPromo: isPromo ?? false,
         categoryId,
         availableDays: normalizedAvailableDays,
         availabilityWindows:
@@ -2460,13 +2544,16 @@ const registerRoutes = () => {
       include: { availabilityWindows: { orderBy: { startMinute: "asc" } } },
     });
 
-    await emitMenuUpdateByStoreId(storeId);
+    const menuUpdateReason: MenuUpdateReason =
+      isPromo === true ? "promo" : "product_update";
+    await emitMenuUpdateByStoreId(storeId, menuUpdateReason);
 
     return reply.status(201).send({
       id: product.id,
       name: product.name,
       price: product.price.toNumber(),
       active: product.active,
+      isPromo: product.isPromo,
       availableDays: product.availableDays,
       availabilityWindows: product.availabilityWindows.map((window) => ({
         id: window.id,
@@ -2492,6 +2579,7 @@ const registerRoutes = () => {
       price: z.number().nonnegative().optional(),
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
+      isPromo: z.boolean().optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -2510,6 +2598,7 @@ const registerRoutes = () => {
       price,
       categoryId,
       active,
+      isPromo,
       availableDays,
       availabilityWindows,
     } = bodySchema.parse(
@@ -2535,6 +2624,7 @@ const registerRoutes = () => {
       price === undefined &&
       !categoryId &&
       active === undefined &&
+      isPromo === undefined &&
       availableDays === undefined &&
       availabilityWindows === undefined
     ) {
@@ -2570,6 +2660,7 @@ const registerRoutes = () => {
           name: name ?? product.name,
           price: price ?? product.price,
           active: active ?? product.active,
+          isPromo: isPromo ?? product.isPromo,
           categoryId: categoryId ?? product.categoryId,
           availableDays:
             availableDays === undefined
@@ -2605,13 +2696,18 @@ const registerRoutes = () => {
       orderBy: { startMinute: "asc" },
     });
 
-    await emitMenuUpdateByStoreId(storeId);
+    const menuUpdateReason: MenuUpdateReason =
+      isPromo !== undefined && isPromo !== product.isPromo
+        ? "promo"
+        : "product_update";
+    await emitMenuUpdateByStoreId(storeId, menuUpdateReason);
 
     return {
       id: updated.id,
       name: updated.name,
       price: updated.price.toNumber(),
       active: updated.active,
+      isPromo: updated.isPromo,
       availableDays: updated.availableDays,
       availabilityWindows: updatedWindows.map((window) => ({
         id: window.id,
