@@ -4,7 +4,15 @@ import fastifyCookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import { OpenOverride, Prisma, TableStatus } from "@prisma/client";
+import {
+  OpenOverride,
+  OrderType,
+  Prisma,
+  type PrismaClient,
+  PrintJobStatus,
+  PrintJobType,
+  TableStatus,
+} from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { purgeOldOrders } from "./jobs/purgeOldOrders";
@@ -15,7 +23,7 @@ import {
   maskToken,
   requireAdmin,
 } from "./auth";
-import { buildOrderPdf } from "./pdf";
+import { buildOrderPdf, buildTableSummaryPdf } from "./pdf";
 import type { JwtUser } from "./types/jwt";
 
 const slugRegex = /^[a-z0-9-]+$/;
@@ -589,6 +597,66 @@ const getSalonTokenFromRequest = (request: FastifyRequest) => {
     }
   }
   return token;
+};
+
+type TableSummaryItem = {
+  name: string;
+  quantity: number;
+  totalCents: number;
+};
+
+const buildTableSessionSummary = async (
+  client: Prisma.TransactionClient | PrismaClient,
+  {
+    storeId,
+    tableId,
+    tableSessionId,
+  }: { storeId: string; tableId: string; tableSessionId: string | null }
+) => {
+  if (!tableSessionId) {
+    return { items: [] as TableSummaryItem[], totalCents: 0 };
+  }
+
+  const orders = await client.order.findMany({
+    where: {
+      storeId,
+      orderType: OrderType.DINE_IN,
+      tableId,
+      tableSessionId,
+    },
+    include: {
+      items: {
+        include: { product: true },
+      },
+    },
+  });
+
+  const itemsByProduct = new Map<string, TableSummaryItem>();
+  let totalCents = 0;
+
+  orders.forEach((order) => {
+    order.items.forEach((item) => {
+      const lineTotal = item.unitPriceCents * item.quantity;
+      totalCents += lineTotal;
+      const existing = itemsByProduct.get(item.productId);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.totalCents += lineTotal;
+      } else {
+        itemsByProduct.set(item.productId, {
+          name: item.product.name,
+          quantity: item.quantity,
+          totalCents: lineTotal,
+        });
+      }
+    });
+  });
+
+  const items = Array.from(itemsByProduct.values()).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+
+  return { items, totalCents };
 };
 
 const requireStoreAuth = async (
@@ -1860,6 +1928,23 @@ const registerRoutes = () => {
     if (request.url.startsWith("/store/salon")) {
       return requireSalonAuth(request, reply);
     }
+    if (
+      request.url.startsWith("/store/print-jobs") &&
+      request.method === "GET"
+    ) {
+      const token = getBearerToken(request);
+      if (token) {
+        try {
+          const payload = app.jwt.verify<JwtUser>(token);
+          if (payload.role === "ADMIN") {
+            request.adminId = payload.id ?? null;
+            return;
+          }
+        } catch {
+          // Ignore and fall back to store auth.
+        }
+      }
+    }
 
     return requireStoreAuth(request, reply);
   });
@@ -2630,6 +2715,7 @@ const registerRoutes = () => {
       select: {
         salonEnabled: true,
         salonTableCount: true,
+        cashierPrintEnabled: true,
         waiterPinHash: true,
         waiterPwaEnabled: true,
       },
@@ -2642,6 +2728,7 @@ const registerRoutes = () => {
     return reply.send({
       salonEnabled: store.salonEnabled,
       salonTableCount: store.salonTableCount,
+      cashierPrintEnabled: store.cashierPrintEnabled,
       waiterPinSet: Boolean(store.waiterPinHash),
       waiterPwaEnabled: store.waiterPwaEnabled,
     });
@@ -2656,6 +2743,7 @@ const registerRoutes = () => {
     const bodySchema = z.object({
       salonEnabled: z.boolean().optional(),
       salonTableCount: z.number().int().nonnegative().optional(),
+      cashierPrintEnabled: z.boolean().optional(),
       waiterPwaEnabled: z.boolean().optional(),
       waiterPin: z
         .string()
@@ -2679,12 +2767,14 @@ const registerRoutes = () => {
           data: {
             salonEnabled: payload.salonEnabled ?? undefined,
             salonTableCount: payload.salonTableCount ?? undefined,
+            cashierPrintEnabled: payload.cashierPrintEnabled ?? undefined,
             waiterPwaEnabled: payload.waiterPwaEnabled ?? undefined,
             waiterPinHash,
           },
           select: {
             salonEnabled: true,
             salonTableCount: true,
+            cashierPrintEnabled: true,
             waiterPinHash: true,
             waiterPwaEnabled: true,
           },
@@ -2702,6 +2792,7 @@ const registerRoutes = () => {
       return reply.send({
         salonEnabled: store.salonEnabled,
         salonTableCount: store.salonTableCount,
+        cashierPrintEnabled: store.cashierPrintEnabled,
         waiterPinSet: Boolean(store.waiterPinHash),
         waiterPwaEnabled: store.waiterPwaEnabled,
       });
@@ -2723,7 +2814,7 @@ const registerRoutes = () => {
 
     const store = await prisma.store.findUnique({
       where: { id: storeId },
-      select: { salonEnabled: true },
+      select: { salonEnabled: true, cashierPrintEnabled: true },
     });
     if (!store?.salonEnabled) {
       return reply.status(400).send({
@@ -2799,7 +2890,7 @@ const registerRoutes = () => {
 
     const store = await prisma.store.findUnique({
       where: { id: storeId },
-      select: { salonEnabled: true },
+      select: { salonEnabled: true, cashierPrintEnabled: true },
     });
     if (!store?.salonEnabled) {
       return reply.status(400).send({
@@ -2887,7 +2978,7 @@ const registerRoutes = () => {
 
     const store = await prisma.store.findUnique({
       where: { id: storeId },
-      select: { salonEnabled: true },
+      select: { salonEnabled: true, cashierPrintEnabled: true },
     });
     if (!store?.salonEnabled) {
       return reply.status(400).send({
@@ -2931,7 +3022,7 @@ const registerRoutes = () => {
 
     const store = await prisma.store.findUnique({
       where: { id: storeId },
-      select: { salonEnabled: true },
+      select: { salonEnabled: true, cashierPrintEnabled: true },
     });
     if (!store?.salonEnabled) {
       return reply.status(400).send({
@@ -2952,18 +3043,105 @@ const registerRoutes = () => {
       });
     }
 
-    await prisma.salonTable.update({
-      where: { id: table.id },
-      data: {
-        status: TableStatus.FREE,
-        closedAt: new Date(),
-        openedAt: null,
-        currentSessionId: null,
-      },
+    await buildTableSessionSummary(prisma, {
+      storeId,
+      tableId: table.id,
+      tableSessionId: table.currentSessionId,
+    });
+
+    await prisma.$transaction(async (tx) => {
+      if (store.cashierPrintEnabled) {
+        await tx.printJob.create({
+          data: {
+            storeId,
+            type: PrintJobType.CASHIER_TABLE_SUMMARY,
+            status: PrintJobStatus.QUEUED,
+            tableId: table.id,
+            tableSessionId: table.currentSessionId,
+          },
+        });
+      }
+
+      await tx.salonTable.update({
+        where: { id: table.id },
+        data: {
+          status: TableStatus.FREE,
+          closedAt: new Date(),
+          openedAt: null,
+          currentSessionId: null,
+        },
+      });
     });
 
     sendSalonStreamEvent(storeId, { reason: "close" });
     return reply.send({ ok: true });
+  });
+
+  app.get("/store/print-jobs/:id/pdf", async (request, reply) => {
+    const storeId = request.storeId;
+    const adminId = request.adminId;
+    if (!storeId && !adminId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const printJob = await prisma.printJob.findUnique({
+      where: { id },
+      include: { store: true },
+    });
+
+    if (!printJob) {
+      return reply.status(404).send({ message: "Impressão não encontrada." });
+    }
+
+    if (storeId && printJob.storeId !== storeId) {
+      return reply.status(404).send({ message: "Impressão não encontrada." });
+    }
+
+    if (printJob.type !== PrintJobType.CASHIER_TABLE_SUMMARY) {
+      return reply.status(400).send({
+        message: "Este job não possui resumo de mesa.",
+      });
+    }
+
+    if (!printJob.tableId) {
+      return reply.status(400).send({
+        message: "Mesa não informada para este job.",
+      });
+    }
+
+    const table = await prisma.salonTable.findFirst({
+      where: { id: printJob.tableId, storeId: printJob.storeId },
+      select: { number: true },
+    });
+
+    if (!table) {
+      return reply.status(404).send({ message: "Mesa não encontrada." });
+    }
+
+    const summary = await buildTableSessionSummary(prisma, {
+      storeId: printJob.storeId,
+      tableId: printJob.tableId,
+      tableSessionId: printJob.tableSessionId,
+    });
+
+    const pdf = buildTableSummaryPdf({
+      store: printJob.store,
+      tableNumber: table.number,
+      items: summary.items,
+      totalCents: summary.totalCents,
+      closedAt: printJob.createdAt,
+    });
+
+    reply.header("Content-Type", "application/pdf");
+    reply.header(
+      "Content-Disposition",
+      `inline; filename=table-summary-${printJob.id}.pdf`
+    );
+
+    return reply.send(pdf);
   });
 
   app.get("/store/orders", async (request, reply) => {

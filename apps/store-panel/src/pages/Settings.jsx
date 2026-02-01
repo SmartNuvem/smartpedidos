@@ -363,6 +363,7 @@ const Settings = () => {
       const updated = await api.updateSalonSettings({
         salonEnabled: Boolean(salonSettings.salonEnabled),
         salonTableCount: Math.max(0, Number(salonSettings.salonTableCount || 0)),
+        cashierPrintEnabled: Boolean(salonSettings.cashierPrintEnabled),
         waiterPwaEnabled: Boolean(salonSettings.waiterPwaEnabled),
         waiterPin: normalizedPin || undefined,
       });
@@ -619,6 +620,35 @@ const Settings = () => {
                   )
                 }
               />
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">
+                  Caixa
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Ao fechar a mesa, o sistema gera um comprovante para
+                  conferência no caixa.
+                </p>
+              </div>
+              <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={Boolean(salonSettings.cashierPrintEnabled)}
+                  onChange={(event) =>
+                    setSalonSettings((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            cashierPrintEnabled: event.target.checked,
+                          }
+                        : prev
+                    )
+                  }
+                />
+                Imprimir resumo da mesa no caixa
+              </label>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">

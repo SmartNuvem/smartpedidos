@@ -23,6 +23,20 @@ export type OrderReceipt = Order & {
   items: Array<OrderItem & { product: Product; options?: OrderItemOption[] }>;
 };
 
+export type TableSummaryItem = {
+  name: string;
+  quantity: number;
+  totalCents: number;
+};
+
+export type TableSummaryReceipt = {
+  store: Store;
+  tableNumber: number;
+  items: TableSummaryItem[];
+  totalCents: number;
+  closedAt?: Date | null;
+};
+
 export const buildOrderPdf = (order: OrderReceipt) => {
   const doc = new PDFDocument({
     size: [226, 1000],
@@ -131,6 +145,43 @@ export const buildOrderPdf = (order: OrderReceipt) => {
   doc.fontSize(12).text(`Total: ${currency.format(order.total.toNumber())}`, {
     align: "right",
   });
+
+  doc.end();
+  return doc;
+};
+
+export const buildTableSummaryPdf = (summary: TableSummaryReceipt) => {
+  const doc = new PDFDocument({
+    size: [226, 1000],
+    margins: { top: 10, bottom: 10, left: 10, right: 10 },
+  });
+
+  doc.fontSize(14).text(summary.store.name, { align: "center" });
+  doc.moveDown(0.5);
+  doc.fontSize(12).text(`Mesa ${summary.tableNumber}`);
+  if (summary.closedAt) {
+    doc.fontSize(9).text(`Fechamento: ${formatDate(summary.closedAt)}`);
+  }
+
+  doc.moveDown(0.4);
+  doc.fontSize(10).text("Resumo de itens:");
+  doc.moveDown(0.2);
+
+  if (summary.items.length === 0) {
+    doc.text("Nenhum item encontrado.");
+  } else {
+    summary.items.forEach((item) => {
+      doc.text(`${item.quantity}x ${item.name}`);
+      doc.text(currency.format(item.totalCents / 100), { align: "right" });
+      doc.moveDown(0.2);
+    });
+  }
+
+  doc.moveDown(0.5);
+  doc.fontSize(12).text(
+    `Total: ${currency.format(summary.totalCents / 100)}`,
+    { align: "right" }
+  );
 
   doc.end();
   return doc;
