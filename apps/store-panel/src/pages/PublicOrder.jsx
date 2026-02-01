@@ -247,6 +247,10 @@ const PublicOrder = () => {
   }, [fetchMenu, menu?.nextRefreshAt]);
 
   useEffect(() => {
+    if (isDineIn) {
+      setPaymentMethod("");
+      return;
+    }
     if (!menu?.payment) {
       return;
     }
@@ -258,7 +262,7 @@ const PublicOrder = () => {
     if (!availableMethods.includes(paymentMethod)) {
       setPaymentMethod(availableMethods[0] || "");
     }
-  }, [menu, paymentMethod]);
+  }, [menu, paymentMethod, isDineIn]);
 
   useEffect(() => {
     if (paymentMethod !== "CASH") {
@@ -539,6 +543,7 @@ const PublicOrder = () => {
       ? Math.round(changeForValue * 100)
       : undefined;
   const isChangeValid =
+    isDineInOrder ||
     paymentMethod !== "CASH" ||
     changeForCents === undefined ||
     changeForCents >= totalCents;
@@ -546,7 +551,7 @@ const PublicOrder = () => {
     cartItems.length > 0 &&
     (isDineInOrder ||
       (customerName.trim().length > 0 && customerPhone.trim().length > 0)) &&
-    paymentMethod &&
+    (isDineInOrder || paymentMethod) &&
     isStoreOpen &&
     isChangeValid &&
     isFulfillmentAllowed &&
@@ -577,9 +582,6 @@ const PublicOrder = () => {
         customerPhone: customerPhone.trim() || undefined,
         orderType: isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
         notes: notes.trim() || undefined,
-        paymentMethod,
-        changeForCents:
-          paymentMethod === "CASH" ? changeForCents : undefined,
         items: cartItems.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -590,6 +592,11 @@ const PublicOrder = () => {
               : undefined,
         })),
       };
+      if (!isDineInOrder) {
+        payload.paymentMethod = paymentMethod;
+        payload.changeForCents =
+          paymentMethod === "CASH" ? changeForCents : undefined;
+      }
       if (isDelivery) {
         payload.deliveryAreaId = deliveryAreaId;
         payload.addressLine = address.line.trim();
@@ -1044,95 +1051,99 @@ const PublicOrder = () => {
             </div>
           ) : null}
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-slate-700">Pagamento</h3>
-            <div className="flex flex-wrap gap-2">
-              {menu.payment?.acceptPix ? (
-                <button
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
-                    paymentMethod === "PIX"
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
-                  onClick={() => setPaymentMethod("PIX")}
-                >
-                  PIX
-                </button>
+          {!isDineInOrder ? (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Pagamento
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {menu.payment?.acceptPix ? (
+                  <button
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                      paymentMethod === "PIX"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                    onClick={() => setPaymentMethod("PIX")}
+                  >
+                    PIX
+                  </button>
+                ) : null}
+                {menu.payment?.acceptCash ? (
+                  <button
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                      paymentMethod === "CASH"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                    onClick={() => setPaymentMethod("CASH")}
+                  >
+                    Dinheiro
+                  </button>
+                ) : null}
+                {menu.payment?.acceptCard ? (
+                  <button
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                      paymentMethod === "CARD"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 text-slate-600"
+                    }`}
+                    onClick={() => setPaymentMethod("CARD")}
+                  >
+                    Cartão
+                  </button>
+                ) : null}
+              </div>
+
+              {paymentMethod === "CASH" ? (
+                <div>
+                  <label className="text-xs font-semibold uppercase text-slate-500">
+                    Troco para quanto?
+                  </label>
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    placeholder="Ex: 50,00"
+                    value={changeFor}
+                    onChange={(event) => setChangeFor(event.target.value)}
+                  />
+                  {!isChangeValid ? (
+                    <p className="mt-1 text-xs text-rose-600">
+                      Troco deve ser maior ou igual ao total do pedido.
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
-              {menu.payment?.acceptCash ? (
-                <button
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
-                    paymentMethod === "CASH"
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
-                  onClick={() => setPaymentMethod("CASH")}
-                >
-                  Dinheiro
-                </button>
-              ) : null}
-              {menu.payment?.acceptCard ? (
-                <button
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
-                    paymentMethod === "CARD"
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-slate-200 text-slate-600"
-                  }`}
-                  onClick={() => setPaymentMethod("CARD")}
-                >
-                  Cartão
-                </button>
+
+              {paymentMethod === "PIX" && menu.payment?.pixKey ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">PIX</p>
+                  <p>Chave: {menu.payment.pixKey}</p>
+                  {menu.payment.pixName ? (
+                    <p>Nome: {menu.payment.pixName}</p>
+                  ) : null}
+                  {menu.payment.pixBank ? (
+                    <p>Banco: {menu.payment.pixBank}</p>
+                  ) : null}
+                  <button
+                    className="mt-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          menu.payment.pixKey
+                        );
+                        setPixCopied(true);
+                        setTimeout(() => setPixCopied(false), 2000);
+                      } catch {
+                        setPixCopied(false);
+                      }
+                    }}
+                  >
+                    {pixCopied ? "Copiado!" : "Copiar chave"}
+                  </button>
+                </div>
               ) : null}
             </div>
-
-            {paymentMethod === "CASH" ? (
-              <div>
-                <label className="text-xs font-semibold uppercase text-slate-500">
-                  Troco para quanto?
-                </label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  placeholder="Ex: 50,00"
-                  value={changeFor}
-                  onChange={(event) => setChangeFor(event.target.value)}
-                />
-                {!isChangeValid ? (
-                  <p className="mt-1 text-xs text-rose-600">
-                    Troco deve ser maior ou igual ao total do pedido.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {paymentMethod === "PIX" && menu.payment?.pixKey ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">PIX</p>
-                <p>Chave: {menu.payment.pixKey}</p>
-                {menu.payment.pixName ? (
-                  <p>Nome: {menu.payment.pixName}</p>
-                ) : null}
-                {menu.payment.pixBank ? (
-                  <p>Banco: {menu.payment.pixBank}</p>
-                ) : null}
-                <button
-                  className="mt-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(
-                        menu.payment.pixKey
-                      );
-                      setPixCopied(true);
-                      setTimeout(() => setPixCopied(false), 2000);
-                    } catch {
-                      setPixCopied(false);
-                    }
-                  }}
-                >
-                  {pixCopied ? "Copiado!" : "Copiar chave"}
-                </button>
-              </div>
-            ) : null}
-          </div>
+          ) : null}
 
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-slate-700">
@@ -1155,7 +1166,9 @@ const PublicOrder = () => {
             {submitting
               ? "Enviando..."
               : isStoreOpen
-                ? "Finalizar pedido"
+                ? isDineInOrder
+                  ? "Enviar para cozinha"
+                  : "Finalizar pedido"
                 : "Loja fechada"}
           </button>
         </aside>
