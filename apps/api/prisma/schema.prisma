@@ -47,6 +47,17 @@ enum OrderType {
   DINE_IN
 }
 
+enum PrintJobType {
+  KITCHEN_ORDER
+  CASHIER_TABLE_SUMMARY
+}
+
+enum PrintJobStatus {
+  QUEUED
+  PRINTED
+  FAILED
+}
+
 enum TableStatus {
   FREE
   OPEN
@@ -61,6 +72,7 @@ model Store {
   passwordHash    String?
   isActive        Boolean               @default(true)
   autoPrintEnabled Boolean              @default(false)
+  cashierPrintEnabled Boolean           @default(false)
   allowPickup     Boolean               @default(true)
   allowDelivery   Boolean               @default(true)
   salonEnabled    Boolean               @default(false)
@@ -75,6 +87,7 @@ model Store {
   deliveryAreas   DeliveryArea[]
   hours           StoreHours?
   paymentSettings StorePaymentSettings?
+  printJobs       PrintJob[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 }
@@ -305,4 +318,19 @@ model SalonTable {
 
   @@unique([storeId, number])
   @@index([storeId])
+}
+
+model PrintJob {
+  id             String         @id @default(uuid())
+  storeId        String
+  store          Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  type           PrintJobType
+  status         PrintJobStatus
+  tableId        String?
+  tableSessionId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([storeId])
+  @@index([tableId, tableSessionId])
 }
