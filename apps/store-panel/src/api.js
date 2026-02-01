@@ -1,4 +1,4 @@
-import { getAdminToken, getToken } from "./auth";
+import { getAdminToken, getToken, getWaiterToken } from "./auth";
 
 const rawApiUrl = import.meta.env.VITE_API_URL;
 const normalizedApiUrl =
@@ -37,6 +37,18 @@ const buildAdminHeaders = (headers = {}) => {
   return baseHeaders;
 };
 
+const buildWaiterHeaders = (headers = {}) => {
+  const token = getWaiterToken();
+  const baseHeaders = {
+    "Content-Type": "application/json",
+    ...headers,
+  };
+  if (token) {
+    baseHeaders.Authorization = `Bearer ${token}`;
+  }
+  return baseHeaders;
+};
+
 const handleResponse = async (response) => {
   if (response.ok) {
     if (response.status === 204) {
@@ -64,6 +76,14 @@ export const api = {
   logout: async () => {
     const response = await request(`${API_URL}/auth/store/logout`, {
       method: "POST",
+    });
+    return handleResponse(response);
+  },
+  waiterLogin: async (slug, pin) => {
+    const response = await request(`${API_URL}/public/${slug}/waiter/login`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify({ pin }),
     });
     return handleResponse(response);
   },
@@ -252,6 +272,44 @@ export const api = {
       {
         method: "POST",
         headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
+  getWaiterSalonSettings: async () => {
+    const response = await request(`${API_URL}/store/salon/settings`, {
+      headers: buildWaiterHeaders(),
+    });
+    return handleResponse(response);
+  },
+  getWaiterSalonTables: async () => {
+    const response = await request(`${API_URL}/store/salon/tables`, {
+      headers: buildWaiterHeaders(),
+    });
+    return handleResponse(response);
+  },
+  getWaiterSalonTable: async (id) => {
+    const response = await request(`${API_URL}/store/salon/tables/${id}`, {
+      headers: buildWaiterHeaders(),
+    });
+    return handleResponse(response);
+  },
+  openWaiterSalonTable: async (id) => {
+    const response = await request(
+      `${API_URL}/store/salon/tables/${id}/open`,
+      {
+        method: "POST",
+        headers: buildWaiterHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
+  closeWaiterSalonTable: async (id) => {
+    const response = await request(
+      `${API_URL}/store/salon/tables/${id}/close`,
+      {
+        method: "POST",
+        headers: buildWaiterHeaders(),
       }
     );
     return handleResponse(response);

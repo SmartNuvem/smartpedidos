@@ -64,6 +64,10 @@ const orderStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
 const menuStreamClients = new Map<string, Set<FastifyReply>>();
 const salonStreamClients = new Map<string, Set<FastifyReply>>();
 const salonStreamPingers = new Map<FastifyReply, NodeJS.Timeout>();
+const waiterLoginAttempts = new Map<
+  string,
+  { count: number; resetAt: number }
+>();
 
 const parseOrigins = (value?: string) =>
   (value ?? "")
@@ -556,6 +560,41 @@ const getStoreIdFromToken = (token: string) => {
   }
 };
 
+const getSalonAccessStoreIdFromToken = (token: string) => {
+  try {
+    const payload = app.jwt.verify<{
+      role?: string;
+      storeId?: string;
+    }>(token);
+    if (!payload.storeId) {
+      return null;
+    }
+    if (payload.role === "store" || payload.role === "WAITER") {
+      return payload.storeId;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const getSalonTokenFromRequest = (request: FastifyRequest) => {
+  let token: string | null = getBearerToken(request);
+  if (!token && request.cookies) {
+    const cookieToken = request.cookies[storeCookieName];
+    if (typeof cookieToken === "string" && cookieToken.trim()) {
+      token = cookieToken.trim();
+    }
+  }
+  if (!token) {
+    const query = request.query as { token?: string } | undefined;
+    if (query?.token && typeof query.token === "string" && query.token.trim()) {
+      token = query.token.trim();
+    }
+  }
+  return token;
+};
+
 const requireStoreAuth = async (
   request: FastifyRequest,
   reply: FastifyReply
@@ -573,6 +612,23 @@ const requireStoreAuth = async (
   }
 
   const storeId = getStoreIdFromToken(token);
+  if (!storeId) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  request.storeId = storeId;
+};
+
+const requireSalonAuth = async (
+  request: FastifyRequest,
+  reply: FastifyReply
+) => {
+  const token = getSalonTokenFromRequest(request);
+  if (!token) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  const storeId = getSalonAccessStoreIdFromToken(token);
   if (!storeId) {
     return reply.status(401).send({ message: "Unauthorized" });
   }
@@ -836,6 +892,90 @@ const registerRoutes = () => {
     });
 
     return reply.raw;
+  });
+
+  app.post("/public/:slug/waiter/login", async (request, reply) => {
+    const paramsSchema = z.object({ slug: z.string() });
+    const bodySchema = z.object({
+      pin: z
+        .string()
+        .refine(
+          (value) => /^\d{4}$|^\d{6}$/.test(value),
+          "PIN deve ter 4 ou 6 dígitos."
+        ),
+    });
+
+    const { slug } = paramsSchema.parse(request.params);
+    const { pin } = bodySchema.parse(request.body ?? {});
+
+    const store = await prisma.store.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        slug: true,
+        isActive: true,
+        salonEnabled: true,
+        waiterPinHash: true,
+        waiterPwaEnabled: true,
+      },
+    });
+
+    if (!store || !store.isActive) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    if (!store.salonEnabled) {
+      return reply.status(400).send({
+        message: "Modo salão não está habilitado para esta loja.",
+      });
+    }
+
+    if (!store.waiterPwaEnabled) {
+      return reply.status(403).send({
+        message: "Acesso do garçom está desativado.",
+      });
+    }
+
+    if (!store.waiterPinHash) {
+      return reply.status(400).send({
+        message: "PIN do garçom não configurado.",
+      });
+    }
+
+    const now = Date.now();
+    const key = `${slug}:${request.ip}`;
+    const windowMs = 5 * 60 * 1000;
+    const maxAttempts = 10;
+    const existing = waiterLoginAttempts.get(key);
+    if (existing && existing.resetAt > now && existing.count >= maxAttempts) {
+      return reply.status(429).send({
+        message: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+      });
+    }
+    const attemptEntry =
+      !existing || existing.resetAt <= now
+        ? { count: 0, resetAt: now + windowMs }
+        : existing;
+
+    const ok = await bcrypt.compare(pin, store.waiterPinHash);
+    if (!ok) {
+      attemptEntry.count += 1;
+      waiterLoginAttempts.set(key, attemptEntry);
+      return reply.status(401).send({ message: "PIN inválido." });
+    }
+
+    waiterLoginAttempts.delete(key);
+
+    const waiterToken = await reply.jwtSign(
+      {
+        role: "WAITER",
+        storeId: store.id,
+        slug: store.slug,
+      },
+      { expiresIn: "12h", sub: store.id }
+    );
+
+    return reply.send({ waiterToken });
   });
 
   app.post("/public/:slug/orders", async (request, reply) => {
@@ -1698,6 +1838,9 @@ const registerRoutes = () => {
     if (!request.url.startsWith("/store")) {
       return;
     }
+    if (request.url.startsWith("/store/salon")) {
+      return requireSalonAuth(request, reply);
+    }
 
     return requireStoreAuth(request, reply);
   });
@@ -2465,7 +2608,12 @@ const registerRoutes = () => {
 
     const store = await prisma.store.findUnique({
       where: { id: storeId },
-      select: { salonEnabled: true, salonTableCount: true },
+      select: {
+        salonEnabled: true,
+        salonTableCount: true,
+        waiterPinHash: true,
+        waiterPwaEnabled: true,
+      },
     });
 
     if (!store) {
@@ -2475,6 +2623,8 @@ const registerRoutes = () => {
     return reply.send({
       salonEnabled: store.salonEnabled,
       salonTableCount: store.salonTableCount,
+      waiterPinSet: Boolean(store.waiterPinHash),
+      waiterPwaEnabled: store.waiterPwaEnabled,
     });
   });
 
@@ -2487,19 +2637,38 @@ const registerRoutes = () => {
     const bodySchema = z.object({
       salonEnabled: z.boolean().optional(),
       salonTableCount: z.number().int().nonnegative().optional(),
+      waiterPwaEnabled: z.boolean().optional(),
+      waiterPin: z
+        .string()
+        .refine(
+          (value) => /^\d{4}$|^\d{6}$/.test(value),
+          "PIN deve ter 4 ou 6 dígitos."
+        )
+        .optional(),
     });
 
     const payload = bodySchema.parse(request.body ?? {});
 
     try {
       const store = await prisma.$transaction(async (tx) => {
+        const waiterPinHash = payload.waiterPin
+          ? await bcrypt.hash(payload.waiterPin, 10)
+          : undefined;
+
         const updated = await tx.store.update({
           where: { id: storeId },
           data: {
             salonEnabled: payload.salonEnabled ?? undefined,
             salonTableCount: payload.salonTableCount ?? undefined,
+            waiterPwaEnabled: payload.waiterPwaEnabled ?? undefined,
+            waiterPinHash,
           },
-          select: { salonEnabled: true, salonTableCount: true },
+          select: {
+            salonEnabled: true,
+            salonTableCount: true,
+            waiterPinHash: true,
+            waiterPwaEnabled: true,
+          },
         });
 
         if (payload.salonTableCount !== undefined) {
@@ -2514,6 +2683,8 @@ const registerRoutes = () => {
       return reply.send({
         salonEnabled: store.salonEnabled,
         salonTableCount: store.salonTableCount,
+        waiterPinSet: Boolean(store.waiterPinHash),
+        waiterPwaEnabled: store.waiterPwaEnabled,
       });
     } catch (error) {
       return reply.status(400).send({
@@ -2736,14 +2907,17 @@ const registerRoutes = () => {
     }
 
     if (table.status !== TableStatus.OPEN) {
-      return reply.send({ ok: true });
+      return reply.status(400).send({
+        message: "A mesa precisa estar aberta para ser fechada.",
+      });
     }
 
     await prisma.salonTable.update({
       where: { id: table.id },
       data: {
-        status: TableStatus.CLOSED,
+        status: TableStatus.FREE,
         closedAt: new Date(),
+        openedAt: null,
       },
     });
 

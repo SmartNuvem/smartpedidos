@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { API_URL } from "../api";
 
-const buildStreamUrl = () => "/api/store/salon/stream";
+const buildStreamUrl = (token) => {
+  const url = new URL(`${API_URL}/store/salon/stream`, window.location.origin);
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+};
 
-const useSalonStream = ({ onTablesUpdated, onConnectionChange } = {}) => {
+const useSalonStream = ({ onTablesUpdated, onConnectionChange, token } = {}) => {
   const [streamStatus, setStreamStatus] = useState("connecting");
   const callbacksRef = useRef({ onTablesUpdated, onConnectionChange });
   const sourceRef = useRef(null);
@@ -20,7 +27,7 @@ const useSalonStream = ({ onTablesUpdated, onConnectionChange } = {}) => {
 
     setStreamStatus("connecting");
     callbacksRef.current.onConnectionChange?.("connecting");
-    const source = new EventSource(buildStreamUrl());
+    const source = new EventSource(buildStreamUrl(token));
     sourceRef.current = source;
 
     const handleEvent = (event) => {
@@ -53,7 +60,7 @@ const useSalonStream = ({ onTablesUpdated, onConnectionChange } = {}) => {
         sourceRef.current = null;
       }
     };
-  }, []);
+  }, [token]);
 
   return { streamStatus };
 };

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, formatCurrency, formatDateTime } from "../api";
+import {
+  clearWaiterSession,
+  getWaiterSlug,
+  getWaiterToken,
+} from "../auth";
 import Button from "../components/Button";
+import WaiterLayout from "../components/WaiterLayout";
 import useSalonStream from "../hooks/useSalonStream";
 
 const statusStyles = {
@@ -14,53 +20,61 @@ const statusLabels = {
   OPEN: "Aberta",
 };
 
-const SalonTable = () => {
-  const { id } = useParams();
+const WaiterTable = () => {
+  const { slug, id } = useParams();
   const navigate = useNavigate();
   const [tableData, setTableData] = useState(null);
-  const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
+  const token = getWaiterToken();
+
+  useEffect(() => {
+    const storedSlug = getWaiterSlug();
+    if (!token || !slug || storedSlug !== slug) {
+      navigate(`/s/${slug}/garcom`, { replace: true });
+    }
+  }, [navigate, slug, token]);
+
   const fetchTable = useCallback(async () => {
-    if (!id) {
+    if (!id || !token) {
       return;
     }
     setError("");
     try {
-      const [tableResponse, storeResponse] = await Promise.all([
-        api.getSalonTable(id),
-        api.getStore(),
-      ]);
-      setTableData(tableResponse);
-      setStore(storeResponse);
+      const response = await api.getWaiterSalonTable(id);
+      setTableData(response);
     } catch (err) {
       setError(err?.message || "Não foi possível carregar a mesa.");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, token]);
 
   useEffect(() => {
     fetchTable();
   }, [fetchTable]);
 
   useSalonStream({
-    onTablesUpdated: () => {
-      fetchTable();
-    },
+    onTablesUpdated: fetchTable,
+    token,
   });
 
   const table = tableData?.table;
   const orders = tableData?.orders ?? [];
 
   const dineInLink = useMemo(() => {
-    if (!store?.slug || !table?.id) {
+    if (!slug || !table?.id) {
       return "#";
     }
-    return `/p/${store.slug}?table=${table.id}`;
-  }, [store?.slug, table?.id]);
+    return `/p/${slug}?table=${table.id}`;
+  }, [slug, table?.id]);
+
+  const handleLogout = () => {
+    clearWaiterSession();
+    navigate(`/s/${slug}/garcom`, { replace: true });
+  };
 
   const handleClose = async () => {
     if (!table?.id) {
@@ -69,8 +83,8 @@ const SalonTable = () => {
     setActionLoading(true);
     setError("");
     try {
-      await api.closeSalonTable(table.id);
-      await fetchTable();
+      await api.closeWaiterSalonTable(table.id);
+      navigate(`/s/${slug}/garcom/mesas`);
     } catch (err) {
       setError(err?.message || "Não foi possível fechar a mesa.");
     } finally {
@@ -85,7 +99,7 @@ const SalonTable = () => {
     setActionLoading(true);
     setError("");
     try {
-      await api.openSalonTable(table.id);
+      await api.openWaiterSalonTable(table.id);
       await fetchTable();
     } catch (err) {
       setError(err?.message || "Não foi possível abrir a mesa.");
@@ -95,53 +109,54 @@ const SalonTable = () => {
   };
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Carregando mesa...</p>;
+    return (
+      <WaiterLayout title="Mesa" subtitle="Carregando...">
+        <p className="text-sm text-slate-500">Carregando mesa...</p>
+      </WaiterLayout>
+    );
   }
 
   if (!table) {
     return (
-      <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-        {error || "Mesa não encontrada."}
-      </div>
+      <WaiterLayout title="Mesa" onLogout={handleLogout}>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error || "Mesa não encontrada."}
+        </div>
+      </WaiterLayout>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <WaiterLayout
+      title={`Mesa ${table.number}`}
+      subtitle={`Total acumulado: ${formatCurrency(table.total)}`}
+      onLogout={handleLogout}
+      actions={
+        <Button variant="secondary" onClick={() => navigate(`/s/${slug}/garcom/mesas`)}>
+          Voltar
+        </Button>
+      }
+    >
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Mesa {table.number}
-              </h2>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  statusStyles[table.status] || "bg-slate-100 text-slate-600"
-                }`}
-              >
-                {statusLabels[table.status] || table.status}
-              </span>
-            </div>
-            <p className="text-sm text-slate-500">
-              Total acumulado: {formatCurrency(table.total)}
-            </p>
-            <p className="text-xs text-slate-400">
+            <span
+              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                statusStyles[table.status] || "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {statusLabels[table.status] || table.status}
+            </span>
+            <p className="mt-2 text-xs text-slate-400">
               Último pedido: {table.lastOrderAt ? formatDateTime(table.lastOrderAt) : "-"}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => navigate("/store/salon")}>Voltar</Button>
             <Button
               disabled={table.status !== "OPEN"}
-              title={
-                table.status === "OPEN"
-                  ? ""
-                  : "Abra a mesa para adicionar pedidos."
-              }
               onClick={() => {
                 if (table.status === "OPEN" && dineInLink !== "#") {
-                  window.open(dineInLink, "_blank", "noopener,noreferrer");
+                  navigate(dineInLink);
                 }
               }}
             >
@@ -169,7 +184,7 @@ const SalonTable = () => {
         ) : null}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">Pedidos</h3>
           <span className="text-sm text-slate-500">
@@ -219,7 +234,7 @@ const SalonTable = () => {
                           </div>
                         ) : null}
                         {item.notes ? (
-                          <p className="text-xs text-slate-400">
+                          <p className="mt-1 text-xs text-slate-400">
                             Obs: {item.notes}
                           </p>
                         ) : null}
@@ -235,8 +250,8 @@ const SalonTable = () => {
           </div>
         )}
       </div>
-    </div>
+    </WaiterLayout>
   );
 };
 
-export default SalonTable;
+export default WaiterTable;

@@ -65,6 +65,8 @@ model Store {
   allowDelivery   Boolean               @default(true)
   salonEnabled    Boolean               @default(false)
   salonTableCount Int                   @default(0)
+  waiterPinHash   String?
+  waiterPwaEnabled Boolean              @default(true)
   timezone        String                @default("America/Sao_Paulo")
   categories      Category[]
   orders          Order[]

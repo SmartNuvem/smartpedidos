@@ -20,6 +20,8 @@ const Settings = () => {
   const [hours, setHours] = useState(null);
   const [payment, setPayment] = useState(null);
   const [salonSettings, setSalonSettings] = useState(null);
+  const [waiterPin, setWaiterPin] = useState("");
+  const [waiterLinkStatus, setWaiterLinkStatus] = useState("");
   const [agents, setAgents] = useState([]);
   const [error, setError] = useState("");
   const [savingHours, setSavingHours] = useState(false);
@@ -215,6 +217,19 @@ const Settings = () => {
     }
   };
 
+  const handleCopyWaiterLink = async () => {
+    if (!store?.slug) {
+      return;
+    }
+    const link = `${window.location.origin}/s/${store.slug}/garcom`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setWaiterLinkStatus("Link copiado!");
+    } catch {
+      setWaiterLinkStatus("Não foi possível copiar o link.");
+    }
+  };
+
   const handleAreaChange = (id, field, value) => {
     setDeliveryAreas((prev) =>
       prev.map((area) =>
@@ -337,14 +352,22 @@ const Settings = () => {
     if (!salonSettings) {
       return;
     }
+    const normalizedPin = waiterPin.trim();
+    if (normalizedPin && !/^\d{4}$|^\d{6}$/.test(normalizedPin)) {
+      setSalonError("O PIN deve ter 4 ou 6 dígitos.");
+      return;
+    }
     setSavingSalon(true);
     setSalonError("");
     try {
       const updated = await api.updateSalonSettings({
         salonEnabled: Boolean(salonSettings.salonEnabled),
         salonTableCount: Math.max(0, Number(salonSettings.salonTableCount || 0)),
+        waiterPwaEnabled: Boolean(salonSettings.waiterPwaEnabled),
+        waiterPin: normalizedPin || undefined,
       });
       setSalonSettings(updated);
+      setWaiterPin("");
     } catch (err) {
       setSalonError(
         err?.message || "Não foi possível salvar as configurações do salão."
@@ -400,6 +423,10 @@ const Settings = () => {
   };
 
   const isTokenCopyError = tokenCopyStatus.startsWith("Não");
+  const isWaiterLinkError = waiterLinkStatus.startsWith("Não");
+  const waiterLink = store?.slug
+    ? `${window.location.origin}/s/${store.slug}/garcom`
+    : "";
 
   return (
     <div className="space-y-6">
@@ -560,37 +587,113 @@ const Settings = () => {
           </div>
         ) : null}
         {salonSettings ? (
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-              <input
-                type="checkbox"
-                checked={Boolean(salonSettings.salonEnabled)}
+          <div className="mt-4 space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={Boolean(salonSettings.salonEnabled)}
+                  onChange={(event) =>
+                    setSalonSettings((prev) =>
+                      prev
+                        ? { ...prev, salonEnabled: event.target.checked }
+                        : prev
+                    )
+                  }
+                />
+                Habilitar modo salão
+              </label>
+              <Input
+                label="Quantidade de mesas"
+                type="number"
+                min="0"
+                value={salonSettings.salonTableCount ?? 0}
                 onChange={(event) =>
                   setSalonSettings((prev) =>
                     prev
-                      ? { ...prev, salonEnabled: event.target.checked }
+                      ? {
+                          ...prev,
+                          salonTableCount: Number(event.target.value || 0),
+                        }
                       : prev
                   )
                 }
               />
-              Habilitar modo salão
-            </label>
-            <Input
-              label="Quantidade de mesas"
-              type="number"
-              min="0"
-              value={salonSettings.salonTableCount ?? 0}
-              onChange={(event) =>
-                setSalonSettings((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        salonTableCount: Number(event.target.value || 0),
-                      }
-                    : prev
-                )
-              }
-            />
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">
+                    Garçom (PWA)
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Configure o PIN e compartilhe o link instalável do garçom.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-slate-500">
+                  {salonSettings.waiterPinSet ? "PIN definido" : "PIN não definido"}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(salonSettings.waiterPwaEnabled)}
+                    onChange={(event) =>
+                      setSalonSettings((prev) =>
+                        prev
+                          ? { ...prev, waiterPwaEnabled: event.target.checked }
+                          : prev
+                      )
+                    }
+                  />
+                  Acesso do garçom habilitado
+                </label>
+                <Input
+                  label="PIN do garçom (4 ou 6 dígitos)"
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="Digite um PIN"
+                  value={waiterPin}
+                  onChange={(event) => setWaiterPin(event.target.value)}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+                <Input
+                  label="Link do garçom"
+                  value={waiterLink}
+                  readOnly
+                />
+                <div className="flex items-end">
+                  <Button onClick={handleCopyWaiterLink}>Copiar link</Button>
+                </div>
+              </div>
+
+              {waiterLinkStatus ? (
+                <p
+                  className={`mt-2 text-xs font-semibold ${
+                    isWaiterLinkError ? "text-rose-600" : "text-emerald-600"
+                  }`}
+                >
+                  {waiterLinkStatus}
+                </p>
+              ) : null}
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+                <p className="font-semibold text-slate-700">
+                  Instalar no celular (PWA)
+                </p>
+                <p className="mt-1">
+                  Android/Chrome: ⋮ → Instalar app
+                </p>
+                <p className="mt-1">
+                  iPhone/Safari: Compartilhar → Adicionar à Tela de Início
+                </p>
+              </div>
+            </div>
           </div>
         ) : (
           <p className="mt-4 text-sm text-slate-500">

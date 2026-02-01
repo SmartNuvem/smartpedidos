@@ -17,6 +17,10 @@ import Settings from "./pages/Settings";
 import Categories from "./pages/Categories";
 import Products from "./pages/Products";
 import PublicOrder from "./pages/PublicOrder";
+import WaiterLogin from "./pages/WaiterLogin";
+import WaiterStart from "./pages/WaiterStart";
+import WaiterTable from "./pages/WaiterTable";
+import WaiterTables from "./pages/WaiterTables";
 
 const RequireAuth = ({ children }) => {
   const location = useLocation();
@@ -70,6 +74,10 @@ const RequireAdmin = ({ children }) => {
 const App = () => (
   <Routes>
     <Route path="/p/:slug" element={<PublicOrder />} />
+    <Route path="/s" element={<WaiterStart />} />
+    <Route path="/s/:slug/garcom" element={<WaiterLogin />} />
+    <Route path="/s/:slug/garcom/mesas" element={<WaiterTables />} />
+    <Route path="/s/:slug/garcom/mesa/:id" element={<WaiterTable />} />
     <Route path="/login" element={<Login />} />
     <Route path="/admin/login" element={<AdminLogin />} />
     <Route
