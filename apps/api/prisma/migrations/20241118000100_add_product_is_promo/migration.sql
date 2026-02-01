@@ -1,0 +1,1 @@
+ALTER TABLE "Product" ADD COLUMN "isPromo" BOOLEAN NOT NULL DEFAULT false;

@@ -143,6 +143,35 @@ const PublicOrder = () => {
   const allowDelivery = menu?.store?.allowDelivery ?? true;
 
   const optionGroups = optionProduct?.optionGroups ?? [];
+  const promoProducts = useMemo(() => {
+    if (!menu) {
+      return [];
+    }
+    const promos = [];
+    menu.categories.forEach((category) => {
+      category.products.forEach((product) => {
+        if (product.isPromo) {
+          promos.push({ ...product, categoryName: category.name });
+        }
+      });
+    });
+    return promos;
+  }, [menu]);
+  const sortedCategories = useMemo(() => {
+    if (!menu) {
+      return [];
+    }
+    return menu.categories.map((category) => {
+      const promoItems = category.products.filter((product) => product.isPromo);
+      const regularItems = category.products.filter(
+        (product) => !product.isPromo
+      );
+      return {
+        ...category,
+        products: [...promoItems, ...regularItems],
+      };
+    });
+  }, [menu]);
 
   const fetchMenu = useCallback(
     async ({ showLoading = false } = {}) => {
@@ -189,12 +218,30 @@ const PublicOrder = () => {
     const handleMenuUpdate = () => {
       fetchMenu();
     };
-    source.addEventListener("menu-updated", handleMenuUpdate);
+    source.addEventListener("menu_updated", handleMenuUpdate);
     return () => {
-      source.removeEventListener("menu-updated", handleMenuUpdate);
+      source.removeEventListener("menu_updated", handleMenuUpdate);
       source.close();
     };
   }, [fetchMenu, slug]);
+
+  useEffect(() => {
+    if (!menu?.nextRefreshAt) {
+      return undefined;
+    }
+    const nextRefreshTime = new Date(menu.nextRefreshAt).getTime();
+    if (Number.isNaN(nextRefreshTime)) {
+      return undefined;
+    }
+    const delayMs = nextRefreshTime - Date.now() + 1500;
+    if (delayMs <= 0) {
+      return undefined;
+    }
+    const timeoutId = setTimeout(() => {
+      fetchMenu();
+    }, delayMs);
+    return () => clearTimeout(timeoutId);
+  }, [fetchMenu, menu?.nextRefreshAt]);
 
   useEffect(() => {
     if (!menu?.payment) {
@@ -645,7 +692,54 @@ const PublicOrder = () => {
 
       <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="space-y-6">
-          {menu.categories.map((category) => (
+          {promoProducts.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Promoção do dia
+                </h2>
+                <span className="text-xs font-semibold uppercase text-rose-500">
+                  Ofertas especiais
+                </span>
+              </div>
+              <div className="grid gap-3">
+                {promoProducts.map((product) => (
+                  <div
+                    key={`promo-${product.id}`}
+                    className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-900">
+                            {product.name}
+                          </p>
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700">
+                            {product.categoryName}
+                          </span>
+                          <span className="animate-pulse rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                            Promoção do dia
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-500">
+                          {formatCurrency(product.priceCents / 100)}
+                        </p>
+                      </div>
+                      <button
+                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                        onClick={() => handleAddProduct(product)}
+                      >
+                        {product.optionGroups && product.optionGroups.length > 0
+                          ? "Personalizar"
+                          : "Adicionar"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {sortedCategories.map((category) => (
             <div key={category.id} className="space-y-3">
               <h2 className="text-lg font-semibold text-slate-900">
                 {category.name}
@@ -658,9 +752,16 @@ const PublicOrder = () => {
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="font-semibold text-slate-900">
-                          {product.name}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-900">
+                            {product.name}
+                          </p>
+                          {product.isPromo ? (
+                            <span className="animate-pulse rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                              Promoção do dia
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="text-sm text-slate-500">
                           {formatCurrency(product.priceCents / 100)}
                         </p>

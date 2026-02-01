@@ -118,6 +118,7 @@ const Products = () => {
     categoryId: "",
     price: "",
     active: true,
+    isPromo: false,
     availableEveryday: true,
     availableDays: [],
     availabilityWindows: [],
@@ -157,6 +158,7 @@ const Products = () => {
       categoryId: categories[0]?.id ?? "",
       price: "",
       active: true,
+      isPromo: false,
       availableEveryday: true,
       availableDays: [],
       availabilityWindows: [],
@@ -174,6 +176,7 @@ const Products = () => {
       categoryId: product.categoryId,
       price: formatDecimal(product.price),
       active: product.active,
+      isPromo: product.isPromo ?? false,
       availableEveryday,
       availableDays,
       availabilityWindows,
@@ -495,6 +498,7 @@ const Products = () => {
           endMinute: window.endMinute,
           active: window.active,
         })),
+        isPromo: formState.isPromo,
       };
       if (editingProduct) {
         await api.updateProduct(editingProduct.id, payload);
@@ -574,7 +578,14 @@ const Products = () => {
               {products.map((product) => (
                 <tr key={product.id}>
                   <td className="px-4 py-3 font-semibold text-slate-900">
-                    {product.name}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{product.name}</span>
+                      {product.isPromo ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                          Promoção do dia
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {categoryMap.get(product.categoryId)?.name ?? "-"}
@@ -676,6 +687,16 @@ const Products = () => {
             <option value="true">Ativo</option>
             <option value="false">Inativo</option>
           </Select>
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={formState.isPromo}
+              onChange={(event) =>
+                handleChange("isPromo", event.target.checked)
+              }
+            />
+            Promoção do dia
+          </label>
           <div className="rounded-xl border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700">
               Disponibilidade
