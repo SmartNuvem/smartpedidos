@@ -1173,6 +1173,68 @@ const registerRoutes = () => {
     });
   });
 
+  app.delete("/admin/stores/:id", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+
+    const { id } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { id },
+      select: { id: true, isActive: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    if (store.isActive) {
+      return reply
+        .status(400)
+        .send({ message: "Desative a loja antes de excluir." });
+    }
+
+    await prisma.$transaction([
+      prisma.orderItemOption.deleteMany({
+        where: { orderItem: { order: { storeId: id } } },
+      }),
+      prisma.orderItem.deleteMany({
+        where: { order: { storeId: id } },
+      }),
+      prisma.order.deleteMany({
+        where: { storeId: id },
+      }),
+      prisma.productOptionItem.deleteMany({
+        where: { group: { product: { category: { storeId: id } } } },
+      }),
+      prisma.productOptionGroup.deleteMany({
+        where: { product: { category: { storeId: id } } },
+      }),
+      prisma.product.deleteMany({
+        where: { category: { storeId: id } },
+      }),
+      prisma.category.deleteMany({
+        where: { storeId: id },
+      }),
+      prisma.agent.deleteMany({
+        where: { storeId: id },
+      }),
+      prisma.deliveryArea.deleteMany({
+        where: { storeId: id },
+      }),
+      prisma.storeHours.deleteMany({
+        where: { storeId: id },
+      }),
+      prisma.storePaymentSettings.deleteMany({
+        where: { storeId: id },
+      }),
+      prisma.store.delete({
+        where: { id },
+      }),
+    ]);
+
+    return reply.status(204).send();
+  });
+
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/agent")) {
       return;

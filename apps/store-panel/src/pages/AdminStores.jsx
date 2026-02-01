@@ -4,6 +4,7 @@ import Button from "../components/Button";
 import Input from "../components/Input";
 import Modal from "../components/Modal";
 import Table from "../components/Table";
+import Toast from "../components/Toast";
 
 const initialStoreForm = {
   name: "",
@@ -20,11 +21,14 @@ const AdminStores = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [formState, setFormState] = useState(initialStoreForm);
   const [editState, setEditState] = useState(null);
   const [resetState, setResetState] = useState({ id: "", name: "" });
+  const [deleteState, setDeleteState] = useState({ id: "", name: "" });
   const [resetPassword, setResetPassword] = useState("");
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const activeCount = useMemo(
     () => stores.filter((store) => store.isActive).length,
@@ -104,6 +108,26 @@ const AdminStores = () => {
       await loadStores();
     } catch (err) {
       setError(err.message || "Não foi possível atualizar o status.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteStore = async () => {
+    if (!deleteState.id) return;
+    setSaving(true);
+    setError("");
+    try {
+      await adminApi.deleteStore(deleteState.id);
+      setStores((prev) => prev.filter((store) => store.id !== deleteState.id));
+      setDeleteOpen(false);
+      setDeleteState({ id: "", name: "" });
+      setToast({
+        message: "Loja excluída com sucesso",
+        variant: "success",
+      });
+    } catch (err) {
+      setError(err.message || "Não foi possível excluir a loja.");
     } finally {
       setSaving(false);
     }
@@ -202,6 +226,22 @@ const AdminStores = () => {
                       }}
                     >
                       Resetar senha
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      disabled={store.isActive || saving}
+                      title={
+                        store.isActive
+                          ? "Desative a loja antes de excluir"
+                          : "Excluir loja"
+                      }
+                      onClick={() => {
+                        setDeleteState({ id: store.id, name: store.name });
+                        setDeleteOpen(true);
+                      }}
+                    >
+                      Excluir
                     </Button>
                     <Button
                       variant={store.isActive ? "ghost" : "primary"}
@@ -379,6 +419,39 @@ const AdminStores = () => {
           />
         </form>
       </Modal>
+
+      <Modal
+        open={deleteOpen}
+        title={`Excluir loja - ${deleteState.name}`}
+        onClose={() => setDeleteOpen(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDeleteStore}
+              disabled={saving}
+            >
+              {saving ? "Excluindo..." : "Excluir loja"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          Tem certeza que deseja excluir esta loja?
+        </p>
+        <p className="text-sm font-semibold text-slate-900">
+          Todos os dados serão apagados e essa ação não pode ser desfeita.
+        </p>
+      </Modal>
+
+      <Toast
+        message={toast?.message}
+        variant={toast?.variant}
+        onClose={() => setToast(null)}
+      />
     </div>
   );
 };

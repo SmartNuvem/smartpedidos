@@ -366,6 +366,13 @@ export const adminApi = {
     );
     return handleResponse(response);
   },
+  deleteStore: async (id) => {
+    const response = await request(`${API_URL}/admin/stores/${id}`, {
+      method: "DELETE",
+      headers: buildAdminHeaders(),
+    });
+    return handleResponse(response);
+  },
 };
 
 export const formatCurrency = (value) =>
