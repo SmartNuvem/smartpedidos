@@ -2819,6 +2819,7 @@ const registerRoutes = () => {
         items: {
           include: {
             product: true,
+            options: true,
           },
         },
       },
@@ -2854,6 +2855,11 @@ const registerRoutes = () => {
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents,
         notes: item.notes,
+        options: item.options.map((option) => ({
+          groupName: option.groupName,
+          itemName: option.itemName,
+          priceDeltaCents: option.priceDeltaCents,
+        })),
       })),
     }));
   });
@@ -2873,6 +2879,7 @@ const registerRoutes = () => {
         items: {
           include: {
             product: true,
+            options: true,
           },
         },
       },
@@ -2906,6 +2913,11 @@ const registerRoutes = () => {
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents,
         notes: item.notes,
+        options: item.options.map((option) => ({
+          groupName: option.groupName,
+          itemName: option.itemName,
+          priceDeltaCents: option.priceDeltaCents,
+        })),
       })),
       total: order.total.toNumber(),
       totalCents: Math.round(order.total.toNumber() * 100),
