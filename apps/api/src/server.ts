@@ -597,9 +597,10 @@ const registerRoutes = () => {
     }
 
     const productIds = items.map((item) => item.productId);
+    const uniqueProductIds = [...new Set(productIds)];
     const products = await prisma.product.findMany({
       where: {
-        id: { in: productIds },
+        id: { in: uniqueProductIds },
         category: {
           storeId: store.id,
         },
@@ -615,17 +616,24 @@ const registerRoutes = () => {
       },
     });
 
-    if (products.length !== productIds.length) {
-      return reply
-        .status(400)
-        .send({ message: "One or more products are invalid" });
-    }
-
     const productMap = new Map(products.map((product) => [product.id, product]));
-    const normalizedItems = items.map((item) => {
+    const normalizedItems: Array<{
+      productId: string;
+      quantity: number;
+      notes?: string;
+      unitPriceCents: number;
+      optionEntries: Array<{
+        groupName: string;
+        itemName: string;
+        priceDeltaCents: number;
+      }>;
+    }> = [];
+    for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product) {
-        return null;
+        return reply.status(400).send({
+          message: `Product ${item.productId} not found or inactive for this store.`,
+        });
       }
       const unitPriceCents = Math.round(product.price.toNumber() * 100);
       const selectionInputs = item.options ?? [];
@@ -634,7 +642,9 @@ const registerRoutes = () => {
         (selection) => !groupIds.has(selection.groupId)
       );
       if (invalidGroup) {
-        return null;
+        return reply.status(400).send({
+          message: `Option group ${invalidGroup.groupId} does not belong to product ${product.name}.`,
+        });
       }
 
       const optionEntries: Array<{
@@ -656,7 +666,12 @@ const registerRoutes = () => {
         );
 
         if (selectedItems.some((option) => !option)) {
-          return null;
+          const invalidOptionId = uniqueSelectedIds.find(
+            (optionId) => !activeMap.has(optionId)
+          );
+          return reply.status(400).send({
+            message: `Option ${invalidOptionId ?? "unknown"} does not belong to product ${product.name}.`,
+          });
         }
 
         const minRequired = group.required
@@ -673,7 +688,9 @@ const registerRoutes = () => {
           selectedItems.length < minRequired ||
           selectedItems.length > maxAllowed
         ) {
-          return null;
+          return reply.status(400).send({
+            message: `Product ${product.name} has invalid options for group ${group.name}.`,
+          });
         }
 
         selectedItems.forEach((option) => {
@@ -686,25 +703,17 @@ const registerRoutes = () => {
         });
       }
 
-      return {
+      normalizedItems.push({
         ...item,
         unitPriceCents: unitPriceCents + optionTotalCents,
         optionEntries,
-      };
-    });
-
-    if (normalizedItems.some((item) => item === null)) {
-      return reply
-        .status(400)
-        .send({ message: "One or more products are invalid" });
+      });
     }
 
-    const subtotalCents = normalizedItems.reduce((acc, item) => {
-      if (!item) {
-        return acc;
-      }
-      return acc + item.unitPriceCents * item.quantity;
-    }, 0);
+    const subtotalCents = normalizedItems.reduce(
+      (acc, item) => acc + item.unitPriceCents * item.quantity,
+      0
+    );
     let deliveryFeeCents = 0;
     let deliveryNeighborhood = normalizedAddressNeighborhood;
 
@@ -767,16 +776,16 @@ const registerRoutes = () => {
         const createdItem = await tx.orderItem.create({
           data: {
             orderId: createdOrder.id,
-            productId: item!.productId,
-            quantity: item!.quantity,
-            unitPriceCents: item!.unitPriceCents,
-            notes: item!.notes ?? null,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPriceCents: item.unitPriceCents,
+            notes: item.notes ?? null,
           },
         });
 
-        if (item!.optionEntries.length > 0) {
+        if (item.optionEntries.length > 0) {
           await tx.orderItemOption.createMany({
-            data: item!.optionEntries.map((option) => ({
+            data: item.optionEntries.map((option) => ({
               orderItemId: createdItem.id,
               groupName: option.groupName,
               itemName: option.itemName,
