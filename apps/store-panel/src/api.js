@@ -138,6 +138,13 @@ export const api = {
     });
     return handleResponse(response);
   },
+  deleteStoreAgent: async (id) => {
+    const response = await request(`${API_URL}/store/agents/${id}`, {
+      method: "DELETE",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   getDeliveryAreas: async () => {
     const response = await request(`${API_URL}/store/delivery-areas`, {
       headers: buildHeaders(),

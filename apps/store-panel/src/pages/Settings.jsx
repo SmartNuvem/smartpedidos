@@ -31,6 +31,7 @@ const Settings = () => {
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [agentSavingId, setAgentSavingId] = useState(null);
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
+  const [deleteAgent, setDeleteAgent] = useState(null);
   const [newAgentName, setNewAgentName] = useState("");
   const [tokenReveal, setTokenReveal] = useState(null);
   const [tokenCopyStatus, setTokenCopyStatus] = useState("");
@@ -173,6 +174,23 @@ const Settings = () => {
       );
     } catch {
       setAgentsError("Não foi possível atualizar o agente.");
+    } finally {
+      setAgentSavingId(null);
+    }
+  };
+
+  const handleDeleteAgent = async () => {
+    if (!deleteAgent) {
+      return;
+    }
+    setAgentSavingId(deleteAgent.id);
+    setAgentsError("");
+    try {
+      await api.deleteStoreAgent(deleteAgent.id);
+      setDeleteAgent(null);
+      await refreshAgents();
+    } catch (error) {
+      setAgentsError(error?.message || "Não foi possível excluir o agente.");
     } finally {
       setAgentSavingId(null);
     }
@@ -478,6 +496,19 @@ const Settings = () => {
                   disabled={agentSavingId === agent.id}
                 >
                   {agent.isActive ? "Desativar" : "Ativar"}
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => setDeleteAgent(agent)}
+                  disabled={agent.isActive || agentSavingId === agent.id}
+                  title={
+                    agent.isActive
+                      ? "Desative o agente para excluir."
+                      : "Excluir agente"
+                  }
+                >
+                  <span aria-hidden="true">🗑</span>
+                  Excluir
                 </Button>
               </div>
             </div>
@@ -856,6 +887,40 @@ const Settings = () => {
           onChange={(event) => setNewAgentName(event.target.value)}
           placeholder="Ex: Caixa 1"
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(deleteAgent)}
+        title="Excluir agente"
+        onClose={() => setDeleteAgent(null)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteAgent(null)}
+              disabled={agentSavingId === deleteAgent?.id}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDeleteAgent}
+              disabled={agentSavingId === deleteAgent?.id}
+            >
+              Excluir agente
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          Tem certeza que deseja excluir este agente? Essa ação não pode ser
+          desfeita.
+        </p>
+        {deleteAgent ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            {deleteAgent.name}
+          </div>
+        ) : null}
       </Modal>
 
       <Modal

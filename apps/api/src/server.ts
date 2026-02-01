@@ -1374,6 +1374,34 @@ const registerRoutes = () => {
     });
   });
 
+  app.delete("/store/agents/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const agent = await prisma.agent.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!agent) {
+      return reply.status(404).send({ message: "Agent not found" });
+    }
+
+    if (agent.isActive) {
+      return reply
+        .status(400)
+        .send({ message: "Desative o agente antes de excluir." });
+    }
+
+    await prisma.agent.delete({ where: { id } });
+
+    return reply.send({ ok: true });
+  });
+
   app.get("/store/delivery-areas", async (request, reply) => {
     const storeId = request.storeId;
     if (!storeId) {
