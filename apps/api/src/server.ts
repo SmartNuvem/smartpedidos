@@ -4590,7 +4590,7 @@ const registerRoutes = () => {
           tableId: printJob.tableId,
           tableNumber: table?.number,
           sessionId: printJob.tableSessionId,
-          closedAt: printJob.createdAt,
+          closedAt: printJob.createdAt.toISOString(),
           items: summary.items,
           totalCents: summary.totalCents,
         };
