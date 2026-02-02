@@ -3095,6 +3095,7 @@ const registerRoutes = () => {
       const subtotalCents = summary.totalCents;
       const serviceFeeCents = 0;
       const totalCents = subtotalCents + serviceFeeCents;
+      const closedAtIso = closedAt.toISOString();
 
       await tx.printJob.create({
         data: {
@@ -3107,7 +3108,7 @@ const registerRoutes = () => {
             tableId: table.id,
             tableNumber: table.number,
             sessionId: table.currentSessionId,
-            closedAt,
+            closedAt: closedAtIso,
             items: summary.items,
             subtotalCents,
             serviceFeeCents,
