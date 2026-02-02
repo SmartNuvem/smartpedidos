@@ -4576,18 +4576,39 @@ const registerRoutes = () => {
     {
       preHandler: [agentAuth],
       schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: {
+            id: { type: "string" },
+          },
+        },
         body: {
-          type: "null",
+          anyOf: [
+            { type: "null" },
+            {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                printedAt: { type: "string" },
+              },
+            },
+          ],
         },
       },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
+      const body = (request.body ?? null) as null | { printedAt?: string };
+      const printedAt = body?.printedAt
+        ? new Date(body.printedAt)
+        : new Date();
 
       await prisma.printJob.update({
         where: { id },
         data: {
           status: "PRINTED",
+          updatedAt: printedAt,
         },
       });
 
