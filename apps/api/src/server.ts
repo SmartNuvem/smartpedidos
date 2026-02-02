@@ -615,6 +615,37 @@ type TableSummaryItem = {
   totalCents: number;
 };
 
+const printJobStatusValues = new Set<string>([
+  ...Object.values(PrintJobStatus),
+  "PRINTING",
+  "CANCELED",
+  "CANCELLED",
+]);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const formatCurrencyCents = (amountCents: number) => {
+  const normalized = (amountCents / 100).toFixed(2).replace(".", ",");
+  return `R$ ${normalized}`;
+};
+
+const formatLine = (label: string, value: string, width = 42) => {
+  if (label.length + value.length + 1 <= width) {
+    return `${label}${" ".repeat(width - label.length - value.length)}${value}`;
+  }
+  return `${label} ${value}`;
+};
+
+const formatItemLines = (item: TableSummaryItem, width = 42) => {
+  const label = `${item.quantity}x ${item.name}`;
+  const total = formatCurrencyCents(item.totalCents);
+  if (label.length + total.length + 1 <= width) {
+    return [formatLine(label, total, width)];
+  }
+  return [label, `${" ".repeat(Math.max(width - total.length, 0))}${total}`];
+};
+
 const buildTableSessionSummary = async (
   client: Prisma.TransactionClient | PrismaClient,
   {
@@ -4481,20 +4512,32 @@ const registerRoutes = () => {
     return reply.send(pdf);
   });
 
-  app.get("/agent/print-jobs", async (request) => {
+  app.get("/agent/print-jobs", async (request, reply) => {
     const querySchema = z.object({
-      status: z.nativeEnum(PrintJobStatus).default(PrintJobStatus.QUEUED),
+      status: z.string().optional(),
       type: z.nativeEnum(PrintJobType).optional(),
       limit: z.coerce.number().int().min(1).max(50).default(20),
     });
-    const { status, type, limit } = querySchema.parse(request.query);
+    const { status: statusRaw, type, limit } = querySchema.parse(
+      request.query
+    );
+    const statusValue = (statusRaw ?? PrintJobStatus.QUEUED).toUpperCase();
+
+    if (!printJobStatusValues.has(statusValue)) {
+      return reply.status(400).send({ message: "Status inválido." });
+    }
+
+    if (!Object.values(PrintJobStatus).includes(statusValue as PrintJobStatus)) {
+      return [];
+    }
+
     const agent = (request as typeof request & { agent: { storeId: string } })
       .agent;
 
     const printJobs = await prisma.printJob.findMany({
       where: {
         storeId: agent.storeId,
-        status,
+        status: statusValue as PrintJobStatus,
         ...(type ? { type } : {}),
       },
       orderBy: { createdAt: "asc" },
@@ -4510,6 +4553,124 @@ const registerRoutes = () => {
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     }));
+  });
+
+  app.get("/agent/print-jobs/:id", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const printJob = await prisma.printJob.findFirst({
+      where: { id, storeId: agent.storeId },
+    });
+
+    if (!printJob) {
+      return reply.status(404).send({ message: "Impressão não encontrada." });
+    }
+
+    let payload = isRecord(printJob.payload) ? { ...printJob.payload } : {};
+
+    if (printJob.type === PrintJobType.CASHIER_TABLE_SUMMARY) {
+      if (printJob.tableId) {
+        const table = await prisma.salonTable.findFirst({
+          where: { id: printJob.tableId, storeId: printJob.storeId },
+          select: { number: true },
+        });
+
+        const summary = await buildTableSessionSummary(prisma, {
+          storeId: printJob.storeId,
+          tableId: printJob.tableId,
+          tableSessionId: printJob.tableSessionId,
+        });
+
+        payload = {
+          ...payload,
+          tableId: printJob.tableId,
+          tableNumber: table?.number,
+          sessionId: printJob.tableSessionId,
+          closedAt: printJob.createdAt,
+          items: summary.items,
+          totalCents: summary.totalCents,
+        };
+      }
+    }
+
+    return {
+      id: printJob.id,
+      createdAt: printJob.createdAt,
+      type: printJob.type,
+      status: printJob.status,
+      storeId: printJob.storeId,
+      payload,
+    };
+  });
+
+  app.get("/agent/print-jobs/:id/text", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+    const agent = (request as typeof request & { agent: { storeId: string } })
+      .agent;
+
+    const printJob = await prisma.printJob.findFirst({
+      where: { id, storeId: agent.storeId },
+      include: { store: true },
+    });
+
+    if (!printJob) {
+      return reply.status(404).send({ message: "Impressão não encontrada." });
+    }
+
+    if (printJob.type !== PrintJobType.CASHIER_TABLE_SUMMARY) {
+      return reply.status(400).send({
+        message: "Este job não possui resumo de mesa.",
+      });
+    }
+
+    if (!printJob.tableId) {
+      return reply.status(400).send({
+        message: "Mesa não informada para este job.",
+      });
+    }
+
+    const table = await prisma.salonTable.findFirst({
+      where: { id: printJob.tableId, storeId: printJob.storeId },
+      select: { number: true },
+    });
+
+    const summary = await buildTableSessionSummary(prisma, {
+      storeId: printJob.storeId,
+      tableId: printJob.tableId,
+      tableSessionId: printJob.tableSessionId,
+    });
+
+    const lines: string[] = [];
+    lines.push("SMARTPEDIDOS");
+    if (printJob.store?.name) {
+      lines.push(printJob.store.name);
+    }
+    lines.push("CAIXA - RESUMO");
+    if (table?.number) {
+      lines.push(`Mesa ${table.number}`);
+    }
+    lines.push(`Data: ${printJob.createdAt.toLocaleString("pt-BR")}`);
+    lines.push("-".repeat(42));
+
+    if (summary.items.length === 0) {
+      lines.push("Sem itens");
+    } else {
+      summary.items.forEach((item) => {
+        lines.push(...formatItemLines(item));
+      });
+    }
+
+    lines.push("-".repeat(42));
+    lines.push(formatLine("TOTAL", formatCurrencyCents(summary.totalCents)));
+
+    const shortId = printJob.id.split("-")[0];
+    lines.push(`ID: ${shortId}`);
+
+    return { text: lines.join("\n") };
   });
 
   app.get("/agent/print-jobs/:id/pdf", async (request, reply) => {
