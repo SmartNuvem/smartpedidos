@@ -700,6 +700,71 @@ const buildTableSessionSummary = async (
   return { items, totalCents };
 };
 
+type PrintJobPayloadInput = {
+  payload: unknown;
+  type: PrintJobType;
+  tableId: string | null;
+  tableSessionId: string | null;
+  createdAt: Date;
+  storeId: string;
+};
+
+const serializePayloadDates = (value: unknown): unknown => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map(serializePayloadDates);
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        serializePayloadDates(item),
+      ])
+    );
+  }
+  return value;
+};
+
+const buildAgentPrintJobPayload = async (
+  client: Prisma.TransactionClient | PrismaClient,
+  printJob: PrintJobPayloadInput
+) => {
+  const basePayload = isRecord(printJob.payload) ? { ...printJob.payload } : {};
+
+  if (printJob.type !== PrintJobType.CASHIER_TABLE_SUMMARY) {
+    return serializePayloadDates(basePayload) as Record<string, unknown>;
+  }
+
+  if (!printJob.tableId) {
+    return serializePayloadDates(basePayload) as Record<string, unknown>;
+  }
+
+  const table = await client.salonTable.findFirst({
+    where: { id: printJob.tableId, storeId: printJob.storeId },
+    select: { number: true },
+  });
+
+  const summary = await buildTableSessionSummary(client, {
+    storeId: printJob.storeId,
+    tableId: printJob.tableId,
+    tableSessionId: printJob.tableSessionId,
+  });
+
+  const payload = {
+    ...basePayload,
+    tableId: printJob.tableId,
+    tableNumber: table?.number,
+    sessionId: printJob.tableSessionId,
+    closedAt: printJob.createdAt.toISOString(),
+    items: summary.items,
+    totalCents: summary.totalCents,
+  };
+
+  return serializePayloadDates(payload) as Record<string, unknown>;
+};
+
 const requireStoreAuth = async (
   request: FastifyRequest,
   reply: FastifyReply
@@ -4545,15 +4610,24 @@ const registerRoutes = () => {
       take: limit,
     });
 
-    return printJobs.map((job) => ({
-      id: job.id,
-      type: job.type,
-      status: job.status,
-      tableId: job.tableId,
-      tableSessionId: job.tableSessionId,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-    }));
+    const jobsWithPayload = await Promise.all(
+      printJobs.map(async (job) => {
+        const payload = await buildAgentPrintJobPayload(prisma, job);
+        return {
+          id: job.id,
+          type: job.type,
+          status: job.status,
+          storeId: job.storeId,
+          tableId: job.tableId,
+          tableSessionId: job.tableSessionId,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+          payload,
+        };
+      })
+    );
+
+    return jobsWithPayload;
   });
 
   app.get("/agent/print-jobs/:id", async (request, reply) => {
@@ -4570,32 +4644,7 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Impressão não encontrada." });
     }
 
-    let payload = isRecord(printJob.payload) ? { ...printJob.payload } : {};
-
-    if (printJob.type === PrintJobType.CASHIER_TABLE_SUMMARY) {
-      if (printJob.tableId) {
-        const table = await prisma.salonTable.findFirst({
-          where: { id: printJob.tableId, storeId: printJob.storeId },
-          select: { number: true },
-        });
-
-        const summary = await buildTableSessionSummary(prisma, {
-          storeId: printJob.storeId,
-          tableId: printJob.tableId,
-          tableSessionId: printJob.tableSessionId,
-        });
-
-        payload = {
-          ...payload,
-          tableId: printJob.tableId,
-          tableNumber: table?.number,
-          sessionId: printJob.tableSessionId,
-          closedAt: printJob.createdAt.toISOString(),
-          items: summary.items,
-          totalCents: summary.totalCents,
-        };
-      }
-    }
+    const payload = await buildAgentPrintJobPayload(prisma, printJob);
 
     return {
       id: printJob.id,
@@ -4622,51 +4671,85 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Impressão não encontrada." });
     }
 
-    if (printJob.type !== PrintJobType.CASHIER_TABLE_SUMMARY) {
-      return reply.status(400).send({
-        message: "Este job não possui resumo de mesa.",
-      });
-    }
+    const payload = await buildAgentPrintJobPayload(prisma, printJob);
+    const payloadRecord = isRecord(payload) ? payload : {};
+    const items = Array.isArray(payloadRecord.items)
+      ? payloadRecord.items.flatMap((item) => {
+          if (
+            isRecord(item) &&
+            typeof item.name === "string" &&
+            typeof item.quantity === "number" &&
+            typeof item.totalCents === "number"
+          ) {
+            return [
+              {
+                name: item.name,
+                quantity: item.quantity,
+                totalCents: item.totalCents,
+              } satisfies TableSummaryItem,
+            ];
+          }
+          return [];
+        })
+      : [];
+    const totalCents =
+      typeof payloadRecord.totalCents === "number"
+        ? payloadRecord.totalCents
+        : null;
+    const tableNumber =
+      typeof payloadRecord.tableNumber === "number"
+        ? payloadRecord.tableNumber
+        : null;
+    const sessionId =
+      typeof payloadRecord.sessionId === "string"
+        ? payloadRecord.sessionId
+        : null;
+    const closedAt =
+      typeof payloadRecord.closedAt === "string" ? payloadRecord.closedAt : null;
 
-    if (!printJob.tableId) {
-      return reply.status(400).send({
-        message: "Mesa não informada para este job.",
-      });
-    }
-
-    const table = await prisma.salonTable.findFirst({
-      where: { id: printJob.tableId, storeId: printJob.storeId },
-      select: { number: true },
-    });
-
-    const summary = await buildTableSessionSummary(prisma, {
-      storeId: printJob.storeId,
-      tableId: printJob.tableId,
-      tableSessionId: printJob.tableSessionId,
-    });
+    const hasPayload =
+      items.length > 0 ||
+      totalCents !== null ||
+      tableNumber !== null ||
+      sessionId !== null ||
+      closedAt !== null;
 
     const lines: string[] = [];
+    if (!hasPayload) {
+      const shortId = printJob.id.split("-")[0];
+      lines.push("SMARTPEDIDOS");
+      lines.push(`ID: ${shortId}`);
+      lines.push(`Data: ${printJob.createdAt.toISOString()}`);
+      return { text: lines.join("\n") };
+    }
+
     lines.push("SMARTPEDIDOS");
     if (printJob.store?.name) {
       lines.push(printJob.store.name);
     }
     lines.push("CAIXA - RESUMO");
-    if (table?.number) {
-      lines.push(`Mesa ${table.number}`);
+    if (tableNumber !== null) {
+      lines.push(`Mesa ${tableNumber}`);
     }
-    lines.push(`Data: ${printJob.createdAt.toLocaleString("pt-BR")}`);
+    if (sessionId) {
+      lines.push(`Sessão: ${sessionId}`);
+    }
+    const closedAtDate = closedAt ? new Date(closedAt) : printJob.createdAt;
+    lines.push(`Data: ${closedAtDate.toLocaleString("pt-BR")}`);
     lines.push("-".repeat(42));
 
-    if (summary.items.length === 0) {
+    if (items.length === 0) {
       lines.push("Sem itens");
     } else {
-      summary.items.forEach((item) => {
+      items.forEach((item) => {
         lines.push(...formatItemLines(item));
       });
     }
 
-    lines.push("-".repeat(42));
-    lines.push(formatLine("TOTAL", formatCurrencyCents(summary.totalCents)));
+    if (totalCents !== null) {
+      lines.push("-".repeat(42));
+      lines.push(formatLine("TOTAL", formatCurrencyCents(totalCents)));
+    }
 
     const shortId = printJob.id.split("-")[0];
     lines.push(`ID: ${shortId}`);
