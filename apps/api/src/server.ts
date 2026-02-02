@@ -39,6 +39,16 @@ const app = Fastify({
   logger: true,
 });
 
+const agentAuth = async (request: FastifyRequest, reply: FastifyReply) => {
+  const agent = await authenticateAgent(request);
+  if (!agent) {
+    return reply.status(401).send({ message: "Unauthorized" });
+  }
+
+  (request as typeof request & { agent: typeof agent }).agent = agent;
+  request.storeId = agent.storeId;
+};
+
 app.addContentTypeParser(
   "application/json",
   { parseAs: "string" },
@@ -4564,36 +4574,20 @@ const registerRoutes = () => {
   app.post(
     "/agent/print-jobs/:id/printed",
     {
-      onRequest: (request, _reply, done) => {
-        if (!request.headers["content-type"]) {
-          request.headers["content-type"] = "application/json";
-        }
-        done();
-      },
+      preHandler: [agentAuth],
     },
     async (request, reply) => {
-      const paramsSchema = z.object({ id: z.string().uuid() });
-      const { id } = paramsSchema.parse(request.params);
-      const agent = (request as typeof request & { agent: { storeId: string } })
-        .agent;
+      const { id } = request.params as { id: string };
 
-      const printJob = await prisma.printJob.findFirst({
-        where: { id, storeId: agent.storeId },
+      await prisma.printJob.update({
+        where: { id },
+        data: {
+          status: "PRINTED",
+          printedAt: new Date(),
+        },
       });
 
-      if (!printJob) {
-        return reply.status(404).send({ message: "Impressão não encontrada." });
-      }
-
-      const updated = await prisma.printJob.update({
-        where: { id: printJob.id },
-        data: { status: PrintJobStatus.PRINTED },
-      });
-
-      return {
-        id: updated.id,
-        status: updated.status,
-      };
+      return reply.code(200).send({ ok: true });
     }
   );
 
