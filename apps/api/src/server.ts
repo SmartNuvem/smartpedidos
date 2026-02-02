@@ -4575,7 +4575,11 @@ const registerRoutes = () => {
     "/agent/print-jobs/:id/printed",
     {
       preHandler: [agentAuth],
-      schema: false,
+      schema: {
+        body: {
+          type: "null",
+        },
+      },
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
