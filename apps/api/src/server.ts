@@ -3043,30 +3043,43 @@ const registerRoutes = () => {
       });
     }
 
-    await buildTableSessionSummary(prisma, {
+    const summary = await buildTableSessionSummary(prisma, {
       storeId,
       tableId: table.id,
       tableSessionId: table.currentSessionId,
     });
 
     await prisma.$transaction(async (tx) => {
-      if (store.cashierPrintEnabled) {
-        await tx.printJob.create({
-          data: {
-            storeId,
-            type: PrintJobType.CASHIER_TABLE_SUMMARY,
-            status: PrintJobStatus.QUEUED,
+      const closedAt = new Date();
+      const subtotalCents = summary.totalCents;
+      const serviceFeeCents = 0;
+      const totalCents = subtotalCents + serviceFeeCents;
+
+      await tx.printJob.create({
+        data: {
+          storeId: table.storeId,
+          type: PrintJobType.CASHIER_TABLE_SUMMARY,
+          status: PrintJobStatus.QUEUED,
+          tableId: table.id,
+          tableSessionId: table.currentSessionId,
+          payload: {
             tableId: table.id,
-            tableSessionId: table.currentSessionId,
+            tableNumber: table.number,
+            sessionId: table.currentSessionId,
+            closedAt,
+            items: summary.items,
+            subtotalCents,
+            serviceFeeCents,
+            totalCents,
           },
-        });
-      }
+        },
+      });
 
       await tx.salonTable.update({
         where: { id: table.id },
         data: {
           status: TableStatus.FREE,
-          closedAt: new Date(),
+          closedAt,
           openedAt: null,
           currentSessionId: null,
         },

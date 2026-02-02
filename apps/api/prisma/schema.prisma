@@ -328,6 +328,7 @@ model PrintJob {
   status         PrintJobStatus
   tableId        String?
   tableSessionId String?
+  payload        Json?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
