@@ -4561,30 +4561,41 @@ const registerRoutes = () => {
     return reply.send(pdf);
   });
 
-  app.post("/agent/print-jobs/:id/printed", async (request, reply) => {
-    const paramsSchema = z.object({ id: z.string().uuid() });
-    const { id } = paramsSchema.parse(request.params);
-    const agent = (request as typeof request & { agent: { storeId: string } })
-      .agent;
+  app.post(
+    "/agent/print-jobs/:id/printed",
+    {
+      onRequest: (request, _reply, done) => {
+        if (!request.headers["content-type"]) {
+          request.headers["content-type"] = "application/json";
+        }
+        done();
+      },
+    },
+    async (request, reply) => {
+      const paramsSchema = z.object({ id: z.string().uuid() });
+      const { id } = paramsSchema.parse(request.params);
+      const agent = (request as typeof request & { agent: { storeId: string } })
+        .agent;
 
-    const printJob = await prisma.printJob.findFirst({
-      where: { id, storeId: agent.storeId },
-    });
+      const printJob = await prisma.printJob.findFirst({
+        where: { id, storeId: agent.storeId },
+      });
 
-    if (!printJob) {
-      return reply.status(404).send({ message: "Impressão não encontrada." });
+      if (!printJob) {
+        return reply.status(404).send({ message: "Impressão não encontrada." });
+      }
+
+      const updated = await prisma.printJob.update({
+        where: { id: printJob.id },
+        data: { status: PrintJobStatus.PRINTED },
+      });
+
+      return {
+        id: updated.id,
+        status: updated.status,
+      };
     }
-
-    const updated = await prisma.printJob.update({
-      where: { id: printJob.id },
-      data: { status: PrintJobStatus.PRINTED },
-    });
-
-    return {
-      id: updated.id,
-      status: updated.status,
-    };
-  });
+  );
 
 };
 
