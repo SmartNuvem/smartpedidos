@@ -4317,6 +4317,24 @@ const registerRoutes = () => {
       take: limit ?? 10,
     });
 
+    const tableIds = [
+      ...new Set(
+        orders
+          .map((order) => order.tableId)
+          .filter((tableId): tableId is string => Boolean(tableId))
+      ),
+    ];
+    const tables =
+      tableIds.length > 0
+        ? await prisma.salonTable.findMany({
+            where: { id: { in: tableIds } },
+            select: { id: true, number: true },
+          })
+        : [];
+    const tableNumberById = new Map(
+      tables.map((table) => [table.id, table.number])
+    );
+
     return orders.map((order) => ({
       id: order.id,
       status: order.status,
@@ -4334,6 +4352,11 @@ const registerRoutes = () => {
       addressNeighborhood: order.addressNeighborhood,
       addressCity: order.addressCity,
       addressReference: order.addressReference,
+      tableId: order.tableId,
+      tableSessionId: order.tableSessionId,
+      tableNumber: order.tableId
+        ? (tableNumberById.get(order.tableId) ?? null)
+        : null,
       total: order.total.toNumber(),
       totalCents: Math.round(order.total.toNumber() * 100),
       items: order.items.map((item) => ({
