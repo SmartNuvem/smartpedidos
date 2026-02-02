@@ -4583,7 +4583,6 @@ const registerRoutes = () => {
         where: { id },
         data: {
           status: "PRINTED",
-          printedAt: new Date(),
         },
       });
 
