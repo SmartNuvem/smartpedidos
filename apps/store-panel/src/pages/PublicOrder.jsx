@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { API_URL, formatCurrency } from "../api";
 import Modal from "../components/Modal";
 
@@ -118,6 +118,7 @@ const reconcileCartItems = (items, menu) => {
 
 const PublicOrder = () => {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const tableId = searchParams.get("table");
   const isDineIn = Boolean(tableId);
@@ -619,16 +620,27 @@ const PublicOrder = () => {
         throw new Error(data.message || "Não foi possível enviar o pedido.");
       }
       const data = await response.json();
+      const resetOrderState = () => {
+        setCartItems([]);
+        setCustomerName("");
+        setCustomerPhone("");
+        setNotes("");
+        setAddress(initialAddress);
+        setDeliveryAreaId("");
+        setPaymentMethod("");
+        setChangeFor("");
+        setFulfillmentType("PICKUP");
+      };
+
+      if (isDineInOrder && tableId) {
+        resetOrderState();
+        setOrderResult(null);
+        navigate(`/s/${slug}/garcom/mesas`);
+        return;
+      }
+
       setOrderResult(data);
-      setCartItems([]);
-      setCustomerName("");
-      setCustomerPhone("");
-      setNotes("");
-      setAddress(initialAddress);
-      setDeliveryAreaId("");
-      setPaymentMethod("");
-      setChangeFor("");
-      setFulfillmentType("PICKUP");
+      resetOrderState();
     } catch (err) {
       setError(err.message || "Não foi possível enviar o pedido.");
     } finally {
