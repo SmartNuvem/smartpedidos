@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import confetti from "canvas-confetti";
 import { API_URL, formatCurrency } from "../api";
 import Modal from "../components/Modal";
 
@@ -145,6 +146,27 @@ const PublicOrder = () => {
   const [pixCopied, setPixCopied] = useState(false);
   const allowPickup = menu?.store?.allowPickup ?? true;
   const allowDelivery = menu?.store?.allowDelivery ?? true;
+
+  useEffect(() => {
+    if (!orderResult) {
+      return undefined;
+    }
+
+    confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+    const t1 = setTimeout(
+      () => confetti({ particleCount: 60, spread: 90, origin: { y: 0.6 } }),
+      250
+    );
+    const t2 = setTimeout(
+      () => confetti({ particleCount: 40, spread: 110, origin: { y: 0.6 } }),
+      500
+    );
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [orderResult]);
 
   const optionGroups = optionProduct?.optionGroups ?? [];
   const promoProducts = useMemo(() => {
@@ -679,6 +701,15 @@ const PublicOrder = () => {
           <p className="mt-4 text-lg font-semibold text-slate-900">
             Número do pedido: #{orderResult.number}
           </p>
+          {orderResult?.paymentMethod === "PIX" && (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              <div className="font-semibold">Pagamento via Pix</div>
+              <div className="mt-1 text-sm">
+                Para agilizar a confirmação, envie o comprovante para o
+                estabelecimento.
+              </div>
+            </div>
+          )}
           <button
             className="mt-6 rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700"
             onClick={() => setOrderResult(null)}

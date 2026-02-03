@@ -1582,6 +1582,7 @@ const registerRoutes = () => {
       orderId: order.id,
       number: order.id.slice(0, 6),
       status: order.status,
+      paymentMethod: order.paymentMethod,
     });
   });
 
