@@ -1,0 +1,15 @@
+{
+  "name": "SmartPedido",
+  "short_name": "SmartPedido",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "display": "standalone",
+  "start_url": "/",
+  "theme_color": "#0F172A",
+  "background_color": "#0F172A"
+}
