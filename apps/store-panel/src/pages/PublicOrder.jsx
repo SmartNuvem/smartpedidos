@@ -233,8 +233,18 @@ const PublicOrder = () => {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
+  const [logoLoadError, setLogoLoadError] = useState(false);
+  const [bannerLoadError, setBannerLoadError] = useState(false);
   const allowPickup = menu?.store?.allowPickup ?? true;
   const allowDelivery = menu?.store?.allowDelivery ?? true;
+
+  useEffect(() => {
+    setLogoLoadError(false);
+  }, [menu?.store?.logoUrl]);
+
+  useEffect(() => {
+    setBannerLoadError(false);
+  }, [menu?.store?.bannerUrl]);
 
   useEffect(() => {
     if (!orderResult) {
@@ -670,6 +680,8 @@ const PublicOrder = () => {
     isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
   const totalCents = subtotalCents + deliveryFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
+  const showLogo = Boolean(menu?.store?.logoUrl) && !logoLoadError;
+  const showBanner = Boolean(menu?.store?.bannerUrl) && !bannerLoadError;
   const isFulfillmentAllowed =
     isDineInOrder
       ? true
@@ -852,35 +864,93 @@ const PublicOrder = () => {
     <div className="flex min-h-screen flex-col">
       <div className="mx-auto w-full max-w-4xl flex-1 px-4 pb-24 pt-6">
         <header className="mb-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-slate-900">
-            {menu.store?.name || "Cardápio"}
-          </h1>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              isStoreOpen
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-rose-100 text-rose-700"
-            }`}
-          >
-            {isStoreOpen ? "Aberto" : "Fechado"}
-          </span>
-          {isDineInOrder ? (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              Pedido na mesa
-            </span>
+          {showBanner ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="relative h-52 w-full">
+                <img
+                  src={menu.store.bannerUrl}
+                  alt="Banner da loja"
+                  className="h-full w-full object-cover"
+                  onError={() => setBannerLoadError(true)}
+                />
+                <div className="absolute inset-0 flex items-end bg-gradient-to-t from-slate-900/70 via-slate-900/30 to-transparent">
+                  <div className="flex flex-wrap items-center gap-3 px-6 pb-6 text-white">
+                    {showLogo ? (
+                      <img
+                        src={menu.store.logoUrl}
+                        alt="Logo da loja"
+                        className="h-16 w-16 rounded-xl bg-white object-cover shadow"
+                        onError={() => setLogoLoadError(true)}
+                      />
+                    ) : null}
+                    <div>
+                      <h1 className="text-2xl font-semibold">
+                        {menu.store?.name || "Cardápio"}
+                      </h1>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            isStoreOpen
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-rose-100 text-rose-700"
+                          }`}
+                        >
+                          {isStoreOpen ? "Aberto" : "Fechado"}
+                        </span>
+                        {isDineInOrder ? (
+                          <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                            Pedido na mesa
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              {showLogo ? (
+                <img
+                  src={menu.store.logoUrl}
+                  alt="Logo da loja"
+                  className="h-16 w-16 rounded-xl bg-white object-cover shadow"
+                  onError={() => setLogoLoadError(true)}
+                />
+              ) : null}
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl font-semibold text-slate-900">
+                    {menu.store?.name || "Cardápio"}
+                  </h1>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      isStoreOpen
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {isStoreOpen ? "Aberto" : "Fechado"}
+                  </span>
+                  {isDineInOrder ? (
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                      Pedido na mesa
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-sm text-slate-500">
+                  Monte seu pedido e envie direto para a loja.
+                </p>
+              </div>
+            </div>
+          )}
+          {!isStoreOpen ? (
+            <p className="mt-2 text-sm text-rose-600">
+              {menu.store?.closedMessage ||
+                "Estamos fechados no momento. Volte mais tarde."}
+            </p>
           ) : null}
-        </div>
-        <p className="text-sm text-slate-500">
-          Monte seu pedido e envie direto para a loja.
-        </p>
-        {!isStoreOpen ? (
-          <p className="mt-2 text-sm text-rose-600">
-            {menu.store?.closedMessage ||
-              "Estamos fechados no momento. Volte mais tarde."}
-          </p>
-        ) : null}
-      </header>
+        </header>
 
       {error ? (
         <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
