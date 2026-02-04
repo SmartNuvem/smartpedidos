@@ -358,6 +358,13 @@ export const api = {
     });
     return handleResponse(response);
   },
+  deleteProduct: async (id) => {
+    const response = await request(`${API_URL}/store/products/${id}`, {
+      method: "DELETE",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   getProductOptionGroups: async (productId) => {
     const response = await request(
       `${API_URL}/store/products/${productId}/option-groups`,

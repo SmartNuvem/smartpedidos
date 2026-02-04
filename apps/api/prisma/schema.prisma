@@ -306,6 +306,7 @@ model StorePaymentSettings {
   acceptPix  Boolean  @default(true)
   acceptCash Boolean  @default(true)
   acceptCard Boolean  @default(true)
+  requireChangeForCash Boolean @default(false)
   pixKey     String?
   pixName    String?
   pixBank    String?

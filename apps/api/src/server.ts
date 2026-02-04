@@ -974,6 +974,7 @@ const registerRoutes = () => {
       acceptPix: true,
       acceptCash: true,
       acceptCard: true,
+      requireChangeForCash: false,
       pixKey: null,
       pixName: null,
       pixBank: null,
@@ -1330,6 +1331,7 @@ const registerRoutes = () => {
       acceptPix: true,
       acceptCash: true,
       acceptCard: true,
+      requireChangeForCash: false,
     };
 
     if (!isDineIn && paymentMethod) {
@@ -1535,15 +1537,17 @@ const registerRoutes = () => {
     const totalCents = subtotalCents + deliveryFeeCents;
     const total = totalCents / 100;
 
-    if (
-      !isDineIn &&
-      paymentMethod === "CASH" &&
-      changeForCents !== undefined &&
-      changeForCents < totalCents
-    ) {
-      return reply.status(400).send({
-        message: "Troco deve ser maior ou igual ao total do pedido.",
-      });
+    if (!isDineIn && paymentMethod === "CASH") {
+      if (paymentSettings.requireChangeForCash && changeForCents === undefined) {
+        return reply.status(400).send({
+          message: "Informe o troco para pagamento em dinheiro.",
+        });
+      }
+      if (changeForCents !== undefined && changeForCents < totalCents) {
+        return reply.status(400).send({
+          message: "Troco deve ser maior ou igual ao total do pedido.",
+        });
+      }
     }
 
     const initialStatus = store.autoPrintEnabled ? "PRINTING" : "NEW";
@@ -2100,6 +2104,7 @@ const registerRoutes = () => {
 
     const store = await prisma.store.findUnique({
       where: { id: storeId },
+      include: { paymentSettings: true },
     });
 
     if (!store) {
@@ -2117,6 +2122,8 @@ const registerRoutes = () => {
       allowDelivery: store.allowDelivery,
       logoUrl: store.logoUrl,
       bannerUrl: store.bannerUrl,
+      requireChangeForCash:
+        store.paymentSettings?.requireChangeForCash ?? false,
     };
   });
 
@@ -2694,6 +2701,7 @@ const registerRoutes = () => {
         acceptPix: true,
         acceptCash: true,
         acceptCard: true,
+        requireChangeForCash: false,
         pixKey: null,
         pixName: null,
         pixBank: null,
@@ -2704,6 +2712,7 @@ const registerRoutes = () => {
       acceptPix: settings.acceptPix,
       acceptCash: settings.acceptCash,
       acceptCard: settings.acceptCard,
+      requireChangeForCash: settings.requireChangeForCash,
       pixKey: settings.pixKey,
       pixName: settings.pixName,
       pixBank: settings.pixBank,
@@ -2720,6 +2729,7 @@ const registerRoutes = () => {
       acceptPix: z.boolean().optional(),
       acceptCash: z.boolean().optional(),
       acceptCard: z.boolean().optional(),
+      requireChangeForCash: z.boolean().optional(),
       pixKey: z.string().nullable().optional(),
       pixName: z.string().nullable().optional(),
       pixBank: z.string().nullable().optional(),
@@ -2734,6 +2744,7 @@ const registerRoutes = () => {
         acceptPix: payload.acceptPix ?? true,
         acceptCash: payload.acceptCash ?? true,
         acceptCard: payload.acceptCard ?? true,
+        requireChangeForCash: payload.requireChangeForCash ?? false,
         pixKey: payload.pixKey ?? null,
         pixName: payload.pixName ?? null,
         pixBank: payload.pixBank ?? null,
@@ -2742,6 +2753,7 @@ const registerRoutes = () => {
         acceptPix: payload.acceptPix ?? undefined,
         acceptCash: payload.acceptCash ?? undefined,
         acceptCard: payload.acceptCard ?? undefined,
+        requireChangeForCash: payload.requireChangeForCash ?? undefined,
         pixKey: payload.pixKey ?? null,
         pixName: payload.pixName ?? null,
         pixBank: payload.pixBank ?? null,
@@ -2752,6 +2764,7 @@ const registerRoutes = () => {
       acceptPix: settings.acceptPix,
       acceptCash: settings.acceptCash,
       acceptCard: settings.acceptCard,
+      requireChangeForCash: settings.requireChangeForCash,
       pixKey: settings.pixKey,
       pixName: settings.pixName,
       pixBank: settings.pixBank,
@@ -3764,6 +3777,46 @@ const registerRoutes = () => {
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     };
+  });
+
+  app.delete("/store/products/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const product = await prisma.product.findFirst({
+      where: { id, category: { storeId } },
+      select: { id: true, active: true },
+    });
+
+    if (!product) {
+      return reply.status(404).send({ message: "Product not found" });
+    }
+
+    if (product.active) {
+      return reply.status(400).send({
+        message: "Produto precisa estar desativado para ser excluído",
+      });
+    }
+
+    const orderItemsCount = await prisma.orderItem.count({
+      where: { productId: product.id },
+    });
+
+    if (orderItemsCount > 0) {
+      return reply.status(400).send({
+        message: "Produto não pode ser excluído pois já possui pedidos",
+      });
+    }
+
+    await prisma.product.delete({ where: { id: product.id } });
+    await emitMenuUpdateByStoreId(storeId, "product_update");
+
+    return reply.status(204).send();
   });
 
   app.get("/store/products/:id/option-groups", async (request, reply) => {

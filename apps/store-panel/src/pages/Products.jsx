@@ -131,6 +131,8 @@ const Products = () => {
     availabilityWindows: [],
   });
   const [toast, setToast] = useState(null);
+  const [deleteProduct, setDeleteProduct] = useState(null);
+  const [deletingProductId, setDeletingProductId] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -535,6 +537,27 @@ const Products = () => {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteProduct) {
+      return;
+    }
+    setDeletingProductId(deleteProduct.id);
+    try {
+      await api.deleteProduct(deleteProduct.id);
+      setToast({ message: "Produto excluído com sucesso.", variant: "success" });
+      setDeleteProduct(null);
+      await loadData();
+    } catch (error) {
+      setToast({
+        message:
+          error?.message || "Não foi possível excluir o produto.",
+        variant: "error",
+      });
+    } finally {
+      setDeletingProductId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -642,6 +665,14 @@ const Products = () => {
                       >
                         {product.active ? "Desativar" : "Ativar"}
                       </Button>
+                      {!product.active ? (
+                        <Button
+                          variant="danger"
+                          onClick={() => setDeleteProduct(product)}
+                        >
+                          Excluir
+                        </Button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -1269,6 +1300,40 @@ const Products = () => {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={Boolean(deleteProduct)}
+        title="Excluir produto"
+        onClose={() => setDeleteProduct(null)}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteProduct(null)}
+              disabled={Boolean(deletingProductId)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmDelete}
+              disabled={Boolean(deletingProductId)}
+            >
+              {deletingProductId ? "Excluindo..." : "Excluir"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          Tem certeza que deseja excluir este produto? Essa ação não pode ser
+          desfeita.
+        </p>
+        {deleteProduct ? (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            {deleteProduct.name}
+          </div>
+        ) : null}
       </Modal>
 
       <Toast
