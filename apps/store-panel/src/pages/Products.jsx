@@ -93,7 +93,8 @@ const dayOptions = [
 
 const pricingRuleLabels = {
   SUM: "Somar complementos",
-  MAX_OPTION: "Pizza: maior sabor",
+  MAX_OPTION: "Pizza: sabor mais caro",
+  HALF_SUM: "Pizza: metade + metade",
 };
 
 const Products = () => {
@@ -700,7 +701,8 @@ const Products = () => {
             onChange={(event) => handleChange("pricingRule", event.target.value)}
           >
             <option value="SUM">Somar complementos (padrão)</option>
-            <option value="MAX_OPTION">Pizza: maior sabor</option>
+            <option value="MAX_OPTION">Pizza: sabor mais caro</option>
+            <option value="HALF_SUM">Pizza: metade + metade</option>
           </Select>
           <Select
             label="Status"
@@ -869,9 +871,17 @@ const Products = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {optionsProduct?.pricingRule === "MAX_OPTION" ? (
+            {["MAX_OPTION", "HALF_SUM"].includes(
+              optionsProduct?.pricingRule
+            ) ? (
               <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
-                Para pizzas com “maior sabor”, crie um grupo chamado
+                Para pizzas com regra{" "}
+                <span className="font-semibold">
+                  {optionsProduct?.pricingRule === "HALF_SUM"
+                    ? "metade + metade"
+                    : "sabor mais caro"}
+                </span>
+                , crie um grupo chamado
                 <span className="font-semibold"> Sabores</span> com mínimo 1 e
                 máximo 2 opções. Os demais grupos (ex.: Borda, Extras) somam
                 normalmente.

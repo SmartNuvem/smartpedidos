@@ -60,4 +60,66 @@ if (pizzaMissingFlavor.hasFlavorSelection) {
   throw new Error("MAX_OPTION sem sabores deveria ser inválido.");
 }
 
+const halfSumSingle = calculatePricing({
+  pricingRule: "HALF_SUM",
+  basePriceCents: 0,
+  groups: [
+    {
+      groupName: "Sabores",
+      items: [{ priceDeltaCents: 4000 }],
+    },
+  ],
+});
+assertEqual("HALF_SUM com 1 sabor", halfSumSingle.unitPriceCents, 4000);
+
+const halfSumDouble = calculatePricing({
+  pricingRule: "HALF_SUM",
+  basePriceCents: 0,
+  groups: [
+    {
+      groupName: "Sabores",
+      items: [{ priceDeltaCents: 4000 }, { priceDeltaCents: 2600 }],
+    },
+  ],
+});
+assertEqual(
+  "HALF_SUM com 2 sabores (40 + 26 = 33)",
+  halfSumDouble.unitPriceCents,
+  3300
+);
+
+const halfSumExtras = calculatePricing({
+  pricingRule: "HALF_SUM",
+  basePriceCents: 0,
+  groups: [
+    {
+      groupName: "Sabores",
+      items: [{ priceDeltaCents: 4000 }, { priceDeltaCents: 2600 }],
+    },
+    {
+      groupName: "Borda",
+      items: [{ priceDeltaCents: 200 }],
+    },
+  ],
+});
+assertEqual(
+  "HALF_SUM com 2 sabores + borda",
+  halfSumExtras.unitPriceCents,
+  3500
+);
+
+const halfSumMissing = calculatePricing({
+  pricingRule: "HALF_SUM",
+  basePriceCents: 0,
+  groups: [
+    {
+      groupName: "Extras",
+      items: [{ priceDeltaCents: 200 }],
+    },
+  ],
+});
+if (halfSumMissing.hasFlavorSelection) {
+  throw new Error("HALF_SUM sem sabores deveria ser inválido.");
+}
+
 console.log("pricing-rule-check ok");

@@ -28,26 +28,17 @@ const calculatePricingForGroups = ({ pricingRule, basePriceCents, groups }) => {
       baseFromFlavorsCents: null,
       extrasCents,
       hasFlavorSelection: true,
+      flavorsCount: 0,
     };
   }
 
   let baseFromFlavorsCents = null;
   let extrasCents = 0;
-  let hasFlavorSelection = false;
+  const flavors = [];
 
   groups.forEach((group) => {
     if (isFlavorGroupName(group.groupName)) {
-      if (group.items.length === 0) {
-        return;
-      }
-      const maxFlavor = Math.max(
-        ...group.items.map((item) => item.priceDeltaCents)
-      );
-      baseFromFlavorsCents =
-        baseFromFlavorsCents === null
-          ? maxFlavor
-          : Math.max(baseFromFlavorsCents, maxFlavor);
-      hasFlavorSelection = true;
+      group.items.forEach((item) => flavors.push(item.priceDeltaCents));
       return;
     }
     const groupTotal = group.items.reduce(
@@ -57,11 +48,31 @@ const calculatePricingForGroups = ({ pricingRule, basePriceCents, groups }) => {
     extrasCents += groupTotal;
   });
 
+  const flavorsCount = flavors.length;
+  const hasFlavorSelection = flavorsCount > 0;
+
+  if (pricingRule === "MAX_OPTION") {
+    if (flavorsCount > 0) {
+      baseFromFlavorsCents = Math.max(...flavors);
+    }
+  }
+
+  if (pricingRule === "HALF_SUM") {
+    if (flavorsCount === 1) {
+      baseFromFlavorsCents = flavors[0];
+    } else if (flavorsCount === 2) {
+      baseFromFlavorsCents = Math.floor(
+        flavors[0] / 2 + flavors[1] / 2
+      );
+    }
+  }
+
   return {
     unitPriceCents: (baseFromFlavorsCents ?? 0) + extrasCents,
     baseFromFlavorsCents,
     extrasCents,
     hasFlavorSelection,
+    flavorsCount,
   };
 };
 
@@ -161,16 +172,22 @@ const reconcileCartItems = (items, menu) => {
       optionsValid = false;
     }
 
+    const resolvedPricingRule = product.pricingRule ?? "SUM";
     const pricingResult = calculatePricingForGroups({
-      pricingRule: product.pricingRule ?? "SUM",
+      pricingRule: resolvedPricingRule,
       basePriceCents: product.priceCents,
       groups: selectedGroups,
     });
     if (
-      (product.pricingRule ?? "SUM") === "MAX_OPTION" &&
+      resolvedPricingRule === "MAX_OPTION" &&
       !pricingResult.hasFlavorSelection
     ) {
       optionsValid = false;
+    }
+    if (resolvedPricingRule === "HALF_SUM") {
+      if (pricingResult.flavorsCount === 0 || pricingResult.flavorsCount > 2) {
+        optionsValid = false;
+      }
     }
 
     const updatedItem = {
@@ -580,12 +597,23 @@ const PublicOrder = () => {
       })),
     });
 
+    const resolvedPricingRule = optionProduct.pricingRule ?? "SUM";
     if (
-      (optionProduct.pricingRule ?? "SUM") === "MAX_OPTION" &&
+      resolvedPricingRule === "MAX_OPTION" &&
       !pricingResult.hasFlavorSelection
     ) {
       setOptionError("Selecione ao menos 1 sabor.");
       return;
+    }
+    if (resolvedPricingRule === "HALF_SUM") {
+      if (pricingResult.flavorsCount === 0) {
+        setOptionError("Selecione ao menos 1 sabor.");
+        return;
+      }
+      if (pricingResult.flavorsCount > 2) {
+        setOptionError("Selecione no máximo 2 sabores.");
+        return;
+      }
     }
 
     setCartItems((prev) => [
