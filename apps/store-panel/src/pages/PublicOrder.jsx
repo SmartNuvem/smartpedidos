@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import confetti from "canvas-confetti";
 import { API_URL, formatCurrency } from "../api";
+import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
 
 const initialAddress = {
@@ -789,58 +790,68 @@ const PublicOrder = () => {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-slate-500">
-        Carregando cardápio...
+      <div className="flex min-h-screen flex-col">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 px-4 py-8 text-sm text-slate-500">
+          Carregando cardápio...
+        </div>
+        <AppFooter />
       </div>
     );
   }
 
   if (!menu) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error || "Cardápio não encontrado."}
+      <div className="flex min-h-screen flex-col">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 px-4 py-8">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error || "Cardápio não encontrado."}
+          </div>
         </div>
+        <AppFooter />
       </div>
     );
   }
 
   if (orderResult) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-4 py-12 text-center">
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-6 py-8">
-          <h1 className="text-2xl font-semibold text-emerald-700">
-            Pedido enviado!
-          </h1>
-          <p className="mt-2 text-sm text-emerald-700">
-            Seu pedido foi encaminhado para a loja. Aguarde a confirmação.
-          </p>
-          <p className="mt-4 text-lg font-semibold text-slate-900">
-            Número do pedido: #{orderResult.number}
-          </p>
-          {orderResult?.paymentMethod === "PIX" && (
-            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
-              <div className="font-semibold">Pagamento via Pix</div>
-              <div className="mt-1 text-sm">
-                Para agilizar a confirmação, envie o comprovante para o
-                estabelecimento.
+      <div className="flex min-h-screen flex-col">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 py-12 text-center">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-6 py-8">
+            <h1 className="text-2xl font-semibold text-emerald-700">
+              Pedido enviado!
+            </h1>
+            <p className="mt-2 text-sm text-emerald-700">
+              Seu pedido foi encaminhado para a loja. Aguarde a confirmação.
+            </p>
+            <p className="mt-4 text-lg font-semibold text-slate-900">
+              Número do pedido: #{orderResult.number}
+            </p>
+            {orderResult?.paymentMethod === "PIX" && (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+                <div className="font-semibold">Pagamento via Pix</div>
+                <div className="mt-1 text-sm">
+                  Para agilizar a confirmação, envie o comprovante para o
+                  estabelecimento.
+                </div>
               </div>
-            </div>
-          )}
-          <button
-            className="mt-6 rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700"
-            onClick={() => setOrderResult(null)}
-          >
-            Fazer novo pedido
-          </button>
+            )}
+            <button
+              className="mt-6 rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700"
+              onClick={() => setOrderResult(null)}
+            >
+              Fazer novo pedido
+            </button>
+          </div>
         </div>
+        <AppFooter />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 pb-24 pt-6">
-      <header className="mb-6">
+    <div className="flex min-h-screen flex-col">
+      <div className="mx-auto w-full max-w-4xl flex-1 px-4 pb-24 pt-6">
+        <header className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold text-slate-900">
             {menu.store?.name || "Cardápio"}
@@ -1469,14 +1480,16 @@ const PublicOrder = () => {
         )}
       </Modal>
 
-      {totalItems > 0 ? (
-        <button
-          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
-          onClick={scrollToCart}
-        >
-          Ver carrinho ({totalItems})
-        </button>
-      ) : null}
+        {totalItems > 0 ? (
+          <button
+            className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
+            onClick={scrollToCart}
+          >
+            Ver carrinho ({totalItems})
+          </button>
+        ) : null}
+      </div>
+      <AppFooter />
     </div>
   );
 };
