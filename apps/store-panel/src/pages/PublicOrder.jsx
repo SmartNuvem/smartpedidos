@@ -866,43 +866,42 @@ const PublicOrder = () => {
         <header className="mb-6">
           {showBanner ? (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="relative h-52 w-full">
+              <div className="relative h-44 w-full sm:h-56 lg:h-60">
                 <img
                   src={menu.store.bannerUrl}
                   alt="Banner da loja"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover object-center"
                   onError={() => setBannerLoadError(true)}
                 />
-                <div className="absolute inset-0 flex items-end bg-gradient-to-t from-slate-900/70 via-slate-900/30 to-transparent">
-                  <div className="flex flex-wrap items-center gap-3 px-6 pb-6 text-white">
-                    {showLogo ? (
-                      <img
-                        src={menu.store.logoUrl}
-                        alt="Logo da loja"
-                        className="h-16 w-16 rounded-xl bg-white object-cover shadow"
-                        onError={() => setLogoLoadError(true)}
-                      />
-                    ) : null}
-                    <div>
-                      <h1 className="text-2xl font-semibold">
-                        {menu.store?.name || "Cardápio"}
-                      </h1>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            isStoreOpen
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-rose-100 text-rose-700"
-                          }`}
-                        >
-                          {isStoreOpen ? "Aberto" : "Fechado"}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 flex flex-col items-start gap-3 p-4 text-white sm:flex-row sm:items-end">
+                  {showLogo ? (
+                    <img
+                      src={menu.store.logoUrl}
+                      alt="Logo da loja"
+                      className="h-12 w-12 rounded-xl bg-white/90 p-1 object-cover shadow sm:h-16 sm:w-16 lg:h-20 lg:w-20"
+                      onError={() => setLogoLoadError(true)}
+                    />
+                  ) : null}
+                  <div>
+                    <h1 className="text-xl font-bold drop-shadow sm:text-3xl">
+                      {menu.store?.name || "Cardápio"}
+                    </h1>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                          isStoreOpen
+                            ? "bg-emerald-100 text-emerald-900"
+                            : "bg-rose-100 text-rose-900"
+                        }`}
+                      >
+                        {isStoreOpen ? "Aberto" : "Fechado"}
+                      </span>
+                      {isDineInOrder ? (
+                        <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                          Pedido na mesa
                         </span>
-                        {isDineInOrder ? (
-                          <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                            Pedido na mesa
-                          </span>
-                        ) : null}
-                      </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
