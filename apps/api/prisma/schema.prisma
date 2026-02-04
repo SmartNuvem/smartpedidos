@@ -81,6 +81,8 @@ model Store {
   cashierPrintEnabled Boolean           @default(false)
   allowPickup     Boolean               @default(true)
   allowDelivery   Boolean               @default(true)
+  logoUrl         String?               @db.VarChar(500)
+  bannerUrl       String?               @db.VarChar(500)
   salonEnabled    Boolean               @default(false)
   salonTableCount Int                   @default(0)
   waiterPinHash   String?

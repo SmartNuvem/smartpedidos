@@ -987,6 +987,8 @@ const registerRoutes = () => {
         closedMessage: hours.closedMessage,
         allowPickup: store.allowPickup,
         allowDelivery: store.allowDelivery,
+        logoUrl: store.logoUrl,
+        bannerUrl: store.bannerUrl,
       },
       categories: store.categories.map((category) => ({
         id: category.id,
@@ -2113,6 +2115,8 @@ const registerRoutes = () => {
       autoPrintEnabled: store.autoPrintEnabled,
       allowPickup: store.allowPickup,
       allowDelivery: store.allowDelivery,
+      logoUrl: store.logoUrl,
+      bannerUrl: store.bannerUrl,
     };
   });
 
@@ -2144,6 +2148,8 @@ const registerRoutes = () => {
       autoPrintEnabled: store.autoPrintEnabled,
       allowPickup: store.allowPickup,
       allowDelivery: store.allowDelivery,
+      logoUrl: store.logoUrl,
+      bannerUrl: store.bannerUrl,
     });
   });
 
@@ -2156,6 +2162,8 @@ const registerRoutes = () => {
     const bodySchema = z.object({
       allowPickup: z.boolean().optional(),
       allowDelivery: z.boolean().optional(),
+      logoUrl: z.string().max(500).optional().nullable(),
+      bannerUrl: z.string().max(500).optional().nullable(),
     });
 
     const payload = bodySchema.parse(request.body ?? {});
@@ -2181,17 +2189,32 @@ const registerRoutes = () => {
       });
     }
 
+    const normalizeOptionalString = (value?: string | null) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (value === null) {
+        return null;
+      }
+      const trimmed = value.trim();
+      return trimmed === "" ? null : trimmed;
+    };
+
     const store = await prisma.store.update({
       where: { id: storeId },
       data: {
         allowPickup: payload.allowPickup ?? undefined,
         allowDelivery: payload.allowDelivery ?? undefined,
+        logoUrl: normalizeOptionalString(payload.logoUrl),
+        bannerUrl: normalizeOptionalString(payload.bannerUrl),
       },
     });
 
     return reply.send({
       allowPickup: store.allowPickup,
       allowDelivery: store.allowDelivery,
+      logoUrl: store.logoUrl,
+      bannerUrl: store.bannerUrl,
     });
   });
 

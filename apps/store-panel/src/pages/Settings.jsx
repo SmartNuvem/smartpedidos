@@ -48,6 +48,10 @@ const Settings = () => {
     sortOrder: 0,
     isActive: true,
   });
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingError, setBrandingError] = useState("");
+  const [logoPreviewError, setLogoPreviewError] = useState(false);
+  const [bannerPreviewError, setBannerPreviewError] = useState(false);
 
   const hasAreas = deliveryAreas.length > 0;
 
@@ -423,6 +427,27 @@ const Settings = () => {
     }
   };
 
+  const handleSaveBranding = async () => {
+    if (!store) {
+      return;
+    }
+    setSavingBranding(true);
+    setBrandingError("");
+    try {
+      const updated = await api.updateStoreSettings({
+        logoUrl: store.logoUrl ?? "",
+        bannerUrl: store.bannerUrl ?? "",
+      });
+      setStore((prev) => (prev ? { ...prev, ...updated } : prev));
+    } catch (err) {
+      setBrandingError(
+        err?.message || "Não foi possível salvar a identidade visual."
+      );
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
   const isTokenCopyError = tokenCopyStatus.startsWith("Não");
   const isWaiterLinkError = waiterLinkStatus.startsWith("Não");
   const waiterLink = store?.slug
@@ -446,16 +471,95 @@ const Settings = () => {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         {store ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Input label="Nome" type="text" value={store.name} readOnly />
-            <Input label="Slug" type="text" value={store.slug} readOnly />
-            <Input label="E-mail" type="text" value={store.email} readOnly />
-            <Input
-              label="Status"
-              type="text"
-              value={store.isActive ? "Ativa" : "Inativa"}
-              readOnly
-            />
+          <div className="space-y-6">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Input label="Nome" type="text" value={store.name} readOnly />
+              <Input label="Slug" type="text" value={store.slug} readOnly />
+              <Input label="E-mail" type="text" value={store.email} readOnly />
+              <Input
+                label="Status"
+                type="text"
+                value={store.isActive ? "Ativa" : "Inativa"}
+                readOnly
+              />
+            </div>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Identidade visual
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Adicione a logo e o banner da página pública.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleSaveBranding}
+                  disabled={savingBranding || !store}
+                >
+                  {savingBranding ? "Salvando..." : "Salvar identidade"}
+                </Button>
+              </div>
+              {brandingError ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {brandingError}
+                </div>
+              ) : null}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-3">
+                  <Input
+                    label="Logo da loja (URL)"
+                    type="text"
+                    value={store.logoUrl ?? ""}
+                    onChange={(event) => {
+                      setLogoPreviewError(false);
+                      setStore((prev) =>
+                        prev ? { ...prev, logoUrl: event.target.value } : prev
+                      );
+                    }}
+                  />
+                  {store.logoUrl && !logoPreviewError ? (
+                    <img
+                      src={store.logoUrl}
+                      alt="Logo da loja"
+                      className="h-20 w-20 rounded-xl bg-white object-cover shadow"
+                      onError={() => setLogoPreviewError(true)}
+                    />
+                  ) : null}
+                  {store.logoUrl && logoPreviewError ? (
+                    <p className="text-sm text-rose-600">
+                      Não foi possível carregar a imagem.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-3">
+                  <Input
+                    label="Banner (URL)"
+                    type="text"
+                    value={store.bannerUrl ?? ""}
+                    onChange={(event) => {
+                      setBannerPreviewError(false);
+                      setStore((prev) =>
+                        prev ? { ...prev, bannerUrl: event.target.value } : prev
+                      );
+                    }}
+                  />
+                  {store.bannerUrl && !bannerPreviewError ? (
+                    <img
+                      src={store.bannerUrl}
+                      alt="Banner da loja"
+                      className="h-36 w-full rounded-2xl object-cover shadow"
+                      onError={() => setBannerPreviewError(true)}
+                    />
+                  ) : null}
+                  {store.bannerUrl && bannerPreviewError ? (
+                    <p className="text-sm text-rose-600">
+                      Não foi possível carregar a imagem.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <p className="text-sm text-slate-500">
