@@ -695,11 +695,22 @@ const PublicOrder = () => {
     Number.isFinite(changeForValue) && changeForValue > 0
       ? Math.round(changeForValue * 100)
       : undefined;
+  const requiresChangeForCash =
+    !isDineInOrder &&
+    paymentMethod === "CASH" &&
+    Boolean(menu?.payment?.requireChangeForCash);
+  const isChangeAmountValid =
+    changeForCents === undefined || changeForCents >= totalCents;
   const isChangeValid =
     isDineInOrder ||
     paymentMethod !== "CASH" ||
-    changeForCents === undefined ||
-    changeForCents >= totalCents;
+    (requiresChangeForCash
+      ? changeForCents !== undefined && isChangeAmountValid
+      : isChangeAmountValid);
+  const showChangeRequiredError =
+    requiresChangeForCash && changeForCents === undefined;
+  const showChangeValueError =
+    !showChangeRequiredError && !isChangeAmountValid;
   const isFormValid =
     cartItems.length > 0 &&
     (isDineInOrder ||
@@ -1346,7 +1357,12 @@ const PublicOrder = () => {
                     value={changeFor}
                     onChange={(event) => setChangeFor(event.target.value)}
                   />
-                  {!isChangeValid ? (
+                  {showChangeRequiredError ? (
+                    <p className="mt-1 text-xs text-rose-600">
+                      Informe o valor do troco para pagamento em dinheiro.
+                    </p>
+                  ) : null}
+                  {showChangeValueError ? (
                     <p className="mt-1 text-xs text-rose-600">
                       Troco deve ser maior ou igual ao total do pedido.
                     </p>

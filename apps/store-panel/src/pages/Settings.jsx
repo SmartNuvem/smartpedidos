@@ -3,6 +3,7 @@ import { api } from "../api";
 import Button from "../components/Button";
 import Input from "../components/Input";
 import Modal from "../components/Modal";
+import Toast from "../components/Toast";
 
 const DAYS = [
   { key: "mon", label: "Segunda" },
@@ -52,6 +53,7 @@ const Settings = () => {
   const [brandingError, setBrandingError] = useState("");
   const [logoPreviewError, setLogoPreviewError] = useState(false);
   const [bannerPreviewError, setBannerPreviewError] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const hasAreas = deliveryAreas.length > 0;
 
@@ -345,6 +347,10 @@ const Settings = () => {
       };
       const updated = await api.updatePaymentSettings(normalized);
       setPayment(updated);
+      setToast({
+        message: "Configurações de pagamento salvas com sucesso.",
+        variant: "success",
+      });
     } catch {
       setError("Não foi possível salvar as formas de pagamento.");
     } finally {
@@ -1229,6 +1235,20 @@ const Settings = () => {
               </label>
             </div>
 
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={payment.requireChangeForCash}
+                onChange={(event) =>
+                  setPayment((prev) => ({
+                    ...prev,
+                    requireChangeForCash: event.target.checked,
+                  }))
+                }
+              />
+              Exigir informar troco quando pagamento for Dinheiro
+            </label>
+
             <div className="grid gap-4 lg:grid-cols-3">
               <Input
                 label="Chave PIX"
@@ -1331,6 +1351,12 @@ const Settings = () => {
           </div>
         ) : null}
       </Modal>
+
+      <Toast
+        message={toast?.message}
+        variant={toast?.variant}
+        onClose={() => setToast(null)}
+      />
 
       <Modal
         open={Boolean(tokenReveal)}
