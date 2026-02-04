@@ -41,6 +41,11 @@ enum OptionGroupType {
   MULTI
 }
 
+enum PricingRule {
+  SUM
+  MAX_OPTION
+}
+
 enum OrderType {
   PICKUP
   DELIVERY
@@ -109,6 +114,7 @@ model Product {
   price      Decimal     @db.Decimal(10, 2)
   active     Boolean     @default(true)
   isPromo    Boolean     @default(false)
+  pricingRule PricingRule @default(SUM)
   availableDays Int[] @default([])
   categoryId String
   category   Category    @relation(fields: [categoryId], references: [id])

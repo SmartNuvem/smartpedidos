@@ -9,6 +9,62 @@ const initialAddress = {
   reference: "",
 };
 
+const isFlavorGroupName = (name = "") =>
+  name.trim().toLowerCase() === "sabores";
+
+const calculatePricingForGroups = ({ pricingRule, basePriceCents, groups }) => {
+  if (pricingRule === "SUM") {
+    const extrasCents = groups.reduce(
+      (acc, group) =>
+        acc +
+        group.items.reduce(
+          (groupTotal, item) => groupTotal + item.priceDeltaCents,
+          0
+        ),
+      0
+    );
+    return {
+      unitPriceCents: basePriceCents + extrasCents,
+      baseFromFlavorsCents: null,
+      extrasCents,
+      hasFlavorSelection: true,
+    };
+  }
+
+  let baseFromFlavorsCents = null;
+  let extrasCents = 0;
+  let hasFlavorSelection = false;
+
+  groups.forEach((group) => {
+    if (isFlavorGroupName(group.groupName)) {
+      if (group.items.length === 0) {
+        return;
+      }
+      const maxFlavor = Math.max(
+        ...group.items.map((item) => item.priceDeltaCents)
+      );
+      baseFromFlavorsCents =
+        baseFromFlavorsCents === null
+          ? maxFlavor
+          : Math.max(baseFromFlavorsCents, maxFlavor);
+      hasFlavorSelection = true;
+      return;
+    }
+    const groupTotal = group.items.reduce(
+      (groupSum, item) => groupSum + item.priceDeltaCents,
+      0
+    );
+    extrasCents += groupTotal;
+  });
+
+  return {
+    unitPriceCents: (baseFromFlavorsCents ?? 0) + extrasCents,
+    baseFromFlavorsCents,
+    extrasCents,
+    hasFlavorSelection,
+  };
+};
+
 const reconcileCartItems = (items, menu) => {
   if (!menu) {
     return items;
@@ -32,7 +88,7 @@ const reconcileCartItems = (items, menu) => {
       selections.map((selection) => [selection.groupId, selection.itemIds])
     );
     let optionsValid = true;
-    let optionTotalCents = 0;
+    const selectedGroups = [];
     const normalizedOptions = [];
 
     if (optionGroups.length === 0 && selections.length > 0) {
@@ -69,8 +125,11 @@ const reconcileCartItems = (items, menu) => {
         return;
       }
 
-      selectedItems.forEach((option) => {
-        optionTotalCents += option.priceDeltaCents;
+      selectedGroups.push({
+        groupName: group.name,
+        items: selectedItems.map((option) => ({
+          priceDeltaCents: option.priceDeltaCents,
+        })),
       });
 
       normalizedOptions.push({
@@ -102,10 +161,22 @@ const reconcileCartItems = (items, menu) => {
       optionsValid = false;
     }
 
+    const pricingResult = calculatePricingForGroups({
+      pricingRule: product.pricingRule ?? "SUM",
+      basePriceCents: product.priceCents,
+      groups: selectedGroups,
+    });
+    if (
+      (product.pricingRule ?? "SUM") === "MAX_OPTION" &&
+      !pricingResult.hasFlavorSelection
+    ) {
+      optionsValid = false;
+    }
+
     const updatedItem = {
       ...item,
       name: product.name,
-      priceCents: product.priceCents + optionTotalCents,
+      priceCents: pricingResult.unitPriceCents,
       options:
         normalizedOptions.length > 0 ? normalizedOptions : item.options ?? [],
     };
@@ -361,14 +432,23 @@ const PublicOrder = () => {
     };
   };
 
-  const calculateOptionTotalCents = () =>
-    optionGroups.reduce((total, group) => {
+  const buildSelectedGroups = () =>
+    optionGroups.map((group) => {
       const selectedIds = getSelectedIds(group.id);
-      const groupTotal = group.items
-        .filter((item) => selectedIds.includes(item.id))
-        .reduce((acc, item) => acc + item.priceDeltaCents, 0);
-      return total + groupTotal;
-    }, 0);
+      return {
+        groupName: group.name,
+        items: group.items
+          .filter((item) => selectedIds.includes(item.id))
+          .map((item) => ({ priceDeltaCents: item.priceDeltaCents })),
+      };
+    });
+
+  const calculateOptionPricing = () =>
+    calculatePricingForGroups({
+      pricingRule: optionProduct?.pricingRule ?? "SUM",
+      basePriceCents: optionProduct?.priceCents ?? 0,
+      groups: buildSelectedGroups(),
+    });
 
   const handleOptionSelection = (group, itemId) => {
     setOptionError("");
@@ -489,15 +569,24 @@ const PublicOrder = () => {
       groupId: group.groupId,
       itemIds: group.items.map((item) => item.id),
     }));
-    const optionTotalCents = selectedGroups.reduce(
-      (sum, group) =>
-        sum +
-        group.items.reduce(
-          (acc, item) => acc + item.priceDeltaCents,
-          0
-        ),
-      0
-    );
+    const pricingResult = calculatePricingForGroups({
+      pricingRule: optionProduct.pricingRule ?? "SUM",
+      basePriceCents: optionProduct.priceCents,
+      groups: selectedGroups.map((group) => ({
+        groupName: group.groupName,
+        items: group.items.map((item) => ({
+          priceDeltaCents: item.priceDeltaCents,
+        })),
+      })),
+    });
+
+    if (
+      (optionProduct.pricingRule ?? "SUM") === "MAX_OPTION" &&
+      !pricingResult.hasFlavorSelection
+    ) {
+      setOptionError("Selecione ao menos 1 sabor.");
+      return;
+    }
 
     setCartItems((prev) => [
       ...prev,
@@ -505,7 +594,7 @@ const PublicOrder = () => {
         id: createCartItemId(),
         productId: optionProduct.id,
         name: optionProduct.name,
-        priceCents: optionProduct.priceCents + optionTotalCents,
+        priceCents: pricingResult.unitPriceCents,
         quantity: 1,
         notes: "",
         options: selectedGroups,
@@ -584,9 +673,9 @@ const PublicOrder = () => {
   const currentGroupValidation = currentGroup
     ? getGroupValidation(currentGroup)
     : null;
-  const optionTotalCents = calculateOptionTotalCents();
-  const optionFinalPriceCents =
-    (optionProduct?.priceCents ?? 0) + optionTotalCents;
+  const optionPricing = calculateOptionPricing();
+  const optionTotalCents = optionPricing.unitPriceCents;
+  const optionFinalPriceCents = optionTotalCents;
 
   const scrollToCart = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
