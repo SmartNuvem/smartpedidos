@@ -1,8 +1,9 @@
+import AppFooter from "./AppFooter";
 import Button from "./Button";
 
 const WaiterLayout = ({ title, subtitle, onLogout, actions, children }) => (
-  <div className="min-h-screen bg-slate-50 px-4 py-6">
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+  <div className="flex min-h-screen flex-col bg-slate-50 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -26,6 +27,7 @@ const WaiterLayout = ({ title, subtitle, onLogout, actions, children }) => (
       </div>
       {children}
     </div>
+    <AppFooter />
   </div>
 );
 

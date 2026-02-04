@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { clearAdminToken } from "../auth";
+import AppFooter from "./AppFooter";
 import Button from "./Button";
 
 const linkClass = ({ isActive }) =>
@@ -53,6 +54,7 @@ const AdminLayout = ({ children }) => {
           <main className="flex-1 px-4 py-6 lg:px-8">
             <div className="container-app space-y-6">{children}</div>
           </main>
+          <AppFooter />
         </div>
       </div>
     </div>
