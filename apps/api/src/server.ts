@@ -1486,6 +1486,18 @@ const registerRoutes = () => {
       if (pricingRule === "MAX_OPTION" && !pricingResult.hasFlavorSelection) {
         return reply.status(400).send({ message: "Selecione ao menos 1 sabor." });
       }
+      if (pricingRule === "HALF_SUM") {
+        if (pricingResult.flavorsCount === 0) {
+          return reply
+            .status(400)
+            .send({ message: "Selecione ao menos 1 sabor." });
+        }
+        if (pricingResult.flavorsCount > 2) {
+          return reply
+            .status(400)
+            .send({ message: "Selecione no máximo 2 sabores." });
+        }
+      }
 
       normalizedItems.push({
         ...item,
@@ -3475,7 +3487,7 @@ const registerRoutes = () => {
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
       isPromo: z.boolean().optional(),
-      pricingRule: z.enum(["SUM", "MAX_OPTION"]).optional(),
+      pricingRule: z.enum(["SUM", "MAX_OPTION", "HALF_SUM"]).optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -3585,7 +3597,7 @@ const registerRoutes = () => {
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
       isPromo: z.boolean().optional(),
-      pricingRule: z.enum(["SUM", "MAX_OPTION"]).optional(),
+      pricingRule: z.enum(["SUM", "MAX_OPTION", "HALF_SUM"]).optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(

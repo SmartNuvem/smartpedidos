@@ -1,4 +1,4 @@
-export type PricingRule = "SUM" | "MAX_OPTION";
+export type PricingRule = "SUM" | "MAX_OPTION" | "HALF_SUM";
 
 export type SelectedOptionGroup = {
   groupName: string;
@@ -10,6 +10,7 @@ export type PricingCalculationResult = {
   baseFromFlavorsCents: number | null;
   extrasCents: number;
   hasFlavorSelection: boolean;
+  flavorsCount: number;
 };
 
 export const isFlavorGroupName = (name: string) =>
@@ -39,26 +40,19 @@ export const calculatePricing = ({
       baseFromFlavorsCents: null,
       extrasCents,
       hasFlavorSelection: true,
+      flavorsCount: 0,
     };
   }
 
   let baseFromFlavorsCents: number | null = null;
   let extrasCents = 0;
-  let hasFlavorSelection = false;
+  const flavors: number[] = [];
 
   groups.forEach((group) => {
     if (isFlavorGroupName(group.groupName)) {
-      if (group.items.length === 0) {
-        return;
-      }
-      const maxFlavor = Math.max(
-        ...group.items.map((item) => item.priceDeltaCents)
-      );
-      baseFromFlavorsCents =
-        baseFromFlavorsCents === null
-          ? maxFlavor
-          : Math.max(baseFromFlavorsCents, maxFlavor);
-      hasFlavorSelection = true;
+      group.items.forEach((item) => {
+        flavors.push(item.priceDeltaCents);
+      });
       return;
     }
 
@@ -69,10 +63,30 @@ export const calculatePricing = ({
     extrasCents += groupTotal;
   });
 
+  const flavorsCount = flavors.length;
+  const hasFlavorSelection = flavorsCount > 0;
+
+  if (pricingRule === "MAX_OPTION") {
+    if (flavorsCount > 0) {
+      baseFromFlavorsCents = Math.max(...flavors);
+    }
+  }
+
+  if (pricingRule === "HALF_SUM") {
+    if (flavorsCount === 1) {
+      baseFromFlavorsCents = flavors[0];
+    } else if (flavorsCount === 2) {
+      baseFromFlavorsCents = Math.floor(
+        flavors[0] / 2 + flavors[1] / 2
+      );
+    }
+  }
+
   return {
     unitPriceCents: (baseFromFlavorsCents ?? 0) + extrasCents,
     baseFromFlavorsCents,
     extrasCents,
     hasFlavorSelection,
+    flavorsCount,
   };
 };
