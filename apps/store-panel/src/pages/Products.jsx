@@ -91,6 +91,11 @@ const dayOptions = [
   { label: "Dom", value: 7 },
 ];
 
+const pricingRuleLabels = {
+  SUM: "Somar complementos",
+  MAX_OPTION: "Pizza: maior sabor",
+};
+
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -119,6 +124,7 @@ const Products = () => {
     price: "",
     active: true,
     isPromo: false,
+    pricingRule: "SUM",
     availableEveryday: true,
     availableDays: [],
     availabilityWindows: [],
@@ -159,6 +165,7 @@ const Products = () => {
       price: "",
       active: true,
       isPromo: false,
+      pricingRule: "SUM",
       availableEveryday: true,
       availableDays: [],
       availabilityWindows: [],
@@ -177,6 +184,7 @@ const Products = () => {
       price: formatDecimal(product.price),
       active: product.active,
       isPromo: product.isPromo ?? false,
+      pricingRule: product.pricingRule ?? "SUM",
       availableEveryday,
       availableDays,
       availabilityWindows,
@@ -499,6 +507,7 @@ const Products = () => {
           active: window.active,
         })),
         isPromo: formState.isPromo,
+        pricingRule: formState.pricingRule,
       };
       if (editingProduct) {
         await api.updateProduct(editingProduct.id, payload);
@@ -569,6 +578,9 @@ const Products = () => {
                   Preço
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
+                  Regra de preço
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
                   Status
                 </th>
                 <th className="px-4 py-3"></th>
@@ -592,6 +604,11 @@ const Products = () => {
                   </td>
                   <td className="px-4 py-3 text-slate-900">
                     {formatCurrency(product.price)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                      {pricingRuleLabels[product.pricingRule ?? "SUM"]}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span
@@ -677,6 +694,14 @@ const Products = () => {
             onChange={(event) => handleChange("price", event.target.value)}
             required
           />
+          <Select
+            label="Regra de preço"
+            value={formState.pricingRule}
+            onChange={(event) => handleChange("pricingRule", event.target.value)}
+          >
+            <option value="SUM">Somar complementos (padrão)</option>
+            <option value="MAX_OPTION">Pizza: maior sabor</option>
+          </Select>
           <Select
             label="Status"
             value={formState.active ? "true" : "false"}
@@ -844,6 +869,14 @@ const Products = () => {
           </div>
         ) : (
           <div className="space-y-6">
+            {optionsProduct?.pricingRule === "MAX_OPTION" ? (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+                Para pizzas com “maior sabor”, crie um grupo chamado
+                <span className="font-semibold"> Sabores</span> com mínimo 1 e
+                máximo 2 opções. Os demais grupos (ex.: Borda, Extras) somam
+                normalmente.
+              </div>
+            ) : null}
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <h3 className="text-sm font-semibold text-slate-700">
                 Novo grupo de opções

@@ -16,6 +16,7 @@ import {
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { purgeOldOrders } from "./jobs/purgeOldOrders";
+import { calculatePricing } from "./pricingRule";
 import {
   authenticateAgent,
   getBearerToken,
@@ -1002,6 +1003,7 @@ const registerRoutes = () => {
             priceCents: Math.round(product.price.toNumber() * 100),
             active: product.active,
             isPromo: product.isPromo,
+            pricingRule: product.pricingRule,
             optionGroups: product.optionGroups.map((group) => ({
               id: group.id,
               name: group.name,
@@ -1398,6 +1400,7 @@ const registerRoutes = () => {
         });
       }
       const unitPriceCents = Math.round(product.price.toNumber() * 100);
+      const pricingRule = product.pricingRule ?? "SUM";
       const selectionInputs = item.options ?? [];
       const groupIds = new Set(product.optionGroups.map((group) => group.id));
       const invalidGroup = selectionInputs.find(
@@ -1414,7 +1417,10 @@ const registerRoutes = () => {
         itemName: string;
         priceDeltaCents: number;
       }> = [];
-      let optionTotalCents = 0;
+      const selectedGroups: Array<{
+        groupName: string;
+        items: Array<{ priceDeltaCents: number }>;
+      }> = [];
 
       for (const group of product.optionGroups) {
         const selectedIds =
@@ -1455,19 +1461,35 @@ const registerRoutes = () => {
           });
         }
 
+        selectedGroups.push({
+          groupName: group.name,
+          items: selectedItems.map((option) => ({
+            priceDeltaCents: option!.priceDeltaCents,
+          })),
+        });
+
         selectedItems.forEach((option) => {
           optionEntries.push({
             groupName: group.name,
             itemName: option!.name,
             priceDeltaCents: option!.priceDeltaCents,
           });
-          optionTotalCents += option!.priceDeltaCents;
         });
+      }
+
+      const pricingResult = calculatePricing({
+        pricingRule,
+        basePriceCents: unitPriceCents,
+        groups: selectedGroups,
+      });
+
+      if (pricingRule === "MAX_OPTION" && !pricingResult.hasFlavorSelection) {
+        return reply.status(400).send({ message: "Selecione ao menos 1 sabor." });
       }
 
       normalizedItems.push({
         ...item,
-        unitPriceCents: unitPriceCents + optionTotalCents,
+        unitPriceCents: pricingResult.unitPriceCents,
         optionEntries,
       });
     }
@@ -3426,6 +3448,7 @@ const registerRoutes = () => {
       price: product.price.toNumber(),
       active: product.active,
       isPromo: product.isPromo,
+      pricingRule: product.pricingRule,
       availableDays: product.availableDays,
       availabilityWindows: product.availabilityWindows.map((window) => ({
         id: window.id,
@@ -3452,6 +3475,7 @@ const registerRoutes = () => {
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
       isPromo: z.boolean().optional(),
+      pricingRule: z.enum(["SUM", "MAX_OPTION"]).optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -3470,6 +3494,7 @@ const registerRoutes = () => {
       price,
       active,
       isPromo,
+      pricingRule,
       availableDays,
       availabilityWindows,
     } = bodySchema.parse(
@@ -3504,6 +3529,7 @@ const registerRoutes = () => {
         price,
         active: active ?? true,
         isPromo: isPromo ?? false,
+        pricingRule: pricingRule ?? "SUM",
         categoryId,
         availableDays: normalizedAvailableDays,
         availabilityWindows:
@@ -3532,6 +3558,7 @@ const registerRoutes = () => {
       price: product.price.toNumber(),
       active: product.active,
       isPromo: product.isPromo,
+      pricingRule: product.pricingRule,
       availableDays: product.availableDays,
       availabilityWindows: product.availabilityWindows.map((window) => ({
         id: window.id,
@@ -3558,6 +3585,7 @@ const registerRoutes = () => {
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
       isPromo: z.boolean().optional(),
+      pricingRule: z.enum(["SUM", "MAX_OPTION"]).optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -3577,6 +3605,7 @@ const registerRoutes = () => {
       categoryId,
       active,
       isPromo,
+      pricingRule,
       availableDays,
       availabilityWindows,
     } = bodySchema.parse(
@@ -3603,6 +3632,7 @@ const registerRoutes = () => {
       !categoryId &&
       active === undefined &&
       isPromo === undefined &&
+      pricingRule === undefined &&
       availableDays === undefined &&
       availabilityWindows === undefined
     ) {
@@ -3639,6 +3669,7 @@ const registerRoutes = () => {
           price: price ?? product.price,
           active: active ?? product.active,
           isPromo: isPromo ?? product.isPromo,
+          pricingRule: pricingRule ?? product.pricingRule,
           categoryId: categoryId ?? product.categoryId,
           availableDays:
             availableDays === undefined
@@ -3686,6 +3717,7 @@ const registerRoutes = () => {
       price: updated.price.toNumber(),
       active: updated.active,
       isPromo: updated.isPromo,
+      pricingRule: updated.pricingRule,
       availableDays: updated.availableDays,
       availabilityWindows: updatedWindows.map((window) => ({
         id: window.id,
