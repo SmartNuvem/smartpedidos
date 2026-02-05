@@ -3409,12 +3409,11 @@ const registerRoutes = () => {
     const { name, active } = bodySchema.parse(request.body);
 
     const category = await prisma.$transaction(async (tx) => {
-      const latestCategory = await tx.category.findFirst({
+      const maxSortOrder = await tx.category.aggregate({
         where: { storeId },
-        orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
-        select: { sortOrder: true },
+        _max: { sortOrder: true },
       });
-      const nextSortOrder = (latestCategory?.sortOrder ?? 0) + 1;
+      const nextSortOrder = (maxSortOrder._max.sortOrder ?? -1) + 1;
 
       return tx.category.create({
         data: {
