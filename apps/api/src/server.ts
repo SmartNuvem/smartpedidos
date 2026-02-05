@@ -3484,6 +3484,49 @@ const registerRoutes = () => {
     };
   });
 
+  app.delete("/store/categories/:id", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const category = await prisma.category.findFirst({
+      where: { id, storeId },
+    });
+
+    if (!category) {
+      return reply.status(404).send({ message: "Category not found" });
+    }
+
+    if (category.active) {
+      return reply
+        .status(400)
+        .send({ message: "Não é possível apagar uma categoria ativa." });
+    }
+
+    const productsCount = await prisma.product.count({
+      where: { categoryId: id },
+    });
+
+    if (productsCount > 0) {
+      return reply.status(400).send({
+        message:
+          "Não é possível apagar a categoria porque existem produtos vinculados.",
+      });
+    }
+
+    await prisma.category.delete({
+      where: { id },
+    });
+
+    await emitMenuUpdateByStoreId(storeId);
+
+    return reply.status(204).send();
+  });
+
   app.post("/store/categories/:id/move", async (request, reply) => {
     const storeId = request.storeId;
     if (!storeId) {

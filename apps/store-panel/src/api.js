@@ -336,6 +336,13 @@ export const api = {
     });
     return handleResponse(response);
   },
+  deleteCategory: async (id) => {
+    const response = await request(`${API_URL}/store/categories/${id}`, {
+      method: "DELETE",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   moveCategory: async (id, direction) => {
     const response = await request(`${API_URL}/store/categories/${id}/move`, {
       method: "POST",
