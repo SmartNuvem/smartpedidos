@@ -511,21 +511,32 @@ const PublicOrder = () => {
       return;
     }
     const storageKey = getPublicOrderStorageKey(slug);
-    const payload = {
-      remember: rememberCustomerData,
-      name: customerName.trim(),
-      phone: customerPhone.trim(),
-      addressLine: address.line.trim(),
-    };
-    if (!payload.remember) {
-      storage.setItem(storageKey, JSON.stringify({ remember: false }));
+    const name = customerName.trim();
+    const phone = customerPhone.trim();
+    const addressLine = address.line.trim();
+
+    if (!rememberCustomerData) {
+      storage.setItem(
+        storageKey,
+        JSON.stringify({ remember: false })
+      );
       return;
     }
-    if (!payload.name && !payload.phone && !payload.addressLine) {
+
+    if (!name && !phone && !addressLine) {
       storage.removeItem(storageKey);
       return;
     }
-    storage.setItem(storageKey, JSON.stringify(payload));
+
+    storage.setItem(
+      storageKey,
+      JSON.stringify({
+        remember: true,
+        name,
+        phone,
+        addressLine,
+      })
+    );
   }, [
     slug,
     rememberCustomerData,
