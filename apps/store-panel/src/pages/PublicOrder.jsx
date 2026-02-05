@@ -481,11 +481,18 @@ const PublicOrder = () => {
     if (!remembered) {
       return;
     }
+    if (typeof remembered.remember === "boolean") {
+      setRememberCustomerData(remembered.remember);
+    }
+    if (remembered.remember === false) {
+      return;
+    }
     setCustomerName(remembered.name || "");
     setCustomerPhone(formatPhoneBR(remembered.phone || ""));
     setAddress((prev) => ({
       ...prev,
       line: remembered.addressLine || "",
+      reference: remembered.addressReference || "",
     }));
   }, [slug]);
 
@@ -498,21 +505,35 @@ const PublicOrder = () => {
       return;
     }
     const storageKey = getPublicOrderStorageKey(slug);
-    if (!rememberCustomerData) {
-      storage.removeItem(storageKey);
-      return;
-    }
     const payload = {
+      remember: rememberCustomerData,
       name: customerName.trim(),
       phone: customerPhone.trim(),
       addressLine: address.line.trim(),
+      addressReference: address.reference.trim(),
     };
-    if (!payload.name && !payload.phone && !payload.addressLine) {
+    if (!payload.remember) {
+      storage.setItem(storageKey, JSON.stringify({ remember: false }));
+      return;
+    }
+    if (
+      !payload.name &&
+      !payload.phone &&
+      !payload.addressLine &&
+      !payload.addressReference
+    ) {
       storage.removeItem(storageKey);
       return;
     }
     storage.setItem(storageKey, JSON.stringify(payload));
-  }, [slug, rememberCustomerData, customerName, customerPhone, address.line]);
+  }, [
+    slug,
+    rememberCustomerData,
+    customerName,
+    customerPhone,
+    address.line,
+    address.reference,
+  ]);
 
   const createCartItemId = () => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
