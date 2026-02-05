@@ -854,6 +854,7 @@ const registerRoutes = () => {
       include: {
         categories: {
           where: { active: true },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
           include: {
             products: {
               where: { active: true },
@@ -3381,13 +3382,14 @@ const registerRoutes = () => {
 
     const categories = await prisma.category.findMany({
       where: { storeId },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
 
     return categories.map((category) => ({
       id: category.id,
       name: category.name,
       active: category.active,
+      sortOrder: category.sortOrder,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     }));
@@ -3406,12 +3408,22 @@ const registerRoutes = () => {
 
     const { name, active } = bodySchema.parse(request.body);
 
-    const category = await prisma.category.create({
-      data: {
-        name,
-        active: active ?? true,
-        storeId,
-      },
+    const category = await prisma.$transaction(async (tx) => {
+      const latestCategory = await tx.category.findFirst({
+        where: { storeId },
+        orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+        select: { sortOrder: true },
+      });
+      const nextSortOrder = (latestCategory?.sortOrder ?? 0) + 1;
+
+      return tx.category.create({
+        data: {
+          name,
+          active: active ?? true,
+          storeId,
+          sortOrder: nextSortOrder,
+        },
+      });
     });
 
     await emitMenuUpdateByStoreId(storeId);
@@ -3420,6 +3432,7 @@ const registerRoutes = () => {
       id: category.id,
       name: category.name,
       active: category.active,
+      sortOrder: category.sortOrder,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     });
@@ -3466,9 +3479,73 @@ const registerRoutes = () => {
       id: updated.id,
       name: updated.name,
       active: updated.active,
+      sortOrder: updated.sortOrder,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     };
+  });
+
+  app.post("/store/categories/:id/move", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const bodySchema = z.object({
+      direction: z.enum(["up", "down"]),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { direction } = bodySchema.parse(request.body);
+
+    const categories = await prisma.category.findMany({
+      where: { storeId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+
+    const currentIndex = categories.findIndex((category) => category.id === id);
+    if (currentIndex === -1) {
+      return reply.status(404).send({ message: "Category not found" });
+    }
+
+    const neighborIndex =
+      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (neighborIndex < 0 || neighborIndex >= categories.length) {
+      return reply
+        .status(400)
+        .send({ message: "Cannot move category in that direction" });
+    }
+
+    const currentCategory = categories[currentIndex];
+    const neighborCategory = categories[neighborIndex];
+
+    await prisma.$transaction([
+      prisma.category.update({
+        where: { id: currentCategory.id },
+        data: { sortOrder: neighborCategory.sortOrder },
+      }),
+      prisma.category.update({
+        where: { id: neighborCategory.id },
+        data: { sortOrder: currentCategory.sortOrder },
+      }),
+    ]);
+
+    await emitMenuUpdateByStoreId(storeId);
+
+    const updatedCategories = await prisma.category.findMany({
+      where: { storeId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+
+    return updatedCategories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      active: category.active,
+      sortOrder: category.sortOrder,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    }));
   });
 
   app.get("/store/products", async (request, reply) => {

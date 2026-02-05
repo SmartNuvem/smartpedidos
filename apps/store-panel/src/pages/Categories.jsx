@@ -15,6 +15,7 @@ const Categories = () => {
   const [formName, setFormName] = useState("");
   const [editingCategory, setEditingCategory] = useState(null);
   const [toast, setToast] = useState(null);
+  const [movingId, setMovingId] = useState(null);
 
   const loadCategories = async () => {
     setLoading(true);
@@ -87,6 +88,18 @@ const Categories = () => {
     }
   };
 
+  const handleMove = async (categoryId, direction) => {
+    setMovingId(categoryId);
+    try {
+      const data = await api.moveCategory(categoryId, direction);
+      setCategories(data);
+    } catch {
+      setToast({ message: "Não foi possível reordenar a categoria.", variant: "error" });
+    } finally {
+      setMovingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -131,7 +144,10 @@ const Categories = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {categories.map((category) => (
+              {categories.map((category, index) => {
+                const isFirst = index === 0;
+                const isLast = index === categories.length - 1;
+                return (
                 <tr key={category.id}>
                   <td className="px-4 py-3 font-semibold text-slate-900">
                     {category.name}
@@ -151,6 +167,22 @@ const Categories = () => {
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button
                         variant="secondary"
+                        className="px-3"
+                        onClick={() => handleMove(category.id, "up")}
+                        disabled={isFirst || movingId === category.id}
+                      >
+                        ⬆️
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="px-3"
+                        onClick={() => handleMove(category.id, "down")}
+                        disabled={isLast || movingId === category.id}
+                      >
+                        ⬇️
+                      </Button>
+                      <Button
+                        variant="secondary"
                         onClick={() => openEdit(category)}
                       >
                         Editar
@@ -164,7 +196,8 @@ const Categories = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </Table>
         )}

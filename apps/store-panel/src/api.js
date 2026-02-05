@@ -336,6 +336,14 @@ export const api = {
     });
     return handleResponse(response);
   },
+  moveCategory: async (id, direction) => {
+    const response = await request(`${API_URL}/store/categories/${id}/move`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify({ direction }),
+    });
+    return handleResponse(response);
+  },
   getProducts: async () => {
     const response = await request(`${API_URL}/store/products`, {
       headers: buildHeaders(),
