@@ -10,6 +10,33 @@ const initialAddress = {
   reference: "",
 };
 
+const getPublicOrderStorageKey = (storeSlug = "") =>
+  `smartpedidos:public:form:${storeSlug}`;
+
+const getSafeLocalStorage = () => {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const readRememberedCustomer = (storeSlug = "") => {
+  const storage = getSafeLocalStorage();
+  if (!storage || !storeSlug) {
+    return null;
+  }
+  const raw = storage.getItem(getPublicOrderStorageKey(storeSlug));
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    return null;
+  }
+};
+
 const formatPhoneBR = (digits = "") => {
   const cleaned = digits.replace(/\D/g, "").slice(0, 11);
   const length = cleaned.length;
@@ -265,6 +292,7 @@ const PublicOrder = () => {
   const [pixCopied, setPixCopied] = useState(false);
   const [logoLoadError, setLogoLoadError] = useState(false);
   const [bannerLoadError, setBannerLoadError] = useState(false);
+  const [rememberCustomerData, setRememberCustomerData] = useState(true);
   const allowPickup = menu?.store?.allowPickup ?? true;
   const allowDelivery = menu?.store?.allowDelivery ?? true;
 
@@ -444,6 +472,47 @@ const PublicOrder = () => {
       setAddress(initialAddress);
     }
   }, [menu, allowPickup, allowDelivery, isDineIn]);
+
+  useEffect(() => {
+    if (!slug) {
+      return;
+    }
+    const remembered = readRememberedCustomer(slug);
+    if (!remembered) {
+      return;
+    }
+    setCustomerName(remembered.name || "");
+    setCustomerPhone(formatPhoneBR(remembered.phone || ""));
+    setAddress((prev) => ({
+      ...prev,
+      line: remembered.addressLine || "",
+    }));
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) {
+      return;
+    }
+    const storage = getSafeLocalStorage();
+    if (!storage) {
+      return;
+    }
+    const storageKey = getPublicOrderStorageKey(slug);
+    if (!rememberCustomerData) {
+      storage.removeItem(storageKey);
+      return;
+    }
+    const payload = {
+      name: customerName.trim(),
+      phone: customerPhone.trim(),
+      addressLine: address.line.trim(),
+    };
+    if (!payload.name && !payload.phone && !payload.addressLine) {
+      storage.removeItem(storageKey);
+      return;
+    }
+    storage.setItem(storageKey, JSON.stringify(payload));
+  }, [slug, rememberCustomerData, customerName, customerPhone, address.line]);
 
   const createCartItemId = () => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -1247,6 +1316,7 @@ const PublicOrder = () => {
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                 placeholder="Nome completo"
                 value={customerName}
+                autoComplete="name"
                 onChange={(event) => setCustomerName(event.target.value)}
               />
               <input
@@ -1261,6 +1331,17 @@ const PublicOrder = () => {
                   setCustomerPhone(formatPhoneBR(digits));
                 }}
               />
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                  checked={rememberCustomerData}
+                  onChange={(event) =>
+                    setRememberCustomerData(event.target.checked)
+                  }
+                />
+                Lembrar meus dados neste aparelho
+              </label>
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -1331,6 +1412,7 @@ const PublicOrder = () => {
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                 placeholder="Rua, número, bloco"
                 value={address.line}
+                autoComplete="street-address"
                 onChange={(event) =>
                   setAddress((prev) => ({ ...prev, line: event.target.value }))
                 }
