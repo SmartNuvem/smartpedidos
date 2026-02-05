@@ -15,6 +15,30 @@ const DAYS = [
   { key: "sun", label: "Domingo" },
 ];
 
+const normalizeMoneyBR = (value = "") => {
+  if (!value) {
+    return "";
+  }
+  const cleaned = value.replace(/[\s\u00A0.]/g, ",").replace(/[^\d,]/g, "");
+  const [integerPart = "", ...decimalParts] = cleaned.split(",");
+  const decimalPart = decimalParts.join("");
+  return decimalPart ? `${integerPart},${decimalPart}` : integerPart;
+};
+
+const parseMoneyBR = (value = "") => {
+  const normalized = normalizeMoneyBR(value);
+  if (!normalized) {
+    return 0;
+  }
+  const numeric = Number(normalized.replace(",", "."));
+  return Number.isNaN(numeric) ? 0 : numeric;
+};
+
+const formatMoneyBR = (value = "") => {
+  const numeric = parseMoneyBR(value);
+  return numeric.toFixed(2).replace(".", ",");
+};
+
 const Settings = () => {
   const [store, setStore] = useState(null);
   const [deliveryAreas, setDeliveryAreas] = useState([]);
@@ -46,6 +70,7 @@ const Settings = () => {
   const [newArea, setNewArea] = useState({
     name: "",
     feeCents: 0,
+    feeDisplay: formatMoneyBR("0"),
     sortOrder: 0,
     isActive: true,
   });
@@ -75,7 +100,12 @@ const Settings = () => {
           return;
         }
         setStore(storeData);
-        setDeliveryAreas(areasData);
+        setDeliveryAreas(
+          areasData.map((area) => ({
+            ...area,
+            feeDisplay: formatMoneyBR(String(area.feeCents / 100)),
+          }))
+        );
         setHours(hoursData);
         setPayment(paymentData);
         setSalonSettings(salonData);
@@ -125,6 +155,39 @@ const Settings = () => {
     } finally {
       setAgentsLoading(false);
     }
+  };
+
+  const updateAreaFee = (areaId, rawValue) => {
+    const normalized = normalizeMoneyBR(rawValue);
+    const feeCents = Math.round(parseMoneyBR(normalized) * 100);
+    handleAreaChange(areaId, "feeDisplay", normalized);
+    handleAreaChange(areaId, "feeCents", feeCents);
+  };
+
+  const handleAreaFeeBlur = (areaId, currentValue) => {
+    const formatted = formatMoneyBR(currentValue);
+    handleAreaChange(areaId, "feeDisplay", formatted);
+    handleAreaChange(areaId, "feeCents", Math.round(parseMoneyBR(formatted) * 100));
+  };
+
+  const handleNewAreaFeeChange = (rawValue) => {
+    const normalized = normalizeMoneyBR(rawValue);
+    setNewArea((prev) => ({
+      ...prev,
+      feeDisplay: normalized,
+      feeCents: Math.round(parseMoneyBR(normalized) * 100),
+    }));
+  };
+
+  const handleNewAreaFeeBlur = () => {
+    setNewArea((prev) => {
+      const formatted = formatMoneyBR(prev.feeDisplay);
+      return {
+        ...prev,
+        feeDisplay: formatted,
+        feeCents: Math.round(parseMoneyBR(formatted) * 100),
+      };
+    });
   };
 
   const handleCreateAgent = async () => {
@@ -255,7 +318,14 @@ const Settings = () => {
         isActive: area.isActive,
       });
       setDeliveryAreas((prev) =>
-        prev.map((item) => (item.id === updated.id ? updated : item))
+        prev.map((item) =>
+          item.id === updated.id
+            ? {
+                ...updated,
+                feeDisplay: formatMoneyBR(String(updated.feeCents / 100)),
+              }
+            : item
+        )
       );
     } catch {
       setAreaError("Não foi possível salvar a taxa de entrega.");
@@ -291,8 +361,20 @@ const Settings = () => {
         sortOrder: newArea.sortOrder,
         isActive: newArea.isActive,
       });
-      setDeliveryAreas((prev) => [...prev, created]);
-      setNewArea({ name: "", feeCents: 0, sortOrder: 0, isActive: true });
+      setDeliveryAreas((prev) => [
+        ...prev,
+        {
+          ...created,
+          feeDisplay: formatMoneyBR(String(created.feeCents / 100)),
+        },
+      ]);
+      setNewArea({
+        name: "",
+        feeCents: 0,
+        feeDisplay: formatMoneyBR("0"),
+        sortOrder: 0,
+        isActive: true,
+      });
     } catch {
       setAreaError("Não foi possível criar a taxa de entrega.");
     } finally {
@@ -960,15 +1042,12 @@ const Settings = () => {
             />
             <Input
               label="Taxa (R$)"
-              type="number"
-              step="0.01"
-              value={(newArea.feeCents / 100).toFixed(2)}
-              onChange={(event) =>
-                setNewArea((prev) => ({
-                  ...prev,
-                  feeCents: Math.round(Number(event.target.value || 0) * 100),
-                }))
-              }
+              type="text"
+              inputMode="decimal"
+              value={newArea.feeDisplay}
+              onFocus={(event) => event.target.select()}
+              onChange={(event) => handleNewAreaFeeChange(event.target.value)}
+              onBlur={handleNewAreaFeeBlur}
             />
             <Input
               label="Ordem"
@@ -1007,15 +1086,15 @@ const Settings = () => {
                   />
                   <Input
                     label="Taxa (R$)"
-                    type="number"
-                    step="0.01"
-                    value={(area.feeCents / 100).toFixed(2)}
+                    type="text"
+                    inputMode="decimal"
+                    value={area.feeDisplay}
+                    onFocus={(event) => event.target.select()}
                     onChange={(event) =>
-                      handleAreaChange(
-                        area.id,
-                        "feeCents",
-                        Math.round(Number(event.target.value || 0) * 100)
-                      )
+                      updateAreaFee(area.id, event.target.value)
+                    }
+                    onBlur={(event) =>
+                      handleAreaFeeBlur(area.id, event.target.value)
                     }
                   />
                   <Input
