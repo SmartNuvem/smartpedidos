@@ -100,6 +100,25 @@ const Categories = () => {
     }
   };
 
+  const handleDeleteCategory = async (category) => {
+    const confirmed = window.confirm(
+      "Tem certeza que deseja apagar esta categoria? Esta ação não pode ser desfeita."
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await api.deleteCategory(category.id);
+      setToast({ message: "Categoria apagada com sucesso.", variant: "success" });
+      await loadCategories();
+    } catch (err) {
+      setToast({
+        message: err?.message || "Não foi possível apagar a categoria.",
+        variant: "error",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -193,6 +212,14 @@ const Categories = () => {
                       >
                         {category.active ? "Desativar" : "Ativar"}
                       </Button>
+                      {!category.active && (
+                        <Button
+                          variant="danger"
+                          onClick={() => handleDeleteCategory(category)}
+                        >
+                          🗑️ Apagar
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
