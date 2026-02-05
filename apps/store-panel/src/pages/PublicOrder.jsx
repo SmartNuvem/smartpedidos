@@ -514,6 +514,7 @@ const PublicOrder = () => {
     const name = customerName.trim();
     const phone = customerPhone.trim();
     const addressLine = address.line.trim();
+    const hasRememberedData = Boolean(name || phone || addressLine);
 
     if (!rememberCustomerData) {
       storage.setItem(
@@ -523,7 +524,7 @@ const PublicOrder = () => {
       return;
     }
 
-    if (!name && !phone && !addressLine) {
+    if (!hasRememberedData) {
       storage.removeItem(storageKey);
       return;
     }
