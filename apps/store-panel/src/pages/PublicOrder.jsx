@@ -925,27 +925,31 @@ const PublicOrder = () => {
         throw new Error(data.message || "Não foi possível enviar o pedido.");
       }
       const data = await response.json();
-      const resetOrderState = () => {
+      const resetOrderState = (shouldRememberCustomer) => {
         setCartItems([]);
-        setCustomerName("");
-        setCustomerPhone("");
         setNotes("");
-        setAddress(initialAddress);
         setDeliveryAreaId("");
         setPaymentMethod("");
         setChangeFor("");
         setFulfillmentType("PICKUP");
+        if (shouldRememberCustomer) {
+          setAddress((prev) => ({ ...prev, reference: "" }));
+          return;
+        }
+        setCustomerName("");
+        setCustomerPhone("");
+        setAddress(initialAddress);
       };
 
       if (isDineInOrder && tableId) {
-        resetOrderState();
+        resetOrderState(rememberCustomerData);
         setOrderResult(null);
         navigate(`/s/${slug}/garcom/mesas`);
         return;
       }
 
       setOrderResult(data);
-      resetOrderState();
+      resetOrderState(rememberCustomerData);
     } catch (err) {
       setError(err.message || "Não foi possível enviar o pedido.");
     } finally {
