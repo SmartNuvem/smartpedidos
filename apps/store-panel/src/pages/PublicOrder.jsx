@@ -297,6 +297,13 @@ const PublicOrder = () => {
   const allowDelivery = menu?.store?.allowDelivery ?? true;
 
   useEffect(() => {
+    if (!slug) {
+      return;
+    }
+    console.debug("[PublicOrder] store slug", slug);
+  }, [slug]);
+
+  useEffect(() => {
     setLogoLoadError(false);
   }, [menu?.store?.logoUrl]);
 
@@ -492,7 +499,6 @@ const PublicOrder = () => {
     setAddress((prev) => ({
       ...prev,
       line: remembered.addressLine || "",
-      reference: remembered.addressReference || "",
     }));
   }, [slug]);
 
@@ -510,18 +516,12 @@ const PublicOrder = () => {
       name: customerName.trim(),
       phone: customerPhone.trim(),
       addressLine: address.line.trim(),
-      addressReference: address.reference.trim(),
     };
     if (!payload.remember) {
       storage.setItem(storageKey, JSON.stringify({ remember: false }));
       return;
     }
-    if (
-      !payload.name &&
-      !payload.phone &&
-      !payload.addressLine &&
-      !payload.addressReference
-    ) {
+    if (!payload.name && !payload.phone && !payload.addressLine) {
       storage.removeItem(storageKey);
       return;
     }
@@ -532,7 +532,6 @@ const PublicOrder = () => {
     customerName,
     customerPhone,
     address.line,
-    address.reference,
   ]);
 
   const createCartItemId = () => {
