@@ -10,6 +10,36 @@ const initialAddress = {
   reference: "",
 };
 
+const formatPhoneBR = (digits = "") => {
+  const cleaned = digits.replace(/\D/g, "").slice(0, 11);
+  const length = cleaned.length;
+
+  if (length === 0) {
+    return "";
+  }
+
+  if (length <= 9) {
+    if (length <= 4) {
+      return cleaned;
+    }
+    if (length <= 8) {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`;
+    }
+    return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
+  }
+
+  const ddd = cleaned.slice(0, 2);
+  const rest = cleaned.slice(2);
+
+  if (rest.length <= 4) {
+    return `(${ddd}) ${rest}`;
+  }
+  if (rest.length <= 8) {
+    return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+  }
+  return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+};
+
 const isFlavorGroupName = (name = "") =>
   name.trim().toLowerCase() === "sabores";
 
@@ -674,6 +704,10 @@ const PublicOrder = () => {
   };
 
   const isDineInOrder = isDineIn;
+  const customerPhoneDigits = customerPhone.replace(/\D/g, "").slice(0, 11);
+  const isCustomerPhoneValid = isDineInOrder
+    ? true
+    : [8, 9, 10, 11].includes(customerPhoneDigits.length);
   const isDelivery =
     !isDineInOrder && fulfillmentType === "DELIVERY" && allowDelivery;
   const deliveryFeeCents =
@@ -714,7 +748,7 @@ const PublicOrder = () => {
   const isFormValid =
     cartItems.length > 0 &&
     (isDineInOrder ||
-      (customerName.trim().length > 0 && customerPhone.trim().length > 0)) &&
+      (customerName.trim().length > 0 && isCustomerPhoneValid)) &&
     (isDineInOrder || paymentMethod) &&
     isStoreOpen &&
     isChangeValid &&
@@ -734,7 +768,13 @@ const PublicOrder = () => {
   };
 
   const handleSubmit = async () => {
-    if (!isFormValid || submitting) {
+    if (submitting) {
+      return;
+    }
+    if (!isFormValid) {
+      if (!isDineInOrder && !isCustomerPhoneValid) {
+        setError("Informe um telefone válido");
+      }
       return;
     }
     setSubmitting(true);
@@ -744,6 +784,7 @@ const PublicOrder = () => {
       const payload = {
         customerName: customerName.trim() || undefined,
         customerPhone: customerPhone.trim() || undefined,
+        customerPhoneDigits: customerPhoneDigits || undefined,
         orderType: isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
         notes: notes.trim() || undefined,
         items: cartItems.map((item) => ({
@@ -1212,7 +1253,13 @@ const PublicOrder = () => {
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                 placeholder="WhatsApp / Telefone"
                 value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
+                inputMode="numeric"
+                autoComplete="tel"
+                pattern="[0-9]*"
+                onChange={(event) => {
+                  const digits = event.target.value.replace(/\D/g, "");
+                  setCustomerPhone(formatPhoneBR(digits));
+                }}
               />
             </div>
           ) : (
