@@ -292,7 +292,6 @@ const PublicOrder = () => {
   const [pixCopied, setPixCopied] = useState(false);
   const [logoLoadError, setLogoLoadError] = useState(false);
   const [bannerLoadError, setBannerLoadError] = useState(false);
-  const [isBannerLight, setIsBannerLight] = useState(false);
   const [rememberCustomerData, setRememberCustomerData] = useState(true);
   const allowPickup = menu?.store?.allowPickup ?? true;
   const allowDelivery = menu?.store?.allowDelivery ?? true;
@@ -310,43 +309,7 @@ const PublicOrder = () => {
 
   useEffect(() => {
     setBannerLoadError(false);
-    setIsBannerLight(false);
   }, [menu?.store?.bannerUrl]);
-
-  const handleBannerLoad = useCallback(
-    (event) => {
-      try {
-        const img = event.currentTarget;
-        if (!img.naturalWidth || !img.naturalHeight) {
-          return;
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = 50;
-        canvas.height = 50;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        let brightness = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          brightness +=
-            (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
-        }
-
-        const avgBrightness = brightness / (data.length / 4);
-        setIsBannerLight(avgBrightness > 180);
-      } catch {
-        setIsBannerLight(false);
-      }
-    },
-    [setIsBannerLight]
-  );
 
   useEffect(() => {
     if (!orderResult) {
@@ -1066,7 +1029,6 @@ const PublicOrder = () => {
                     src={menu.store.bannerUrl}
                     alt="Banner da loja"
                     className="absolute inset-0 h-full w-full object-cover object-center"
-                    onLoad={handleBannerLoad}
                     onError={() => setBannerLoadError(true)}
                   />
                 ) : null}
@@ -1080,16 +1042,7 @@ const PublicOrder = () => {
                     />
                   ) : null}
                   <div>
-                    <h1
-                      className={`text-xl font-bold sm:text-3xl ${
-                        isBannerLight ? "text-black" : "text-white"
-                      }`}
-                      style={
-                        isBannerLight
-                          ? undefined
-                          : { textShadow: "0 2px 10px rgba(0,0,0,0.35)" }
-                      }
-                    >
+                    <h1 className="inline-flex rounded-xl bg-white/65 px-3 py-2 text-xl font-bold text-gray-900 shadow-sm ring-1 ring-black/5 backdrop-blur-md sm:text-3xl">
                       {menu.store?.name || "Cardápio"}
                     </h1>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
