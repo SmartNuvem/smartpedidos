@@ -292,6 +292,7 @@ const PublicOrder = () => {
   const [pixCopied, setPixCopied] = useState(false);
   const [logoLoadError, setLogoLoadError] = useState(false);
   const [bannerLoadError, setBannerLoadError] = useState(false);
+  const [isBannerLight, setIsBannerLight] = useState(false);
   const [rememberCustomerData, setRememberCustomerData] = useState(true);
   const allowPickup = menu?.store?.allowPickup ?? true;
   const allowDelivery = menu?.store?.allowDelivery ?? true;
@@ -309,7 +310,47 @@ const PublicOrder = () => {
 
   useEffect(() => {
     setBannerLoadError(false);
+    setIsBannerLight(false);
   }, [menu?.store?.bannerUrl]);
+
+  const handleBannerLoad = useCallback(
+    (event) => {
+      const img = event.currentTarget;
+      if (!img.naturalWidth || !img.naturalHeight) {
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+
+      let imageData;
+      try {
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      } catch (error) {
+        setIsBannerLight(false);
+        return;
+      }
+
+      const { data } = imageData;
+      let brightness = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        brightness +=
+          (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+      }
+
+      const avgBrightness = brightness / (data.length / 4);
+      setIsBannerLight(avgBrightness > 180);
+    },
+    [setIsBannerLight]
+  );
 
   useEffect(() => {
     if (!orderResult) {
@@ -1028,10 +1069,11 @@ const PublicOrder = () => {
                   src={menu.store.bannerUrl}
                   alt="Banner da loja"
                   className="h-full w-full object-cover object-center"
+                  crossOrigin="anonymous"
+                  onLoad={handleBannerLoad}
                   onError={() => setBannerLoadError(true)}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 flex flex-col items-start gap-3 p-4 text-white sm:flex-row sm:items-end">
+                <div className="absolute inset-x-0 bottom-0 flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-end">
                   {showLogo ? (
                     <img
                       src={menu.store.logoUrl}
@@ -1041,7 +1083,13 @@ const PublicOrder = () => {
                     />
                   ) : null}
                   <div>
-                    <h1 className="text-xl font-bold drop-shadow sm:text-3xl">
+                    <h1
+                      className={`text-xl font-bold sm:text-3xl ${
+                        isBannerLight
+                          ? "text-black"
+                          : "text-white drop-shadow"
+                      }`}
+                    >
                       {menu.store?.name || "Cardápio"}
                     </h1>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
