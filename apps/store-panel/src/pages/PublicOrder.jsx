@@ -315,39 +315,35 @@ const PublicOrder = () => {
 
   const handleBannerLoad = useCallback(
     (event) => {
-      const img = event.currentTarget;
-      if (!img.naturalWidth || !img.naturalHeight) {
-        return;
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-
-      ctx.drawImage(img, 0, 0);
-
-      let imageData;
       try {
-        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      } catch (error) {
+        const img = event.currentTarget;
+        if (!img.naturalWidth || !img.naturalHeight) {
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = 50;
+        canvas.height = 50;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let brightness = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          brightness +=
+            (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+        }
+
+        const avgBrightness = brightness / (data.length / 4);
+        setIsBannerLight(avgBrightness > 180);
+      } catch {
         setIsBannerLight(false);
-        return;
       }
-
-      const { data } = imageData;
-      let brightness = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        brightness +=
-          (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
-      }
-
-      const avgBrightness = brightness / (data.length / 4);
-      setIsBannerLight(avgBrightness > 180);
     },
     [setIsBannerLight]
   );
@@ -857,7 +853,7 @@ const PublicOrder = () => {
   const totalCents = subtotalCents + deliveryFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
   const showLogo = Boolean(menu?.store?.logoUrl) && !logoLoadError;
-  const showBanner = Boolean(menu?.store?.bannerUrl) && !bannerLoadError;
+  const showBanner = Boolean(menu?.store?.bannerUrl);
   const isFulfillmentAllowed =
     isDineInOrder
       ? true
@@ -1064,15 +1060,16 @@ const PublicOrder = () => {
         <header className="mb-6">
           {showBanner ? (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="relative h-44 w-full sm:h-56 lg:h-60">
-                <img
-                  src={menu.store.bannerUrl}
-                  alt="Banner da loja"
-                  className="h-full w-full object-cover object-center"
-                  crossOrigin="anonymous"
-                  onLoad={handleBannerLoad}
-                  onError={() => setBannerLoadError(true)}
-                />
+              <div className="relative h-48 w-full md:h-56">
+                {!bannerLoadError ? (
+                  <img
+                    src={menu.store.bannerUrl}
+                    alt="Banner da loja"
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                    onLoad={handleBannerLoad}
+                    onError={() => setBannerLoadError(true)}
+                  />
+                ) : null}
                 <div className="absolute inset-x-0 bottom-0 flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-end">
                   {showLogo ? (
                     <img
@@ -1085,10 +1082,13 @@ const PublicOrder = () => {
                   <div>
                     <h1
                       className={`text-xl font-bold sm:text-3xl ${
-                        isBannerLight
-                          ? "text-black"
-                          : "text-white drop-shadow"
+                        isBannerLight ? "text-black" : "text-white"
                       }`}
+                      style={
+                        isBannerLight
+                          ? undefined
+                          : { textShadow: "0 2px 10px rgba(0,0,0,0.35)" }
+                      }
                     >
                       {menu.store?.name || "Cardápio"}
                     </h1>
