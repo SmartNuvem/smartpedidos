@@ -40,6 +40,8 @@ const formatMoneyBR = (value = "") => {
 };
 
 const Settings = () => {
+  const agentDownloadUrl = import.meta.env.VITE_AGENT_DOWNLOAD_URL?.trim();
+  const hasAgentDownloadUrl = Boolean(agentDownloadUrl);
   const [store, setStore] = useState(null);
   const [deliveryAreas, setDeliveryAreas] = useState([]);
   const [hours, setHours] = useState(null);
@@ -935,9 +937,30 @@ const Settings = () => {
               automática.
             </p>
           </div>
-          <Button onClick={() => setCreateAgentOpen(true)}>
-            Criar agente
-          </Button>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  window.open(
+                    agentDownloadUrl,
+                    "_blank",
+                    "noopener,noreferrer"
+                  )
+                }
+                disabled={!hasAgentDownloadUrl}
+                title={!hasAgentDownloadUrl ? "Link não configurado" : undefined}
+              >
+                Baixar Agente (Windows)
+              </Button>
+              <Button onClick={() => setCreateAgentOpen(true)}>
+                Criar agente
+              </Button>
+            </div>
+            <p className="text-xs text-slate-500">
+              Windows 64 bits • Impressão automática
+            </p>
+          </div>
         </div>
 
         {agentsError ? (
