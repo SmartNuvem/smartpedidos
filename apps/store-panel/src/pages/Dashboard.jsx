@@ -21,6 +21,7 @@ const Dashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
   const knownOrderIdsRef = useRef(new Set());
   const { isSupported, isUnlocked, unlock, play } = useNewOrderSound();
 
@@ -161,6 +162,34 @@ const Dashboard = () => {
   }, [orders]);
 
   const latestOrders = orders.slice(0, 5);
+  const publicBaseUrl =
+    import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin;
+  const menuUrl = useMemo(() => {
+    if (!store?.slug) {
+      return "";
+    }
+    return `${publicBaseUrl}/p/${store.slug}`;
+  }, [publicBaseUrl, store?.slug]);
+
+  const handleCopy = useCallback(async () => {
+    if (!menuUrl) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(menuUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }, [menuUrl]);
+
+  const handleOpen = useCallback(() => {
+    if (!menuUrl) {
+      return;
+    }
+    window.open(menuUrl, "_blank", "noopener,noreferrer");
+  }, [menuUrl]);
 
   return (
     <div className="space-y-6">
@@ -220,6 +249,47 @@ const Dashboard = () => {
             </div>
           </div>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Link do Cardápio Público
+            </h3>
+            <p className="text-sm text-slate-500">
+              Compartilhe o link do cardápio para seus clientes.
+            </p>
+          </div>
+          {menuUrl ? (
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Público
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-mono text-slate-700">
+            {menuUrl || "Carregando link do cardápio..."}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              type="button"
+              onClick={handleCopy}
+              disabled={!menuUrl}
+            >
+              {copied ? "Copiado!" : "Copiar link"}
+            </button>
+            <button
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+              type="button"
+              onClick={handleOpen}
+              disabled={!menuUrl}
+            >
+              Abrir
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
