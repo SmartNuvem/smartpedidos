@@ -965,7 +965,7 @@ const PublicOrder = () => {
                 </h1>
 
                 <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                  className={`relative top-[2px] rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
                     isStoreOpen
                       ? "bg-emerald-200/90 text-emerald-950"
                       : "bg-rose-200/90 text-rose-950"
