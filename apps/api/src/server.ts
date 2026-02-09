@@ -16,6 +16,7 @@ import {
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { purgeOldOrders } from "./jobs/purgeOldOrders";
+import { recoverStuckOrders } from "./jobs/recoverStuckOrders";
 import { calculatePricing } from "./pricingRule";
 import {
   authenticateAgent,
@@ -1567,6 +1568,8 @@ const registerRoutes = () => {
     }
 
     const initialStatus = store.autoPrintEnabled ? "PRINTING" : "NEW";
+    const initialPrintingClaimedAt =
+      initialStatus === "PRINTING" ? new Date() : null;
     const effectivePaymentMethod = isDineIn
       ? paymentMethod ?? "CASH"
       : paymentMethod!;
@@ -1598,6 +1601,7 @@ const registerRoutes = () => {
               ? changeForCents ?? null
               : null,
           total,
+          printingClaimedAt: initialPrintingClaimedAt,
         },
       });
 
@@ -4729,7 +4733,7 @@ const registerRoutes = () => {
 
     const updated = await prisma.order.update({
       where: { id },
-      data: { status: "NEW" },
+      data: { status: "NEW", printingClaimedAt: null },
     });
 
     sendOrderStreamEvent(storeId, "order.updated", {
@@ -4785,7 +4789,7 @@ const registerRoutes = () => {
 
     const updated = await prisma.order.update({
       where: { id },
-      data: { status: "PRINTING" },
+      data: { status: "PRINTING", printingClaimedAt: new Date() },
     });
 
     sendOrderStreamEvent(storeId, "order.updated", {
@@ -4995,9 +4999,17 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Order not found" });
     }
 
+    const updateData: Prisma.OrderUpdateInput = { status };
+    if (status === "PRINTING") {
+      updateData.printingClaimedAt = order.printingClaimedAt ?? new Date();
+    }
+    if (status === "NEW") {
+      updateData.printingClaimedAt = null;
+    }
+
     const updated = await prisma.order.update({
       where: { id },
-      data: { status },
+      data: updateData,
     });
 
     sendOrderStreamEvent(agent.storeId, "order.updated", {
@@ -5447,6 +5459,18 @@ const start = async () => {
   });
 
   registerRoutes();
+  const recoverIntervalMs = Number(
+    process.env.RECOVER_STUCK_ORDERS_INTERVAL_MS ?? 30000
+  );
+  const runRecoverStuckOrders = async () => {
+    try {
+      await recoverStuckOrders(prisma, { logger: app.log });
+    } catch (error) {
+      app.log.error({ err: error }, "recoverStuckOrders: execution failed");
+    }
+  };
+  runRecoverStuckOrders();
+  setInterval(runRecoverStuckOrders, recoverIntervalMs);
 
   app.ready((err) => {
     if (err) {
