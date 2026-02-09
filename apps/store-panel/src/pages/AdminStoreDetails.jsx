@@ -7,8 +7,15 @@ const AdminStoreDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
+  const [periodChoice, setPeriodChoice] = useState("7");
+  const [customDays, setCustomDays] = useState("7");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const resolvedDays =
+    periodChoice === "custom" ? Number(customDays) : Number(periodChoice);
+  const isCustomDaysValid =
+    periodChoice !== "custom" ||
+    (Number.isFinite(resolvedDays) && resolvedDays > 0);
 
   useEffect(() => {
     let active = true;
@@ -18,10 +25,15 @@ const AdminStoreDetails = () => {
         setLoading(false);
         return;
       }
+      if (!isCustomDaysValid) {
+        setError("Informe um período válido.");
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError("");
       try {
-        const data = await adminApi.getStoreWeekStats(id);
+        const data = await adminApi.getStoreStats(id, resolvedDays);
         if (active) {
           setStats(data);
         }
@@ -40,7 +52,7 @@ const AdminStoreDetails = () => {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, resolvedDays, isCustomDaysValid]);
 
   return (
     <div className="space-y-6">
@@ -54,6 +66,39 @@ const AdminStoreDetails = () => {
         <Button variant="secondary" onClick={() => navigate("/admin/stores")}>
           Voltar
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Período
+          <select
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            value={periodChoice}
+            onChange={(event) => {
+              setPeriodChoice(event.target.value);
+              if (event.target.value !== "custom") {
+                setCustomDays(event.target.value);
+              }
+            }}
+          >
+            <option value="7">Últimos 7 dias</option>
+            <option value="15">Últimos 15 dias</option>
+            <option value="30">Últimos 30 dias</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </label>
+        {periodChoice === "custom" ? (
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Dias
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              value={customDays}
+              onChange={(event) => setCustomDays(event.target.value)}
+            />
+          </label>
+        ) : null}
       </div>
 
       {error ? (
@@ -70,10 +115,10 @@ const AdminStoreDetails = () => {
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs uppercase text-slate-400">
-              Pedidos últimos 7 dias
+              Pedidos últimos {resolvedDays} dias
             </p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {stats?.ordersLast7Days ?? 0}
+              {stats?.ordersInPeriod ?? 0}
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

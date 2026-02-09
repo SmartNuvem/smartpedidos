@@ -739,7 +739,13 @@ const PublicOrder = () => {
   const isCustomerPhoneValid = isDineInOrder ? true : [8, 9, 10, 11].includes(customerPhoneDigits.length);
   const isDelivery = !isDineInOrder && fulfillmentType === "DELIVERY" && allowDelivery;
   const deliveryFeeCents = isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
-  const totalCents = subtotalCents + deliveryFeeCents;
+  const shouldShowConvenienceFee =
+    menu?.store?.billingModel === "PER_ORDER" &&
+    menu?.store?.showFeeOnPublicMenu &&
+    (menu?.store?.perOrderFeeCents ?? 0) > 0;
+  const convenienceFeeCents = shouldShowConvenienceFee ? menu.store.perOrderFeeCents : 0;
+  const convenienceFeeLabel = menu?.store?.feeLabel || "Taxa de conveniência do app";
+  const totalCents = subtotalCents + deliveryFeeCents + convenienceFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
   const showLogo = Boolean(menu?.store?.logoUrl) && !logoLoadError;
   const showBanner = Boolean(menu?.store?.bannerUrl) && !bannerLoadError;
@@ -1244,6 +1250,14 @@ const PublicOrder = () => {
                   <span>Taxa entrega</span>
                   <span className="font-semibold text-slate-900">
                     {formatCurrency(deliveryFeeCents / 100)}
+                  </span>
+                </div>
+              ) : null}
+              {convenienceFeeCents > 0 ? (
+                <div className="mt-2 flex items-center justify-between text-slate-700">
+                  <span>{convenienceFeeLabel}</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCurrency(convenienceFeeCents / 100)}
                   </span>
                 </div>
               ) : null}

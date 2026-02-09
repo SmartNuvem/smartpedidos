@@ -141,6 +141,13 @@ export const buildOrderPdf = (order: OrderReceipt) => {
       `Taxa entrega: ${currency.format(order.deliveryFeeCents / 100)}`
     );
   }
+  if (order.convenienceFeeCents > 0) {
+    const feeLabel =
+      order.convenienceFeeLabel ?? "Taxa de conveniência do app";
+    doc.text(
+      `${feeLabel}: ${currency.format(order.convenienceFeeCents / 100)}`
+    );
+  }
 
   doc.fontSize(12).text(`Total: ${currency.format(order.total.toNumber())}`, {
     align: "right",

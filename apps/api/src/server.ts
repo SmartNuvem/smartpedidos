@@ -991,6 +991,10 @@ const registerRoutes = () => {
         allowDelivery: store.allowDelivery,
         logoUrl: store.logoUrl,
         bannerUrl: store.bannerUrl,
+        billingModel: store.billingModel,
+        perOrderFeeCents: store.perOrderFeeCents,
+        showFeeOnPublicMenu: store.showFeeOnPublicMenu,
+        feeLabel: store.feeLabel,
       },
       categories: store.categories.map((category) => ({
         id: category.id,
@@ -1535,7 +1539,18 @@ const registerRoutes = () => {
       deliveryNeighborhood = area.name;
     }
 
-    const totalCents = subtotalCents + deliveryFeeCents;
+    const shouldApplyConvenienceFee =
+      store.billingModel === "PER_ORDER" &&
+      store.showFeeOnPublicMenu &&
+      store.perOrderFeeCents > 0;
+    const convenienceFeeCents = shouldApplyConvenienceFee
+      ? store.perOrderFeeCents
+      : 0;
+    const convenienceFeeLabel = shouldApplyConvenienceFee
+      ? store.feeLabel
+      : null;
+
+    const totalCents = subtotalCents + deliveryFeeCents + convenienceFeeCents;
     const total = totalCents / 100;
 
     if (!isDineIn && paymentMethod === "CASH") {
@@ -1575,6 +1590,8 @@ const registerRoutes = () => {
           tableId: isDineIn ? tableId ?? null : null,
           tableSessionId: isDineIn ? tableSessionId : null,
           deliveryFeeCents,
+          convenienceFeeCents,
+          convenienceFeeLabel,
           paymentMethod: effectivePaymentMethod,
           changeForCents:
             !isDineIn && paymentMethod === "CASH"
@@ -1749,6 +1766,51 @@ const registerRoutes = () => {
     return requireAdmin(request, reply);
   });
 
+  const buildAdminStoreStats = async (storeId: string, days: number) => {
+    const now = new Date();
+    const periodStart = new Date(now);
+    periodStart.setDate(periodStart.getDate() - days);
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [ordersInPeriod, ordersToday, lastOrder] = await Promise.all([
+      prisma.order.count({
+        where: {
+          storeId,
+          createdAt: {
+            gte: periodStart,
+          },
+        },
+      }),
+      prisma.order.count({
+        where: {
+          storeId,
+          createdAt: {
+            gte: startOfToday,
+          },
+        },
+      }),
+      prisma.order.findFirst({
+        where: {
+          storeId,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    return {
+      storeId,
+      ordersInPeriod,
+      ordersToday,
+      lastOrderAt: lastOrder?.createdAt ?? null,
+    };
+  };
+
   app.get("/admin/stores", async (_request, reply) => {
     const stores = await prisma.store.findMany({
       orderBy: { createdAt: "desc" },
@@ -1758,6 +1820,11 @@ const registerRoutes = () => {
         slug: true,
         email: true,
         isActive: true,
+        billingModel: true,
+        monthlyPriceCents: true,
+        perOrderFeeCents: true,
+        showFeeOnPublicMenu: true,
+        feeLabel: true,
         createdAt: true,
       },
     });
@@ -1769,56 +1836,40 @@ const registerRoutes = () => {
         slug: store.slug,
         email: store.email,
         isActive: store.isActive,
+        billingModel: store.billingModel,
+        monthlyPriceCents: store.monthlyPriceCents,
+        perOrderFeeCents: store.perOrderFeeCents,
+        showFeeOnPublicMenu: store.showFeeOnPublicMenu,
+        feeLabel: store.feeLabel,
         createdAt: store.createdAt,
       }))
     );
   });
 
+  app.get("/admin/stores/:id/stats", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const querySchema = z.object({
+      days: z.coerce.number().int().positive().max(365).optional(),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { days } = querySchema.parse(request.query ?? {});
+    const periodDays = days ?? 7;
+
+    const stats = await buildAdminStoreStats(id, periodDays);
+    return reply.send(stats);
+  });
+
   app.get("/admin/stores/:id/stats/week", async (request, reply) => {
     const paramsSchema = z.object({ id: z.string().uuid() });
     const { id } = paramsSchema.parse(request.params);
-
-    const now = new Date();
-    const sevenDaysAgo = new Date(now);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const [ordersLast7Days, ordersToday, lastOrder] = await Promise.all([
-      prisma.order.count({
-        where: {
-          storeId: id,
-          createdAt: {
-            gte: sevenDaysAgo,
-          },
-        },
-      }),
-      prisma.order.count({
-        where: {
-          storeId: id,
-          createdAt: {
-            gte: startOfToday,
-          },
-        },
-      }),
-      prisma.order.findFirst({
-        where: {
-          storeId: id,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        select: {
-          createdAt: true,
-        },
-      }),
-    ]);
+    const stats = await buildAdminStoreStats(id, 7);
 
     return reply.send({
       storeId: id,
-      ordersLast7Days,
-      ordersToday,
-      lastOrderAt: lastOrder?.createdAt ?? null,
+      ordersLast7Days: stats.ordersInPeriod,
+      ordersToday: stats.ordersToday,
+      lastOrderAt: stats.lastOrderAt,
     });
   });
 
@@ -1829,9 +1880,25 @@ const registerRoutes = () => {
       email: z.string().email(),
       password: z.string().min(6),
       isActive: z.boolean().optional(),
+      billingModel: z.enum(["MONTHLY", "PER_ORDER"]).optional(),
+      monthlyPriceCents: z.number().int().nonnegative().nullable().optional(),
+      perOrderFeeCents: z.number().int().nonnegative().optional(),
+      showFeeOnPublicMenu: z.boolean().optional(),
+      feeLabel: z.string().min(1).optional(),
     });
 
-    const { name, slug, email, password, isActive } = bodySchema.parse(
+    const {
+      name,
+      slug,
+      email,
+      password,
+      isActive,
+      billingModel,
+      monthlyPriceCents,
+      perOrderFeeCents,
+      showFeeOnPublicMenu,
+      feeLabel,
+    } = bodySchema.parse(
       request.body
     );
     const normalizedSlug = normalizeSlug(slug);
@@ -1839,6 +1906,13 @@ const registerRoutes = () => {
       return reply.status(400).send({ message: "Invalid slug" });
     }
     const passwordHash = await bcrypt.hash(password, 10);
+    const resolvedBillingModel = billingModel ?? "MONTHLY";
+
+    if (resolvedBillingModel === "PER_ORDER" && !feeLabel?.trim()) {
+      return reply
+        .status(400)
+        .send({ message: "Informe o texto da taxa." });
+    }
 
     try {
       const store = await prisma.store.create({
@@ -1848,6 +1922,21 @@ const registerRoutes = () => {
           email,
           passwordHash,
           isActive: isActive ?? true,
+          billingModel: resolvedBillingModel,
+          monthlyPriceCents:
+            resolvedBillingModel === "MONTHLY" ? monthlyPriceCents ?? null : null,
+          perOrderFeeCents:
+            resolvedBillingModel === "PER_ORDER"
+              ? perOrderFeeCents ?? 0
+              : 0,
+          showFeeOnPublicMenu:
+            resolvedBillingModel === "PER_ORDER"
+              ? showFeeOnPublicMenu ?? false
+              : false,
+          feeLabel:
+            resolvedBillingModel === "PER_ORDER"
+              ? feeLabel?.trim()
+              : "Taxa de conveniência do app",
         },
         select: {
           id: true,
@@ -1855,6 +1944,11 @@ const registerRoutes = () => {
           slug: true,
           email: true,
           isActive: true,
+          billingModel: true,
+          monthlyPriceCents: true,
+          perOrderFeeCents: true,
+          showFeeOnPublicMenu: true,
+          feeLabel: true,
           createdAt: true,
         },
       });
@@ -1865,6 +1959,11 @@ const registerRoutes = () => {
         slug: store.slug,
         email: store.email,
         isActive: store.isActive,
+        billingModel: store.billingModel,
+        monthlyPriceCents: store.monthlyPriceCents,
+        perOrderFeeCents: store.perOrderFeeCents,
+        showFeeOnPublicMenu: store.showFeeOnPublicMenu,
+        feeLabel: store.feeLabel,
         createdAt: store.createdAt,
       });
     } catch (error) {
@@ -1887,12 +1986,37 @@ const registerRoutes = () => {
       slug: z.string().min(1).optional(),
       email: z.string().email().optional(),
       isActive: z.boolean().optional(),
+      billingModel: z.enum(["MONTHLY", "PER_ORDER"]).optional(),
+      monthlyPriceCents: z.number().int().nonnegative().nullable().optional(),
+      perOrderFeeCents: z.number().int().nonnegative().optional(),
+      showFeeOnPublicMenu: z.boolean().optional(),
+      feeLabel: z.string().min(1).optional(),
     });
 
     const { id } = paramsSchema.parse(request.params);
-    const { name, slug, email, isActive } = bodySchema.parse(request.body);
+    const {
+      name,
+      slug,
+      email,
+      isActive,
+      billingModel,
+      monthlyPriceCents,
+      perOrderFeeCents,
+      showFeeOnPublicMenu,
+      feeLabel,
+    } = bodySchema.parse(request.body);
 
-    if (!name && !slug && !email && isActive === undefined) {
+    if (
+      !name &&
+      !slug &&
+      !email &&
+      isActive === undefined &&
+      !billingModel &&
+      monthlyPriceCents === undefined &&
+      perOrderFeeCents === undefined &&
+      showFeeOnPublicMenu === undefined &&
+      !feeLabel
+    ) {
       return reply.status(400).send({ message: "No changes provided" });
     }
 
@@ -1902,6 +2026,43 @@ const registerRoutes = () => {
     }
 
     try {
+      const currentStore = await prisma.store.findUnique({
+        where: { id },
+        select: {
+          billingModel: true,
+          monthlyPriceCents: true,
+          perOrderFeeCents: true,
+          showFeeOnPublicMenu: true,
+          feeLabel: true,
+        },
+      });
+
+      if (!currentStore) {
+        return reply.status(404).send({ message: "Store not found" });
+      }
+
+      const nextBillingModel = billingModel ?? currentStore.billingModel;
+      const nextMonthlyPriceCents =
+        monthlyPriceCents ?? currentStore.monthlyPriceCents;
+      const nextPerOrderFeeCents =
+        perOrderFeeCents ?? currentStore.perOrderFeeCents;
+      const nextShowFeeOnPublicMenu =
+        showFeeOnPublicMenu ?? currentStore.showFeeOnPublicMenu;
+      const nextFeeLabel = feeLabel?.trim() ?? currentStore.feeLabel;
+
+      if (nextBillingModel === "PER_ORDER" && !nextFeeLabel?.trim()) {
+        return reply
+          .status(400)
+          .send({ message: "Informe o texto da taxa." });
+      }
+
+      const resolvedPerOrderFeeCents =
+        nextBillingModel === "PER_ORDER" ? nextPerOrderFeeCents : 0;
+      const resolvedShowFeeOnPublicMenu =
+        nextBillingModel === "PER_ORDER" ? nextShowFeeOnPublicMenu : false;
+      const resolvedMonthlyPriceCents =
+        nextBillingModel === "MONTHLY" ? nextMonthlyPriceCents : null;
+
       const store = await prisma.store.update({
         where: { id },
         data: {
@@ -1909,6 +2070,14 @@ const registerRoutes = () => {
           slug: normalizedSlug,
           email,
           isActive,
+          billingModel: nextBillingModel,
+          monthlyPriceCents: resolvedMonthlyPriceCents,
+          perOrderFeeCents: resolvedPerOrderFeeCents,
+          showFeeOnPublicMenu: resolvedShowFeeOnPublicMenu,
+          feeLabel:
+            nextBillingModel === "PER_ORDER"
+              ? nextFeeLabel
+              : "Taxa de conveniência do app",
         },
         select: {
           id: true,
@@ -1916,6 +2085,11 @@ const registerRoutes = () => {
           slug: true,
           email: true,
           isActive: true,
+          billingModel: true,
+          monthlyPriceCents: true,
+          perOrderFeeCents: true,
+          showFeeOnPublicMenu: true,
+          feeLabel: true,
           createdAt: true,
         },
       });
@@ -1926,6 +2100,11 @@ const registerRoutes = () => {
         slug: store.slug,
         email: store.email,
         isActive: store.isActive,
+        billingModel: store.billingModel,
+        monthlyPriceCents: store.monthlyPriceCents,
+        perOrderFeeCents: store.perOrderFeeCents,
+        showFeeOnPublicMenu: store.showFeeOnPublicMenu,
+        feeLabel: store.feeLabel,
         createdAt: store.createdAt,
       });
     } catch (error) {
@@ -3368,6 +3547,8 @@ const registerRoutes = () => {
       fulfillmentType: order.fulfillmentType,
       total: order.total.toNumber(),
       deliveryFeeCents: order.deliveryFeeCents,
+      convenienceFeeCents: order.convenienceFeeCents,
+      convenienceFeeLabel: order.convenienceFeeLabel,
       paymentMethod: order.paymentMethod,
       changeForCents: order.changeForCents,
       createdAt: order.createdAt,
@@ -4390,6 +4571,8 @@ const registerRoutes = () => {
           }
         : null,
       deliveryFeeCents: order.deliveryFeeCents,
+      convenienceFeeCents: order.convenienceFeeCents,
+      convenienceFeeLabel: order.convenienceFeeLabel,
       paymentMethod: order.paymentMethod,
       changeForCents: order.changeForCents,
       paidStatus: order.paidStatus,
@@ -4586,6 +4769,8 @@ const registerRoutes = () => {
       changeForCents: order.changeForCents,
       paidStatus: order.paidStatus,
       deliveryFeeCents: order.deliveryFeeCents,
+      convenienceFeeCents: order.convenienceFeeCents,
+      convenienceFeeLabel: order.convenienceFeeLabel,
       notes: order.notes,
       addressLine: order.addressLine,
       addressNumber: order.addressNumber,
@@ -4651,6 +4836,8 @@ const registerRoutes = () => {
       changeForCents: order.changeForCents,
       paidStatus: order.paidStatus,
       deliveryFeeCents: order.deliveryFeeCents,
+      convenienceFeeCents: order.convenienceFeeCents,
+      convenienceFeeLabel: order.convenienceFeeLabel,
       notes: order.notes,
       addressLine: order.addressLine,
       addressNumber: order.addressNumber,
