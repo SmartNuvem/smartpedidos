@@ -18,6 +18,11 @@ const formatDate = (date: Date) =>
     timeStyle: "short",
   }).format(date);
 
+const formatDateOnly = (date: Date) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(date);
+
 export type OrderReceipt = Order & {
   store: Store;
   items: Array<OrderItem & { product: Product; options?: OrderItemOption[] }>;
@@ -35,6 +40,18 @@ export type TableSummaryReceipt = {
   items: TableSummaryItem[];
   totalCents: number;
   closedAt?: Date | null;
+};
+
+export type BillingReport = {
+  store: Pick<
+    Store,
+    "id" | "name" | "feeLabel" | "perOrderFeeCents" | "billingModel"
+  >;
+  from: Date;
+  to: Date;
+  ordersCount: number;
+  totalCents: number;
+  generatedAt: Date;
 };
 
 export const buildOrderPdf = (order: OrderReceipt) => {
@@ -189,6 +206,41 @@ export const buildTableSummaryPdf = (summary: TableSummaryReceipt) => {
     `Total: ${currency.format(summary.totalCents / 100)}`,
     { align: "right" }
   );
+
+  doc.end();
+  return doc;
+};
+
+export const buildBillingPdf = (report: BillingReport) => {
+  const doc = new PDFDocument({
+    size: "A4",
+    margins: { top: 48, bottom: 48, left: 48, right: 48 },
+  });
+
+  doc.fontSize(18).text("Relatório de cobrança", { align: "center" });
+  doc.moveDown(1);
+
+  doc.fontSize(12).text(`Loja: ${report.store.name} (${report.store.id})`);
+  doc.text(
+    `Período: ${formatDateOnly(report.from)} - ${formatDateOnly(report.to)}`
+  );
+  doc.text("Modelo: PER_ORDER");
+  doc.text(
+    `Texto da taxa: ${report.store.feeLabel ?? "Taxa de conveniência do app"}`
+  );
+  doc.text(
+    `Taxa por pedido: ${currency.format(
+      (report.store.perOrderFeeCents ?? 0) / 100
+    )}`
+  );
+  doc.text(`Quantidade de pedidos: ${report.ordersCount}`);
+  doc.text(
+    `Total a pagar: ${currency.format(report.totalCents / 100)}`
+  );
+  doc.text(`Data de geração: ${formatDate(report.generatedAt)}`);
+
+  doc.moveDown(4);
+  doc.fontSize(10).text("SmartNuvem Informática", { align: "center" });
 
   doc.end();
   return doc;
