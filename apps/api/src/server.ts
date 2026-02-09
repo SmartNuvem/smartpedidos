@@ -24,7 +24,7 @@ import {
   maskToken,
   requireAdmin,
 } from "./auth";
-import { buildOrderPdf, buildTableSummaryPdf } from "./pdf";
+import { buildBillingPdf, buildOrderPdf, buildTableSummaryPdf } from "./pdf";
 import type { JwtUser } from "./types/jwt";
 
 const slugRegex = /^[a-z0-9-]+$/;
@@ -1871,6 +1871,117 @@ const registerRoutes = () => {
       ordersToday: stats.ordersToday,
       lastOrderAt: stats.lastOrderAt,
     });
+  });
+
+  app.get("/admin/stores/:id", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        email: true,
+        isActive: true,
+        billingModel: true,
+        monthlyPriceCents: true,
+        perOrderFeeCents: true,
+        showFeeOnPublicMenu: true,
+        feeLabel: true,
+        createdAt: true,
+      },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    return reply.send({
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+      email: store.email,
+      isActive: store.isActive,
+      billingModel: store.billingModel,
+      monthlyPriceCents: store.monthlyPriceCents,
+      perOrderFeeCents: store.perOrderFeeCents,
+      showFeeOnPublicMenu: store.showFeeOnPublicMenu,
+      feeLabel: store.feeLabel,
+      createdAt: store.createdAt,
+    });
+  });
+
+  app.get("/admin/stores/:id/billing.pdf", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const querySchema = z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { from, to } = querySchema.parse(request.query ?? {});
+
+    const parseDate = (value: string, endOfDay = false) => {
+      const date = new Date(
+        `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`
+      );
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+
+    const fromDate = parseDate(from);
+    const toDate = parseDate(to, true);
+
+    if (!fromDate || !toDate || fromDate > toDate) {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        billingModel: true,
+        perOrderFeeCents: true,
+        feeLabel: true,
+      },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    if (store.billingModel !== "PER_ORDER") {
+      return reply.status(400).send({ message: "Loja no plano mensal." });
+    }
+
+    const ordersCount = await prisma.order.count({
+      where: {
+        storeId: id,
+        createdAt: {
+          gte: fromDate,
+          lte: toDate,
+        },
+      },
+    });
+
+    const totalCents = ordersCount * (store.perOrderFeeCents ?? 0);
+    const pdf = buildBillingPdf({
+      store,
+      from: fromDate,
+      to: toDate,
+      ordersCount,
+      totalCents,
+      generatedAt: new Date(),
+    });
+
+    reply.header("Content-Type", "application/pdf");
+    reply.header(
+      "Content-Disposition",
+      `inline; filename=billing-${id}-${from}-${to}.pdf`
+    );
+    return reply.send(pdf);
   });
 
   app.post("/admin/stores", async (request, reply) => {

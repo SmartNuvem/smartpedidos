@@ -483,6 +483,33 @@ export const adminApi = {
     );
     return handleResponse(response);
   },
+  getStore: async (id) => {
+    const response = await request(`${API_URL}/admin/stores/${id}`, {
+      headers: buildAdminHeaders(),
+    });
+    return handleResponse(response);
+  },
+  getBillingPdf: async (id, { from, to }) => {
+    const query = new URLSearchParams({ from, to });
+    const response = await request(
+      `${API_URL}/admin/stores/${id}/billing.pdf?${query.toString()}`,
+      {
+        headers: buildAdminHeaders({
+          Accept: "application/pdf",
+        }),
+      }
+    );
+
+    if (response.ok) {
+      return response.blob();
+    }
+
+    const error = await response.json().catch(() => ({}));
+    const message = error.message || "Erro inesperado";
+    const err = new Error(message);
+    err.status = response.status;
+    throw err;
+  },
   createStore: async (payload) => {
     const response = await request(`${API_URL}/admin/stores`, {
       method: "POST",
