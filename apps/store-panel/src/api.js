@@ -473,9 +473,10 @@ export const adminApi = {
     });
     return handleResponse(response);
   },
-  getStoreWeekStats: async (id) => {
+  getStoreStats: async (id, days) => {
+    const query = days ? `?days=${days}` : "";
     const response = await request(
-      `${API_URL}/admin/stores/${id}/stats/week`,
+      `${API_URL}/admin/stores/${id}/stats${query}`,
       {
         headers: buildAdminHeaders(),
       }

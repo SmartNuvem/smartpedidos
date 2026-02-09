@@ -53,6 +53,11 @@ enum OrderType {
   DINE_IN
 }
 
+enum BillingModel {
+  MONTHLY
+  PER_ORDER
+}
+
 enum PrintJobType {
   KITCHEN_ORDER
   CASHIER_TABLE_SUMMARY
@@ -71,33 +76,38 @@ enum TableStatus {
 }
 
 model Store {
-  id              String                @id @default(uuid())
-  name            String
-  slug            String                @unique
-  email           String?               @unique
-  passwordHash    String?
-  isActive        Boolean               @default(true)
-  autoPrintEnabled Boolean              @default(false)
-  cashierPrintEnabled Boolean           @default(false)
-  allowPickup     Boolean               @default(true)
-  allowDelivery   Boolean               @default(true)
-  logoUrl         String?               @db.VarChar(500)
-  bannerUrl       String?               @db.VarChar(500)
-  salonEnabled    Boolean               @default(false)
-  salonTableCount Int                   @default(0)
-  waiterPinHash   String?
-  waiterPwaEnabled Boolean              @default(true)
-  timezone        String                @default("America/Sao_Paulo")
-  categories      Category[]
-  orders          Order[]
-  tables          SalonTable[]
-  agents          Agent[]
-  deliveryAreas   DeliveryArea[]
-  hours           StoreHours?
-  paymentSettings StorePaymentSettings?
-  printJobs       PrintJob[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id                 String                @id @default(uuid())
+  name               String
+  slug               String                @unique
+  email              String?               @unique
+  passwordHash       String?
+  isActive           Boolean               @default(true)
+  autoPrintEnabled   Boolean               @default(false)
+  cashierPrintEnabled Boolean              @default(false)
+  allowPickup        Boolean               @default(true)
+  allowDelivery      Boolean               @default(true)
+  logoUrl            String?               @db.VarChar(500)
+  bannerUrl          String?               @db.VarChar(500)
+  salonEnabled       Boolean               @default(false)
+  salonTableCount    Int                   @default(0)
+  waiterPinHash      String?
+  waiterPwaEnabled   Boolean               @default(true)
+  timezone           String                @default("America/Sao_Paulo")
+  billingModel       BillingModel          @default(MONTHLY)
+  monthlyPriceCents  Int?
+  perOrderFeeCents   Int                   @default(0)
+  showFeeOnPublicMenu Boolean              @default(false)
+  feeLabel           String                @default("Taxa de conveniência do app")
+  categories         Category[]
+  orders             Order[]
+  tables             SalonTable[]
+  agents             Agent[]
+  deliveryAreas      DeliveryArea[]
+  hours              StoreHours?
+  paymentSettings    StorePaymentSettings?
+  printJobs          PrintJob[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 }
 
 model Category {
@@ -163,6 +173,8 @@ model Order {
   tableSessionId      String?
   table               SalonTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
   deliveryFeeCents    Int             @default(0)
+  convenienceFeeCents Int             @default(0)
+  convenienceFeeLabel String?
   paymentMethod       PaymentMethod   @default(CASH)
   changeForCents      Int?
   paidStatus          PaidStatus      @default(UNPAID)

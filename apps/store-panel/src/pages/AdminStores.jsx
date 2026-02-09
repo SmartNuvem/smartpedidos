@@ -13,6 +13,30 @@ const initialStoreForm = {
   email: "",
   password: "",
   isActive: true,
+  billingModel: "MONTHLY",
+  monthlyPrice: "",
+  perOrderFee: "0.00",
+  showFeeOnPublicMenu: false,
+  feeLabel: "Taxa de conveniência do app",
+};
+
+const toCents = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const normalized = String(value).replace(",", ".");
+  const parsed = Number(normalized);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+  return Math.round(parsed * 100);
+};
+
+const toDisplayValue = (cents) => {
+  if (cents === null || cents === undefined) {
+    return "";
+  }
+  return (cents / 100).toFixed(2);
 };
 
 const AdminStores = () => {
@@ -58,7 +82,19 @@ const AdminStores = () => {
     event.preventDefault();
     setSaving(true);
     try {
-      await adminApi.createStore(formState);
+      const payload = {
+        name: formState.name,
+        slug: formState.slug,
+        email: formState.email,
+        password: formState.password,
+        isActive: formState.isActive,
+        billingModel: formState.billingModel,
+        monthlyPriceCents: toCents(formState.monthlyPrice),
+        perOrderFeeCents: toCents(formState.perOrderFee) ?? 0,
+        showFeeOnPublicMenu: formState.showFeeOnPublicMenu,
+        feeLabel: formState.feeLabel?.trim() || undefined,
+      };
+      await adminApi.createStore(payload);
       setCreateOpen(false);
       setFormState(initialStoreForm);
       await loadStores();
@@ -74,8 +110,29 @@ const AdminStores = () => {
     if (!editState) return;
     setSaving(true);
     try {
-      const { id, name, slug, email, isActive } = editState;
-      await adminApi.updateStore(id, { name, slug, email, isActive });
+      const {
+        id,
+        name,
+        slug,
+        email,
+        isActive,
+        billingModel,
+        monthlyPrice,
+        perOrderFee,
+        showFeeOnPublicMenu,
+        feeLabel,
+      } = editState;
+      await adminApi.updateStore(id, {
+        name,
+        slug,
+        email,
+        isActive,
+        billingModel,
+        monthlyPriceCents: toCents(monthlyPrice),
+        perOrderFeeCents: toCents(perOrderFee) ?? 0,
+        showFeeOnPublicMenu,
+        feeLabel: feeLabel?.trim() || undefined,
+      });
       setEditOpen(false);
       setEditState(null);
       await loadStores();
@@ -219,6 +276,12 @@ const AdminStores = () => {
                           slug: store.slug,
                           email: store.email ?? "",
                           isActive: store.isActive,
+                          billingModel: store.billingModel ?? "MONTHLY",
+                          monthlyPrice: toDisplayValue(store.monthlyPriceCents),
+                          perOrderFee: toDisplayValue(store.perOrderFeeCents),
+                          showFeeOnPublicMenu: store.showFeeOnPublicMenu ?? false,
+                          feeLabel:
+                            store.feeLabel ?? "Taxa de conveniência do app",
                         });
                         setEditOpen(true);
                       }}
@@ -340,6 +403,84 @@ const AdminStores = () => {
             />
             Ativar loja automaticamente
           </label>
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-700">Cobrança</h3>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Modelo de cobrança
+              <select
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                value={formState.billingModel}
+                onChange={(event) => {
+                  const model = event.target.value;
+                  setFormState((prev) => ({
+                    ...prev,
+                    billingModel: model,
+                    showFeeOnPublicMenu:
+                      model === "PER_ORDER" ? prev.showFeeOnPublicMenu : false,
+                    perOrderFee: model === "PER_ORDER" ? prev.perOrderFee : "0.00",
+                  }));
+                }}
+              >
+                <option value="MONTHLY">Mensal</option>
+                <option value="PER_ORDER">Por pedido</option>
+              </select>
+            </label>
+            {formState.billingModel === "MONTHLY" ? (
+              <Input
+                label="Valor mensal (R$)"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formState.monthlyPrice}
+                onChange={(event) =>
+                  setFormState((prev) => ({
+                    ...prev,
+                    monthlyPrice: event.target.value,
+                  }))
+                }
+              />
+            ) : (
+              <>
+                <Input
+                  label="Taxa por pedido (R$)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formState.perOrderFee}
+                  onChange={(event) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      perOrderFee: event.target.value,
+                    }))
+                  }
+                />
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={formState.showFeeOnPublicMenu}
+                    onChange={(event) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        showFeeOnPublicMenu: event.target.checked,
+                      }))
+                    }
+                  />
+                  Exibir taxa no cardápio público
+                </label>
+                <Input
+                  label="Texto da taxa"
+                  value={formState.feeLabel}
+                  onChange={(event) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      feeLabel: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </>
+            )}
+          </div>
         </form>
       </Modal>
 
@@ -400,6 +541,84 @@ const AdminStores = () => {
             />
             Loja ativa
           </label>
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-700">Cobrança</h3>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Modelo de cobrança
+              <select
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                value={editState?.billingModel ?? "MONTHLY"}
+                onChange={(event) => {
+                  const model = event.target.value;
+                  setEditState((prev) => ({
+                    ...prev,
+                    billingModel: model,
+                    showFeeOnPublicMenu:
+                      model === "PER_ORDER" ? prev.showFeeOnPublicMenu : false,
+                    perOrderFee: model === "PER_ORDER" ? prev.perOrderFee : "0.00",
+                  }));
+                }}
+              >
+                <option value="MONTHLY">Mensal</option>
+                <option value="PER_ORDER">Por pedido</option>
+              </select>
+            </label>
+            {editState?.billingModel === "MONTHLY" ? (
+              <Input
+                label="Valor mensal (R$)"
+                type="number"
+                step="0.01"
+                min="0"
+                value={editState?.monthlyPrice ?? ""}
+                onChange={(event) =>
+                  setEditState((prev) => ({
+                    ...prev,
+                    monthlyPrice: event.target.value,
+                  }))
+                }
+              />
+            ) : (
+              <>
+                <Input
+                  label="Taxa por pedido (R$)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editState?.perOrderFee ?? ""}
+                  onChange={(event) =>
+                    setEditState((prev) => ({
+                      ...prev,
+                      perOrderFee: event.target.value,
+                    }))
+                  }
+                />
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(editState?.showFeeOnPublicMenu)}
+                    onChange={(event) =>
+                      setEditState((prev) => ({
+                        ...prev,
+                        showFeeOnPublicMenu: event.target.checked,
+                      }))
+                    }
+                  />
+                  Exibir taxa no cardápio público
+                </label>
+                <Input
+                  label="Texto da taxa"
+                  value={editState?.feeLabel ?? ""}
+                  onChange={(event) =>
+                    setEditState((prev) => ({
+                      ...prev,
+                      feeLabel: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </>
+            )}
+          </div>
         </form>
       </Modal>
 

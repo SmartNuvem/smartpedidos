@@ -207,6 +207,16 @@ const OrderDetails = () => {
                   </span>
                 </div>
               ) : null}
+              {order.convenienceFeeCents > 0 ? (
+                <div className="flex items-center justify-between">
+                  <span>
+                    {order.convenienceFeeLabel || "Taxa de conveniência do app"}
+                  </span>
+                  <span className="font-semibold text-slate-900">
+                    {formatCurrency(order.convenienceFeeCents / 100)}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between text-base font-semibold text-slate-900">
                 <span>Total</span>
                 <span>{formatCurrency(order.total)}</span>
