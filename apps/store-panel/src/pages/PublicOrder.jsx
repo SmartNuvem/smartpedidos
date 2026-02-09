@@ -739,11 +739,12 @@ const PublicOrder = () => {
   const isCustomerPhoneValid = isDineInOrder ? true : [8, 9, 10, 11].includes(customerPhoneDigits.length);
   const isDelivery = !isDineInOrder && fulfillmentType === "DELIVERY" && allowDelivery;
   const deliveryFeeCents = isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
+  const itemsCount = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const hasItems = itemsCount > 0;
   const shouldShowConvenienceFee =
-    menu?.store?.billingModel === "PER_ORDER" &&
-    menu?.store?.showFeeOnPublicMenu &&
-    (menu?.store?.perOrderFeeCents ?? 0) > 0;
-  const convenienceFeeCents = shouldShowConvenienceFee ? menu.store.perOrderFeeCents : 0;
+    hasItems && menu?.store?.billingModel === "PER_ORDER" && menu?.store?.showFeeOnPublicMenu;
+  const baseConvenienceFeeCents = menu?.store?.perOrderFeeCents ?? menu?.store?.convenienceFeeCents ?? 0;
+  const convenienceFeeCents = shouldShowConvenienceFee ? baseConvenienceFeeCents : 0;
   const convenienceFeeLabel = menu?.store?.feeLabel || "Taxa de conveniência do app";
   const totalCents = subtotalCents + deliveryFeeCents + convenienceFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
@@ -1253,7 +1254,7 @@ const PublicOrder = () => {
                   </span>
                 </div>
               ) : null}
-              {convenienceFeeCents > 0 ? (
+              {shouldShowConvenienceFee && convenienceFeeCents > 0 ? (
                 <div className="mt-2 flex items-center justify-between text-slate-700">
                   <span>{convenienceFeeLabel}</span>
                   <span className="font-semibold text-slate-900">
