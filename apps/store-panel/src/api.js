@@ -49,6 +49,20 @@ const buildWaiterHeaders = (headers = {}) => {
   return baseHeaders;
 };
 
+const buildStoreRevenueQuery = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.range) {
+    query.set("range", params.range);
+  }
+  if (params.start) {
+    query.set("start", params.start);
+  }
+  if (params.end) {
+    query.set("end", params.end);
+  }
+  return query.toString();
+};
+
 const handleResponse = async (response) => {
   if (response.ok) {
     if (response.status === 204) {
@@ -126,6 +140,20 @@ export const api = {
       headers: buildHeaders(),
     });
     return handleResponse(response);
+  },
+  getRevenueSummary: async (params = {}) => {
+    const query = buildStoreRevenueQuery(params);
+    const response = await request(
+      `${API_URL}/store/revenue/summary${query ? `?${query}` : ""}`,
+      {
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
+  getRevenueReportPdfUrl: (params = {}) => {
+    const query = buildStoreRevenueQuery(params);
+    return `${API_URL}/store/revenue/report.pdf${query ? `?${query}` : ""}`;
   },
   updateStore: async (payload) => {
     const response = await request(`${API_URL}/store/me`, {

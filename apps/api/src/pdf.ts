@@ -54,6 +54,16 @@ export type BillingReport = {
   generatedAt: Date;
 };
 
+export type RevenueReport = {
+  store: Pick<Store, "name" | "slug">;
+  rangeLabel: string;
+  periodLabel: string;
+  ordersCount: number;
+  revenueCents: number;
+  averageTicketCents: number;
+  generatedAt: Date;
+};
+
 export const buildOrderPdf = (order: OrderReceipt) => {
   const doc = new PDFDocument({
     size: [226, 1000],
@@ -238,6 +248,33 @@ export const buildBillingPdf = (report: BillingReport) => {
     `Total a pagar: ${currency.format(report.totalCents / 100)}`
   );
   doc.text(`Data de geração: ${formatDate(report.generatedAt)}`);
+
+  doc.moveDown(4);
+  doc.fontSize(10).text("SmartNuvem Informática", { align: "center" });
+
+  doc.end();
+  return doc;
+};
+
+export const buildRevenuePdf = (report: RevenueReport) => {
+  const doc = new PDFDocument({
+    size: "A4",
+    margins: { top: 48, bottom: 48, left: 48, right: 48 },
+  });
+
+  doc.fontSize(20).text("Relatório de Faturamento", { align: "center" });
+  doc.moveDown(1);
+
+  doc.fontSize(12).text(`Loja: ${report.store.name} (${report.store.slug})`);
+  doc.text(`Período: ${report.rangeLabel}`);
+  doc.text(`Datas: ${report.periodLabel}`);
+  doc.moveDown(0.5);
+  doc.text(`Total faturado: ${currency.format(report.revenueCents / 100)}`);
+  doc.text(`Pedidos concluídos: ${report.ordersCount}`);
+  doc.text(
+    `Ticket médio: ${currency.format(report.averageTicketCents / 100)}`
+  );
+  doc.text(`Gerado em: ${formatDate(report.generatedAt)}`);
 
   doc.moveDown(4);
   doc.fontSize(10).text("SmartNuvem Informática", { align: "center" });
