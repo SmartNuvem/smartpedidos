@@ -151,6 +151,16 @@ export const api = {
     );
     return handleResponse(response);
   },
+  getRevenueTimeseries: async (params = {}) => {
+    const query = buildStoreRevenueQuery(params);
+    const response = await request(
+      `${API_URL}/store/revenue/timeseries${query ? `?${query}` : ""}`,
+      {
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
+  },
   getRevenueReportPdfUrl: (params = {}) => {
     const query = buildStoreRevenueQuery(params);
     return `${API_URL}/store/revenue/report.pdf${query ? `?${query}` : ""}`;

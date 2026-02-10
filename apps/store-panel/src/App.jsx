@@ -8,6 +8,7 @@ import AdminLogin from "./pages/AdminLogin";
 import AdminStoreDetails from "./pages/AdminStoreDetails";
 import AdminStores from "./pages/AdminStores";
 import Dashboard from "./pages/Dashboard";
+import Billing from "./pages/Billing";
 import Login from "./pages/Login";
 import Orders from "./pages/Orders";
 import OrderDetails from "./pages/OrderDetails";
@@ -107,6 +108,16 @@ const App = () => (
         <RequireAuth>
           <Layout>
             <Dashboard />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/billing"
+      element={
+        <RequireAuth>
+          <Layout>
+            <Billing />
           </Layout>
         </RequireAuth>
       }
