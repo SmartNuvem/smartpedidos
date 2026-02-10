@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import {
   OpenOverride,
+  OrderStatus,
   OrderType,
   Prisma,
   type PrismaClient,
@@ -2420,6 +2421,57 @@ const registerRoutes = () => {
       requireChangeForCash:
         store.paymentSettings?.requireChangeForCash ?? false,
     };
+  });
+
+  app.get("/store/dashboard/summary", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const [newOrders, ordersToday, revenueToday] = await Promise.all([
+      prisma.order.count({
+        where: {
+          storeId,
+          status: OrderStatus.NEW,
+        },
+      }),
+      prisma.order.count({
+        where: {
+          storeId,
+          createdAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+      }),
+      prisma.order.aggregate({
+        where: {
+          storeId,
+          status: OrderStatus.PRINTED,
+          createdAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+        _sum: {
+          total: true,
+        },
+      }),
+    ]);
+
+    return reply.send({
+      newOrders,
+      ordersToday,
+      revenueTodayCents: revenueToday._sum?.total
+        ? Math.round(revenueToday._sum.total.toNumber() * 100)
+        : 0,
+    });
   });
 
   app.patch("/store/me", async (request, reply) => {

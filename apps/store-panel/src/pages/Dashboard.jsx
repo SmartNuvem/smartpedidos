@@ -20,6 +20,11 @@ const Dashboard = () => {
   const [store, setStore] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dashboardSummary, setDashboardSummary] = useState({
+    newOrders: 0,
+    ordersToday: 0,
+    revenueTodayCents: 0,
+  });
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const knownOrderIdsRef = useRef(new Set());
@@ -65,13 +70,19 @@ const Dashboard = () => {
       setLoading(true);
       setError("");
       try {
-        const [storeData, ordersData] = await Promise.all([
+        const [storeData, ordersData, summaryData] = await Promise.all([
           api.getStore(),
           api.getOrders(),
+          api.getDashboardSummary(),
         ]);
         if (active) {
           setStore(storeData);
           setOrders(ordersData);
+          setDashboardSummary({
+            newOrders: summaryData?.newOrders ?? 0,
+            ordersToday: summaryData?.ordersToday ?? 0,
+            revenueTodayCents: summaryData?.revenueTodayCents ?? 0,
+          });
         }
       } catch {
         if (active) {
@@ -151,16 +162,6 @@ const Dashboard = () => {
     onOrderUpdated: handleOrderUpdated,
   });
 
-  const summary = useMemo(() => {
-    const today = new Date();
-    const todayKey = today.toDateString();
-    const newOrders = orders.filter((order) => order.status === "NEW").length;
-    const todaysOrders = orders.filter(
-      (order) => new Date(order.createdAt).toDateString() === todayKey
-    ).length;
-    return { newOrders, todaysOrders };
-  }, [orders]);
-
   const latestOrders = orders.slice(0, 5);
   const publicBaseUrl =
     import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin;
@@ -227,7 +228,7 @@ const Dashboard = () => {
                 Pedidos novos
               </p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {summary.newOrders}
+                {dashboardSummary.newOrders}
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -235,10 +236,21 @@ const Dashboard = () => {
                 Pedidos hoje
               </p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {summary.todaysOrders}
+                {dashboardSummary.ordersToday}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 lg:col-span-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase text-slate-500">
+                Faturamento hoje
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">
+                💰 {formatCurrency(dashboardSummary.revenueTodayCents / 100)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Somente pedidos PRINTED (hoje)
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
                 Loja
               </p>
