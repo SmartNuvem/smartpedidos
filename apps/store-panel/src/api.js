@@ -121,6 +121,12 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getDashboardSummary: async () => {
+    const response = await request(`${API_URL}/store/dashboard/summary`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   updateStore: async (payload) => {
     const response = await request(`${API_URL}/store/me`, {
       method: "PATCH",
