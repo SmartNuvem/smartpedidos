@@ -246,9 +246,6 @@ const Dashboard = () => {
               <p className="mt-2 text-2xl font-semibold text-slate-900">
                 💰 {formatCurrency(dashboardSummary.revenueTodayCents / 100)}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Somente pedidos PRINTED (hoje)
-              </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-xs font-semibold uppercase text-slate-500">
