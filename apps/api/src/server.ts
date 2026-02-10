@@ -26,8 +26,127 @@ import {
   maskToken,
   requireAdmin,
 } from "./auth";
-import { buildBillingPdf, buildOrderPdf, buildTableSummaryPdf } from "./pdf";
+import {
+  buildBillingPdf,
+  buildOrderPdf,
+  buildRevenuePdf,
+  buildTableSummaryPdf,
+} from "./pdf";
 import type { JwtUser } from "./types/jwt";
+
+
+
+type RevenueRange = "today" | "7d" | "15d" | "30d" | "custom";
+
+type RevenuePeriod = {
+  rangeLabel: string;
+  startDate: Date;
+  endDateExclusive: Date;
+};
+
+const revenueRangeQuerySchema = z
+  .object({
+    range: z.enum(["today", "7d", "15d", "30d", "custom"]).default("today"),
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.range !== "custom") {
+      return;
+    }
+    if (!value.start) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["start"],
+        message: "Data inicial é obrigatória para período personalizado.",
+      });
+    }
+    if (!value.end) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["end"],
+        message: "Data final é obrigatória para período personalizado.",
+      });
+    }
+  });
+
+const formatDateOnly = (date: Date) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(date);
+
+const parseLocalDateInput = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    return null;
+  }
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+};
+
+const startOfDay = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const resolveRevenuePeriod = (params: {
+  range: RevenueRange;
+  start?: string;
+  end?: string;
+}): RevenuePeriod => {
+  const todayStart = startOfDay(new Date());
+
+  if (params.range === "today") {
+    return {
+      rangeLabel: "Hoje",
+      startDate: todayStart,
+      endDateExclusive: addDays(todayStart, 1),
+    };
+  }
+
+  if (params.range === "7d" || params.range === "15d" || params.range === "30d") {
+    const days = Number(params.range.replace("d", ""));
+    const periodStart = addDays(todayStart, -(days - 1));
+    return {
+      rangeLabel: `Últimos ${days} dias`,
+      startDate: periodStart,
+      endDateExclusive: addDays(todayStart, 1),
+    };
+  }
+
+  const startDate = parseLocalDateInput(params.start ?? "");
+  const endDate = parseLocalDateInput(params.end ?? "");
+  if (!startDate || !endDate) {
+    throw new Error("Período inválido.");
+  }
+  const customStart = startOfDay(startDate);
+  const customEndExclusive = addDays(startOfDay(endDate), 1);
+  if (customStart >= customEndExclusive) {
+    throw new Error("Período inválido.");
+  }
+
+  return {
+    rangeLabel: "Personalizado",
+    startDate: customStart,
+    endDateExclusive: customEndExclusive,
+  };
+};
+
+const buildRevenuePeriodLabel = (period: RevenuePeriod) => {
+  const inclusiveEnd = addDays(period.endDateExclusive, -1);
+  return `${formatDateOnly(period.startDate)} - ${formatDateOnly(inclusiveEnd)}`;
+};
 
 const slugRegex = /^[a-z0-9-]+$/;
 
@@ -2429,25 +2548,8 @@ const registerRoutes = () => {
       return reply.status(401).send({ message: "Unauthorized" });
     }
 
-    const now = new Date();
-    const startOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0,
-      0,
-      0,
-      0
-    );
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1,
-      0,
-      0,
-      0,
-      0
-    );
+    const todayStart = startOfDay(new Date());
+    const tomorrowStart = addDays(todayStart, 1);
 
     const [newOrders, ordersToday, revenueToday] = await Promise.all([
       prisma.order.count({
@@ -2460,8 +2562,8 @@ const registerRoutes = () => {
         where: {
           storeId,
           createdAt: {
-            gte: startOfDay,
-            lt: endOfDay,
+            gte: todayStart,
+            lt: tomorrowStart,
           },
         },
       }),
@@ -2470,8 +2572,8 @@ const registerRoutes = () => {
           storeId,
           status: OrderStatus.PRINTED,
           createdAt: {
-            gte: startOfDay,
-            lt: endOfDay,
+            gte: todayStart,
+            lt: tomorrowStart,
           },
         },
         _sum: {
@@ -2487,6 +2589,128 @@ const registerRoutes = () => {
         ? Math.round(revenueToday._sum.total.toNumber() * 100)
         : 0,
     });
+  });
+
+  app.get("/store/revenue/summary", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const queryResult = revenueRangeQuerySchema.safeParse(request.query ?? {});
+    if (!queryResult.success) {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    let period: RevenuePeriod;
+    try {
+      period = resolveRevenuePeriod(queryResult.data);
+    } catch {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    const aggregate = await prisma.order.aggregate({
+      where: {
+        storeId,
+        status: OrderStatus.PRINTED,
+        createdAt: {
+          gte: period.startDate,
+          lt: period.endDateExclusive,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    const revenueCents = aggregate._sum?.total
+      ? Math.round(aggregate._sum.total.toNumber() * 100)
+      : 0;
+    const ordersCount = aggregate._count?._all ?? 0;
+
+    return reply.send({
+      rangeLabel: period.rangeLabel,
+      ordersCount,
+      revenueCents,
+      averageTicketCents:
+        ordersCount > 0 ? Math.round(revenueCents / ordersCount) : 0,
+    });
+  });
+
+  app.get("/store/revenue/report.pdf", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const queryResult = revenueRangeQuerySchema.safeParse(request.query ?? {});
+    if (!queryResult.success) {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    let period: RevenuePeriod;
+    try {
+      period = resolveRevenuePeriod(queryResult.data);
+    } catch {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { name: true, slug: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const aggregate = await prisma.order.aggregate({
+      where: {
+        storeId,
+        status: OrderStatus.PRINTED,
+        createdAt: {
+          gte: period.startDate,
+          lt: period.endDateExclusive,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    const revenueCents = aggregate._sum?.total
+      ? Math.round(aggregate._sum.total.toNumber() * 100)
+      : 0;
+    const ordersCount = aggregate._count?._all ?? 0;
+    const averageTicketCents =
+      ordersCount > 0 ? Math.round(revenueCents / ordersCount) : 0;
+
+    const pdf = buildRevenuePdf({
+      store,
+      rangeLabel: period.rangeLabel,
+      periodLabel: buildRevenuePeriodLabel(period),
+      ordersCount,
+      revenueCents,
+      averageTicketCents,
+      generatedAt: new Date(),
+    });
+
+    reply.header("Content-Type", "application/pdf");
+    reply.header(
+      "Content-Disposition",
+      `inline; filename=revenue-${store.slug}-${period.startDate
+        .toISOString()
+        .slice(0, 10)}-${addDays(period.endDateExclusive, -1)
+        .toISOString()
+        .slice(0, 10)}.pdf`
+    );
+    return reply.send(pdf);
   });
 
   app.patch("/store/me", async (request, reply) => {
