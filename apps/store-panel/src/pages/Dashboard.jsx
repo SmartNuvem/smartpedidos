@@ -21,6 +21,7 @@ const Dashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dashboardSummary, setDashboardSummary] = useState({
+    newOrders: 0,
     revenueTodayCents: 0,
     ordersToday: 0,
   });
@@ -78,6 +79,7 @@ const Dashboard = () => {
           setStore(storeData);
           setOrders(ordersData);
           setDashboardSummary({
+            newOrders: summaryData?.newOrders ?? 0,
             revenueTodayCents: summaryData?.revenueTodayCents ?? 0,
             ordersToday: summaryData?.ordersToday ?? 0,
           });
@@ -161,6 +163,20 @@ const Dashboard = () => {
   });
 
   const latestOrders = orders.slice(0, 5);
+  const ordersSummary = useMemo(() => {
+    const todayKey = new Date().toDateString();
+    const fallbackNewOrders = orders.filter((order) => order.status === "NEW").length;
+    const fallbackOrdersToday = orders.filter(
+      (order) => new Date(order.createdAt).toDateString() === todayKey
+    ).length;
+
+    return {
+      newOrders: dashboardSummary.newOrders || fallbackNewOrders,
+      ordersToday: dashboardSummary.ordersToday || fallbackOrdersToday,
+      revenueTodayCents: dashboardSummary.revenueTodayCents,
+    };
+  }, [dashboardSummary.newOrders, dashboardSummary.ordersToday, dashboardSummary.revenueTodayCents, orders]);
+
   const publicBaseUrl =
     import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin;
   const menuUrl = useMemo(() => {
@@ -216,14 +232,27 @@ const Dashboard = () => {
             {error}
           </div>
         ) : (
-          <div className="mt-6 max-w-sm rounded-xl border border-slate-200 bg-slate-50 px-5 py-5">
-            <p className="text-xs font-semibold uppercase text-slate-500">Faturamento hoje</p>
-            <p className="mt-2 text-3xl font-semibold text-slate-900">
-              {formatCurrency(dashboardSummary.revenueTodayCents / 100)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {dashboardSummary.ordersToday} pedidos hoje
-            </p>
+          <div className="mt-6 grid gap-4 lg:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase text-slate-500">Pedidos novos</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{ordersSummary.newOrders}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase text-slate-500">Pedidos hoje</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{ordersSummary.ordersToday}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase text-slate-500">Faturamento hoje</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">
+                {formatCurrency(ordersSummary.revenueTodayCents / 100)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">{ordersSummary.ordersToday} pedidos hoje</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase text-slate-500">Loja</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">{store?.name}</p>
+              <p className="text-sm text-slate-500">Slug: {store?.slug}</p>
+            </div>
           </div>
         )}
       </div>
