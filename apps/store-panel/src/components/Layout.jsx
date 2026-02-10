@@ -36,6 +36,9 @@ const Layout = ({ children }) => {
             <NavLink to="/orders" className={linkClass}>
               Pedidos
             </NavLink>
+            <NavLink to="/billing" className={linkClass}>
+              Faturamento
+            </NavLink>
             <NavLink to="/categories" className={linkClass}>
               Categorias
             </NavLink>

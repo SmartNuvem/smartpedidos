@@ -75,6 +75,13 @@ const formatDateOnly = (date: Date) =>
     dateStyle: "short",
   }).format(date);
 
+const formatDateInputLocal = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const parseLocalDateInput = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) {
@@ -146,6 +153,52 @@ const resolveRevenuePeriod = (params: {
 const buildRevenuePeriodLabel = (period: RevenuePeriod) => {
   const inclusiveEnd = addDays(period.endDateExclusive, -1);
   return `${formatDateOnly(period.startDate)} - ${formatDateOnly(inclusiveEnd)}`;
+};
+
+
+const buildRevenueTimeseriesPoints = async (storeId: string, period: RevenuePeriod) => {
+  const rows = await prisma.order.groupBy({
+    by: ["createdAt"],
+    where: {
+      storeId,
+      status: OrderStatus.PRINTED,
+      createdAt: {
+        gte: period.startDate,
+        lt: period.endDateExclusive,
+      },
+    },
+    _sum: {
+      total: true,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  const revenueByDay = new Map<string, number>();
+  for (const row of rows) {
+    const key = formatDateInputLocal(row.createdAt);
+    const revenueCents = row._sum.total
+      ? Math.round(row._sum.total.toNumber() * 100)
+      : 0;
+    revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + revenueCents);
+  }
+
+  const points: Array<{ date: string; label: string; revenueCents: number }> = [];
+  for (
+    let day = startOfDay(period.startDate);
+    day < period.endDateExclusive;
+    day = addDays(day, 1)
+  ) {
+    const date = formatDateInputLocal(day);
+    points.push({
+      date,
+      label: formatDateOnly(day),
+      revenueCents: revenueByDay.get(date) ?? 0,
+    });
+  }
+
+  return points;
 };
 
 const slugRegex = /^[a-z0-9-]+$/;
@@ -2637,6 +2690,34 @@ const registerRoutes = () => {
       revenueCents,
       averageTicketCents:
         ordersCount > 0 ? Math.round(revenueCents / ordersCount) : 0,
+    });
+  });
+
+
+
+  app.get("/store/revenue/timeseries", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const queryResult = revenueRangeQuerySchema.safeParse(request.query ?? {});
+    if (!queryResult.success) {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    let period: RevenuePeriod;
+    try {
+      period = resolveRevenuePeriod(queryResult.data);
+    } catch {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    const points = await buildRevenueTimeseriesPoints(storeId, period);
+
+    return reply.send({
+      rangeLabel: period.rangeLabel,
+      points,
     });
   });
 
