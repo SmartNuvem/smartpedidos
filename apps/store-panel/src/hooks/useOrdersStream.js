@@ -4,12 +4,14 @@ const buildStreamUrl = () => "/api/store/orders/stream";
 const useOrdersStream = ({
   onOrderCreated,
   onOrderUpdated,
+  onEvent,
   onConnectionChange,
 } = {}) => {
   const [streamStatus, setStreamStatus] = useState("connecting");
   const callbacksRef = useRef({
     onOrderCreated,
     onOrderUpdated,
+    onEvent,
     onConnectionChange,
   });
   const sourceRef = useRef(null);
@@ -18,9 +20,10 @@ const useOrdersStream = ({
     callbacksRef.current = {
       onOrderCreated,
       onOrderUpdated,
+      onEvent,
       onConnectionChange,
     };
-  }, [onOrderCreated, onOrderUpdated, onConnectionChange]);
+  }, [onOrderCreated, onOrderUpdated, onEvent, onConnectionChange]);
 
   useEffect(() => {
     if (!window.EventSource) {
@@ -39,6 +42,10 @@ const useOrdersStream = ({
         return;
       }
       const resolvedType = typeOverride || payload.type;
+      callbacksRef.current.onEvent?.({
+        ...payload,
+        type: resolvedType,
+      });
       if (resolvedType === "order.created") {
         callbacksRef.current.onOrderCreated?.(payload);
       }

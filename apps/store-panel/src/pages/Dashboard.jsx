@@ -16,6 +16,8 @@ const statusBadge = (status) => {
   }
 };
 
+const DASHBOARD_SUMMARY_REFRESH_EVENTS = new Set(["order.created", "order.updated", "order.status_changed"]);
+
 const Dashboard = () => {
   const [store, setStore] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -28,6 +30,9 @@ const Dashboard = () => {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const knownOrderIdsRef = useRef(new Set());
+  const summaryRefreshTimeoutRef = useRef(null);
+  const lastSummaryFetchAtRef = useRef(0);
+  const summaryRequestInFlightRef = useRef(null);
   const { isSupported, isUnlocked, unlock, play } = useNewOrderSound();
 
   const normalizeOrderPatch = useCallback((payload) => {
@@ -64,6 +69,47 @@ const Dashboard = () => {
     knownOrderIdsRef.current = new Set(orders.map((order) => order.id));
   }, [orders]);
 
+  const fetchDashboardSummary = useCallback(async () => {
+    if (summaryRequestInFlightRef.current) {
+      return summaryRequestInFlightRef.current;
+    }
+
+    const request = api
+      .getDashboardSummary()
+      .then((summaryData) => {
+        setDashboardSummary({
+          newOrders: summaryData?.newOrders ?? 0,
+          revenueTodayCents: summaryData?.revenueTodayCents ?? 0,
+          ordersToday: summaryData?.ordersToday ?? 0,
+        });
+      })
+      .catch(() => {
+        // ignore summary refresh errors triggered by stream events
+      })
+      .finally(() => {
+        summaryRequestInFlightRef.current = null;
+      });
+
+    summaryRequestInFlightRef.current = request;
+    return request;
+  }, []);
+
+  const scheduleSummaryRefresh = useCallback(() => {
+    const throttleMs = 2500;
+    const elapsed = Date.now() - lastSummaryFetchAtRef.current;
+    const waitMs = Math.max(0, throttleMs - elapsed);
+
+    if (summaryRefreshTimeoutRef.current) {
+      return;
+    }
+
+    summaryRefreshTimeoutRef.current = window.setTimeout(() => {
+      summaryRefreshTimeoutRef.current = null;
+      lastSummaryFetchAtRef.current = Date.now();
+      fetchDashboardSummary();
+    }, waitMs);
+  }, [fetchDashboardSummary]);
+
   useEffect(() => {
     let active = true;
     const loadData = async () => {
@@ -83,6 +129,7 @@ const Dashboard = () => {
             revenueTodayCents: summaryData?.revenueTodayCents ?? 0,
             ordersToday: summaryData?.ordersToday ?? 0,
           });
+          lastSummaryFetchAtRef.current = Date.now();
         }
       } catch {
         if (active) {
@@ -157,9 +204,26 @@ const Dashboard = () => {
     [mergeOrder, normalizeOrderPatch]
   );
 
+  useEffect(() => () => {
+    if (summaryRefreshTimeoutRef.current) {
+      window.clearTimeout(summaryRefreshTimeoutRef.current);
+    }
+  }, []);
+
+  const handleStreamEvent = useCallback(
+    (payload) => {
+      if (!DASHBOARD_SUMMARY_REFRESH_EVENTS.has(payload?.type)) {
+        return;
+      }
+      scheduleSummaryRefresh();
+    },
+    [scheduleSummaryRefresh]
+  );
+
   useOrdersStream({
     onOrderCreated: handleOrderCreated,
     onOrderUpdated: handleOrderUpdated,
+    onEvent: handleStreamEvent,
   });
 
   const latestOrders = orders.slice(0, 5);
