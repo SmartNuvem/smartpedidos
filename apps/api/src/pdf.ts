@@ -7,6 +7,7 @@ import {
   Product,
   Store,
 } from "@prisma/client";
+import { getOrderCode } from "./utils/orderCode";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -96,8 +97,14 @@ type ReceiptTextLine = {
   text: string;
 };
 
-const orderShortCode = (order: PublicOrderReceiptPdfData) =>
-  order.shortCode?.trim() || order.id.slice(-6);
+const orderShortCode = (order: PublicOrderReceiptPdfData) => {
+  const shortCode = order.shortCode?.trim();
+  if (shortCode) {
+    return shortCode.toLowerCase();
+  }
+
+  return getOrderCode(order.id);
+};
 
 const buildPublicReceiptLines = (order: PublicOrderReceiptPdfData): ReceiptTextLine[] => {
   const paymentLabels = {

@@ -35,6 +35,7 @@ import {
   buildTableSummaryPdf,
 } from "./pdf";
 import type { JwtUser } from "./types/jwt";
+import { getOrderCode } from "./utils/orderCode";
 
 
 
@@ -1816,7 +1817,7 @@ const registerRoutes = () => {
       sendSalonStreamEvent(store.id, { reason: "order_created" });
     }
 
-    const shortCode = order.id.slice(0, 6);
+    const shortCode = getOrderCode(order.id);
 
     return reply.status(201).send({
       id: order.id,
@@ -1860,7 +1861,7 @@ const registerRoutes = () => {
       return reply.status(403).send({ message: "Token de comprovante inválido." });
     }
 
-    const shortId = order.id.slice(-6);
+    const shortId = getOrderCode(order.id);
     const pdf = buildPublicOrderReceiptPdf(order);
 
     reply.header("Content-Type", "application/pdf");
@@ -1903,7 +1904,7 @@ const registerRoutes = () => {
       return reply.status(403).send({ message: "Token de comprovante inválido." });
     }
 
-    const shortId = order.id.slice(-6);
+    const shortId = getOrderCode(order.id);
     const png = await buildPublicOrderReceiptPng(order);
 
     reply.header("Content-Type", "image/png");

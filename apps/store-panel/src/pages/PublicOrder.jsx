@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { API_URL, formatCurrency } from "../api";
+import { getOrderCode } from "../utils/orderCode";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
 
@@ -848,8 +849,8 @@ const PublicOrder = () => {
         setReceiptPngError("Comprovante indisponível no momento.");
         return;
       }
-      const shortCode = (orderResult.shortCode || orderResult.number || orderId || "").toString();
-      const fileCode = shortCode.slice(-6) || orderId.slice(-6);
+      const shortCode = (orderResult.shortCode || orderResult.number || "").toString();
+      const fileCode = shortCode ? shortCode.toLowerCase() : getOrderCode(orderId);
       const pngUrl = `${API_URL}/public/orders/${orderId}/receipt.png?token=${encodeURIComponent(receiptToken)}`;
 
       try {
@@ -1004,7 +1005,9 @@ const PublicOrder = () => {
 
     const receiptToken = orderResult?.receiptToken;
     const orderId = orderResult?.id || orderResult?.orderId;
-    const orderDisplayNumber = orderResult?.shortCode || orderResult?.number;
+    const orderDisplayNumber =
+      (orderResult?.shortCode || orderResult?.number || "").toString().toLowerCase() ||
+      getOrderCode(orderId);
     const storeName = receipt?.storeName || menu.store?.name || "Loja";
 
     return (
