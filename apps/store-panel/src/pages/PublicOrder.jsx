@@ -956,9 +956,11 @@ const PublicOrder = () => {
         await new Promise((resolve) => requestAnimationFrame(resolve));
 
         const receiptNode = receiptRef.current;
-        const rect = receiptNode.getBoundingClientRect();
-        const width = Math.ceil(rect.width);
-        const height = Math.ceil(rect.height);
+        const width = Math.ceil(receiptNode.scrollWidth || receiptNode.offsetWidth);
+        const height = Math.ceil(receiptNode.scrollHeight || receiptNode.offsetHeight);
+        const bleed = 24;
+        const canvasWidth = width + bleed * 2;
+        const canvasHeight = height + bleed * 2;
 
         if (width <= 0 || height <= 0) {
           throw new Error(
@@ -972,10 +974,12 @@ const PublicOrder = () => {
           backgroundColor: "#fff",
           width,
           height,
+          canvasWidth,
+          canvasHeight,
           style: {
-            padding: "24px",
-            boxSizing: "border-box",
             backgroundColor: "#fff",
+            transform: `translate(${bleed}px, ${bleed}px)`,
+            transformOrigin: "top left",
           },
         };
 
