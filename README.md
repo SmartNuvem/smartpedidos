@@ -25,6 +25,9 @@ Edite o arquivo `.env` e ajuste:
 - `COOKIE_DOMAIN`: domínio do cookie de sessão da loja (ex.: `.smartnuvem.com.br` para compartilhar entre painel e API).
 - `COOKIE_SAMESITE`: controle de SameSite do cookie (`none`, `lax` ou `strict`). Em produção o padrão é `none`.
 - `MAINTENANCE_TOKEN`: token usado para autorizar rotinas internas de manutenção (ex.: limpeza automática de pedidos antigos).
+- `EVOLUTION_BASE_URL`: URL base da Evolution API/Manager (ex.: `https://evolution.seudominio.com`).
+- `EVOLUTION_API_KEY`: chave da Evolution usada nas rotas de instância/webhook.
+- `ACTIVEPIECES_INCOMING_WEBHOOK_URL`: webhook central do Activepieces para recebimento das mensagens da Evolution.
 
 Se preferir, deixe `VITE_API_URL=/api` para usar o proxy do Vite (útil no Docker). Nesse caso, a URL externa do painel continua `http://IP:5173`.
 
