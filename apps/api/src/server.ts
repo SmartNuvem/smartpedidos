@@ -13,6 +13,7 @@ import {
   PrintJobStatus,
   PrintJobType,
   TableStatus,
+  StoreBotStatus,
 } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./prisma";
@@ -36,6 +37,7 @@ import {
 } from "./pdf";
 import type { JwtUser } from "./types/jwt";
 import { getOrderCode } from "./utils/orderCode";
+import { disconnect, ensureInstance, getQr } from "./evolution";
 
 
 
@@ -212,6 +214,43 @@ const normalizeSlug = (value: string) =>
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
+
+const parsePublicBaseUrl = (request: FastifyRequest) => {
+  const explicit = process.env.PUBLIC_API_BASE_URL?.trim();
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
+  }
+  const protocol =
+    (request.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0] ||
+    request.protocol;
+  const host =
+    (request.headers["x-forwarded-host"] as string | undefined)?.split(",")[0] ||
+    request.headers.host;
+  return `${protocol}://${host}`;
+};
+
+const buildMenuUrl = (request: FastifyRequest, slug: string) =>
+  `${parsePublicBaseUrl(request)}/api/public/${slug}/menu`;
+
+const buildReceiptUrl = (request: FastifyRequest, orderId: string, receiptToken: string | null) => {
+  if (!receiptToken) {
+    return null;
+  }
+  const query = new URLSearchParams({ token: receiptToken });
+  return `${parsePublicBaseUrl(request)}/api/public/orders/${orderId}/receipt.png?${query.toString()}`;
+};
+
+const ensureStoreBotConfig = async (storeId: string, storeSlug: string) =>
+  prisma.storeBotConfig.upsert({
+    where: { storeId },
+    update: {
+      instanceName: storeSlug,
+    },
+    create: {
+      storeId,
+      instanceName: storeSlug,
+    },
+  });
 
 const app = Fastify({
   logger: true,
@@ -1819,6 +1858,32 @@ const registerRoutes = () => {
 
     const shortCode = getOrderCode(order.id);
 
+    const webhookUrl = process.env.ACTIVEPIECES_ORDER_CREATED_WEBHOOK_URL?.trim();
+    if (webhookUrl && !isDineIn) {
+      try {
+        const botConfig = await ensureStoreBotConfig(store.id, store.slug);
+        if (botConfig.enabled && botConfig.sendOrderConfirmation) {
+          const receiptUrl = buildReceiptUrl(request, order.id, order.receiptToken);
+          await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              storeSlug: store.slug,
+              orderId: order.id,
+              orderCode: shortCode,
+              customerName: order.customerName,
+              customerPhone: order.customerPhone,
+              paymentMethod: order.paymentMethod,
+              totalCents,
+              receiptUrl: botConfig.sendReceiptLink ? receiptUrl : null,
+            }),
+          });
+        }
+      } catch (error) {
+        request.log.error(error);
+      }
+    }
+
     return reply.status(201).send({
       id: order.id,
       shortCode,
@@ -2659,6 +2724,66 @@ const registerRoutes = () => {
     return requireStoreAuth(request, reply);
   });
 
+  const assertPublicBotSecret = (request: FastifyRequest, reply: FastifyReply) => {
+    const secret = process.env.ACTIVEPIECES_PUBLIC_BOT_SECRET?.trim();
+    if (!secret) {
+      return true;
+    }
+    const incoming = request.headers["x-bot-secret"];
+    if (incoming !== secret) {
+      reply.status(401).send({ message: "Unauthorized" });
+      return false;
+    }
+    return true;
+  };
+
+  const serializePublicBotConfig = ({
+    store,
+    config,
+    request,
+  }: {
+    store: { id: string; slug: string; name: string; isActive: boolean };
+    config: {
+      enabled: boolean;
+      instanceName: string;
+      status: StoreBotStatus;
+      keywords: string;
+      sendMenuOnKeywords: boolean;
+      sendOrderConfirmation: boolean;
+      sendReceiptLink: boolean;
+      pixMessageEnabled: boolean;
+      menuTemplate: string;
+      orderTemplate: string;
+      pixTemplate: string;
+      cooldownMinutes: number;
+      connectedPhone: string | null;
+      updatedAt: Date;
+    };
+    request: FastifyRequest;
+  }) => ({
+    enabled: config.enabled,
+    instanceName: config.instanceName,
+    status: config.status,
+    keywords: config.keywords,
+    sendMenuOnKeywords: config.sendMenuOnKeywords,
+    sendOrderConfirmation: config.sendOrderConfirmation,
+    sendReceiptLink: config.sendReceiptLink,
+    pixMessageEnabled: config.pixMessageEnabled,
+    menuTemplate: config.menuTemplate,
+    orderTemplate: config.orderTemplate,
+    pixTemplate: config.pixTemplate,
+    cooldownMinutes: config.cooldownMinutes,
+    menuUrl: buildMenuUrl(request, store.slug),
+    store: {
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+      connectedPhone: config.connectedPhone,
+      isActive: store.isActive,
+      updatedAt: config.updatedAt,
+    },
+  });
+
   app.get("/store/me", async (request, reply) => {
     const storeId = request.storeId;
     if (!storeId) {
@@ -2688,6 +2813,187 @@ const registerRoutes = () => {
       requireChangeForCash:
         store.paymentSettings?.requireChangeForCash ?? false,
     };
+  });
+
+  app.get("/store/bot", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { id: true, slug: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const config = await ensureStoreBotConfig(store.id, store.slug);
+    return reply.send(config);
+  });
+
+  app.put("/store/bot", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const schema = z.object({
+      enabled: z.boolean().optional(),
+      keywords: z.string().min(1).max(1000).optional(),
+      sendMenuOnKeywords: z.boolean().optional(),
+      sendOrderConfirmation: z.boolean().optional(),
+      sendReceiptLink: z.boolean().optional(),
+      pixMessageEnabled: z.boolean().optional(),
+      menuTemplate: z.string().min(1).max(4000).optional(),
+      orderTemplate: z.string().min(1).max(4000).optional(),
+      pixTemplate: z.string().min(1).max(4000).optional(),
+      cooldownMinutes: z.number().int().min(0).max(1440).optional(),
+    });
+
+    const payload = schema.parse(request.body ?? {});
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { id: true, slug: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    await ensureStoreBotConfig(store.id, store.slug);
+
+    const updated = await prisma.storeBotConfig.update({
+      where: { storeId: store.id },
+      data: {
+        instanceName: store.slug,
+        ...payload,
+      },
+    });
+
+    return reply.send(updated);
+  });
+
+  app.post("/store/bot/whatsapp/qr", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { id: true, slug: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const config = await ensureStoreBotConfig(store.id, store.slug);
+
+    try {
+      await ensureInstance(config.instanceName);
+      const result = await getQr(config.instanceName);
+      const status =
+        result.status === StoreBotStatus.DISCONNECTED
+          ? StoreBotStatus.WAITING_QR
+          : result.status;
+
+      const updated = await prisma.storeBotConfig.update({
+        where: { storeId: store.id },
+        data: {
+          status,
+          connectedPhone:
+            status === StoreBotStatus.CONNECTED ? result.connectedPhone : null,
+          instanceName: store.slug,
+        },
+      });
+
+      return reply.send({
+        ...updated,
+        qrBase64: result.qrBase64,
+      });
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(502).send({ message: "Falha ao gerar QR na Evolution." });
+    }
+  });
+
+  app.post("/store/bot/whatsapp/disconnect", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { id: true, slug: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const config = await ensureStoreBotConfig(store.id, store.slug);
+
+    try {
+      await disconnect(config.instanceName);
+    } catch (error) {
+      request.log.error(error);
+    }
+
+    const updated = await prisma.storeBotConfig.update({
+      where: { storeId: store.id },
+      data: {
+        status: StoreBotStatus.DISCONNECTED,
+        connectedPhone: null,
+        instanceName: store.slug,
+      },
+    });
+
+    return reply.send(updated);
+  });
+
+  app.get("/public/bot/by-instance/:instanceName", async (request, reply) => {
+    if (!assertPublicBotSecret(request, reply)) {
+      return;
+    }
+    const paramsSchema = z.object({ instanceName: z.string().min(1) });
+    const { instanceName } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findFirst({
+      where: { slug: instanceName },
+      select: { id: true, slug: true, name: true, isActive: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const config = await ensureStoreBotConfig(store.id, store.slug);
+    return reply.send(serializePublicBotConfig({ store, config, request }));
+  });
+
+  app.get("/public/bot/by-store-slug/:slug", async (request, reply) => {
+    if (!assertPublicBotSecret(request, reply)) {
+      return;
+    }
+    const paramsSchema = z.object({ slug: z.string().min(1) });
+    const { slug } = paramsSchema.parse(request.params);
+
+    const store = await prisma.store.findUnique({
+      where: { slug },
+      select: { id: true, slug: true, name: true, isActive: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const config = await ensureStoreBotConfig(store.id, store.slug);
+    return reply.send(serializePublicBotConfig({ store, config, request }));
   });
 
   app.get("/store/dashboard/summary", async (request, reply) => {
