@@ -209,6 +209,13 @@ export const api = {
     });
     return handleResponse(response);
   },
+  refreshStoreBotWhatsappStatus: async () => {
+    const response = await request(`${API_URL}/store/bot/whatsapp/refresh-status`, {
+      method: "POST",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   getStoreAgents: async () => {
     const response = await request(`${API_URL}/store/agents`, {
       headers: buildHeaders(),

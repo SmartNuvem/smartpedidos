@@ -21,6 +21,26 @@ type EvolutionInstanceResponse = {
   connectedPhone?: string;
 };
 
+type EvolutionFetchInstanceItem = {
+  name?: string;
+  instanceName?: string;
+  status?: string;
+  state?: string;
+  connectionStatus?: string;
+  owner?: string;
+  profileName?: string;
+  wuid?: string;
+  instance?: {
+    instanceName?: string;
+    status?: string;
+    state?: string;
+    connectionStatus?: string;
+    owner?: string;
+    profileName?: string;
+    wuid?: string;
+  };
+};
+
 type EvolutionWebhookResponse = {
   webhook?: {
     url?: string;
@@ -150,6 +170,67 @@ export const getQr = async (instanceName: string) => {
     status: mapEvolutionStatus(payload),
     connectedPhone: extractConnectedPhone(payload),
   };
+};
+
+export const getInstanceStatus = async (instanceName: string) => {
+  const tryConnectionState = async () => {
+    const payload = await evolutionRequest(`/instance/connectionState/${instanceName}`, {
+      method: "GET",
+    });
+
+    return {
+      status: mapEvolutionStatus(payload),
+      connectedPhone: extractConnectedPhone(payload),
+    };
+  };
+
+  const tryFetchInstances = async () => {
+    const payload = await evolutionRequest(`/instance/fetchInstances`, {
+      method: "GET",
+    });
+
+    const list = Array.isArray(payload) ? (payload as EvolutionFetchInstanceItem[]) : [];
+    const found = list.find((item) => {
+      const name = item.name ?? item.instanceName ?? item.instance?.instanceName;
+      return name === instanceName;
+    });
+
+    if (!found) {
+      return {
+        status: StoreBotStatus.DISCONNECTED,
+        connectedPhone: null,
+      };
+    }
+
+    return {
+      status: mapEvolutionStatus({
+        status: found.status,
+        state: found.state,
+        instance: {
+          status: found.instance?.status ?? found.status,
+          state: found.instance?.state ?? found.state,
+          connectionStatus: found.instance?.connectionStatus ?? found.connectionStatus,
+          owner: found.instance?.owner ?? found.owner,
+          profileName: found.instance?.profileName ?? found.profileName,
+          wuid: found.instance?.wuid ?? found.wuid,
+        },
+      }),
+      connectedPhone:
+        found.instance?.wuid ??
+        found.instance?.owner ??
+        found.instance?.profileName ??
+        found.wuid ??
+        found.owner ??
+        found.profileName ??
+        null,
+    };
+  };
+
+  try {
+    return await tryConnectionState();
+  } catch {
+    return tryFetchInstances();
+  }
 };
 
 export const disconnect = async (instanceName: string) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import Button from "../components/Button";
 import Input from "../components/Input";
@@ -37,6 +37,8 @@ const BotSettings = () => {
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const pollingIntervalRef = useRef(null);
+  const pollingTimeoutRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -57,8 +59,56 @@ const BotSettings = () => {
     load();
     return () => {
       active = false;
+      stopStatusPolling();
     };
   }, []);
+
+  const stopStatusPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+  };
+
+  const refreshWhatsappStatus = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setError("");
+      setMessage("");
+    }
+
+    const updated = await api.refreshStoreBotWhatsappStatus();
+    setForm((prev) => ({ ...prev, ...updated }));
+
+    if (updated.status === "CONNECTED") {
+      stopStatusPolling();
+      setQrBase64("");
+      if (!silent) {
+        setMessage("WhatsApp conectado com sucesso.");
+      }
+    }
+
+    return updated;
+  };
+
+  const startStatusPolling = () => {
+    stopStatusPolling();
+
+    pollingIntervalRef.current = window.setInterval(async () => {
+      try {
+        await refreshWhatsappStatus({ silent: true });
+      } catch {
+        // silencioso durante polling automático
+      }
+    }, 2000);
+
+    pollingTimeoutRef.current = window.setTimeout(() => {
+      stopStatusPolling();
+    }, 60000);
+  };
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -99,6 +149,14 @@ const BotSettings = () => {
       const result = await api.getStoreBotQr();
       setForm((prev) => ({ ...prev, ...result }));
       setQrBase64(result.qrBase64 || "");
+      if (result.status === "WAITING_QR") {
+        startStatusPolling();
+      } else {
+        stopStatusPolling();
+        if (result.status === "CONNECTED") {
+          setQrBase64("");
+        }
+      }
       setMessage("QR code atualizado.");
     } catch (err) {
       setError(err.message || "Não foi possível gerar QR.");
@@ -112,6 +170,7 @@ const BotSettings = () => {
     setError("");
     setMessage("");
     try {
+      stopStatusPolling();
       const updated = await api.disconnectStoreBotWhatsapp();
       setForm((prev) => ({ ...prev, ...updated }));
       setQrBase64("");
@@ -120,6 +179,19 @@ const BotSettings = () => {
       setError(err.message || "Não foi possível desconectar.");
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleRefreshStatus = async () => {
+    setError("");
+    setMessage("");
+    try {
+      const updated = await refreshWhatsappStatus();
+      if (updated.status !== "CONNECTED") {
+        setMessage("Status atualizado.");
+      }
+    } catch (err) {
+      setError(err.message || "Não foi possível atualizar status.");
     }
   };
 
@@ -150,6 +222,7 @@ const BotSettings = () => {
 
       <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
         <h3 className="text-md font-semibold text-slate-900">Conexão WhatsApp</h3>
+        <p className="text-sm text-slate-600">Instance: <strong>{form.instanceName}</strong></p>
         <p className="text-sm text-slate-600">Status: <strong>{statusLabel[form.status] || form.status}</strong></p>
         {form.connectedPhone ? <p className="text-sm text-slate-600">Telefone conectado: {form.connectedPhone}</p> : null}
 
@@ -157,12 +230,15 @@ const BotSettings = () => {
           <Button onClick={handleGenerateQr} disabled={loadingQr}>
             {loadingQr ? "Gerando..." : form.status === "CONNECTED" ? "Regerar QR" : "Gerar QR"}
           </Button>
+          <Button onClick={handleRefreshStatus} variant="secondary">
+            Atualizar status
+          </Button>
           <Button variant="secondary" onClick={handleDisconnect} disabled={disconnecting || form.status === "DISCONNECTED"}>
             {disconnecting ? "Desconectando..." : "Desconectar"}
           </Button>
         </div>
 
-        {qrBase64 ? (
+        {qrBase64 && form.status === "WAITING_QR" ? (
           <div className="rounded-lg border border-slate-200 p-4 inline-block">
             <img src={qrBase64.startsWith("data:") ? qrBase64 : `data:image/png;base64,${qrBase64}`} alt="QR code WhatsApp" className="h-56 w-56" />
           </div>
