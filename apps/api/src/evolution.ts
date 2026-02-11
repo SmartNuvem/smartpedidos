@@ -22,6 +22,8 @@ type EvolutionInstanceResponse = {
 };
 
 type EvolutionFetchInstanceItem = {
+  id?: string;
+  instanceId?: string;
   name?: string;
   instanceName?: string;
   status?: string;
@@ -45,11 +47,45 @@ type EvolutionWebhookResponse = {
   webhook?: {
     url?: string;
     events?: string[];
+    enabled?: boolean;
   };
   url?: string;
   events?: string[];
+  enabled?: boolean;
   message?: string;
 };
+
+type EvolutionManagerWebhookPayload = {
+  url: string;
+  headers: null;
+  enabled: true;
+  events: ["MESSAGES_UPSERT"];
+  webhookByEvents: false;
+  webhookBase64: false;
+};
+
+type EvolutionManagerWebhookResult = {
+  webhookUrl: string;
+  webhookEnabled: boolean;
+  webhookEvents: string[];
+  statusCode: number | null;
+  instanceId: string;
+};
+
+class EvolutionApiError extends Error {
+  statusCode: number;
+  responseBody: string;
+
+  constructor(statusCode: number, responseBody: string) {
+    super(`Evolution API error: ${statusCode} ${responseBody}`);
+    this.name = "EvolutionApiError";
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
+  }
+}
+
+export const isEvolutionApiError = (error: unknown): error is EvolutionApiError =>
+  error instanceof EvolutionApiError;
 
 const getConfig = () => {
   const baseUrl = process.env.EVOLUTION_BASE_URL?.trim();
@@ -59,31 +95,65 @@ const getConfig = () => {
 
 const evolutionRequest = async (
   path: string,
-  options: RequestInit = {}
+  options: (RequestInit & { parseJson?: boolean }) = {}
 ): Promise<any> => {
   const { baseUrl, apiKey } = getConfig();
   if (!baseUrl || !apiKey) {
     throw new Error("Evolution API não configurada.");
   }
 
+  const { parseJson = true, ...requestOptions } = options;
+
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
-    ...options,
+    ...requestOptions,
     headers: {
       "Content-Type": "application/json",
       apikey: apiKey,
       Authorization: `Bearer ${apiKey}`,
-      ...(options.headers ?? {}),
+      ...(requestOptions.headers ?? {}),
     },
   });
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`Evolution API error: ${response.status} ${body}`);
+    throw new EvolutionApiError(response.status, body);
+  }
+
+  if (!parseJson) {
+    return response;
   }
 
   return response
     .json()
     .catch(() => ({}) as EvolutionInstanceResponse) as Promise<EvolutionInstanceResponse>;
+};
+
+
+const fetchInstances = async () => {
+  const payload = await evolutionRequest(`/instance/fetchInstances`, {
+    method: "GET",
+  });
+
+  return Array.isArray(payload) ? (payload as EvolutionFetchInstanceItem[]) : [];
+};
+
+const resolveInstanceIdByName = async (instanceName: string) => {
+  const list = await fetchInstances();
+  const found = list.find((item) => {
+    const name = item.name ?? item.instanceName ?? item.instance?.instanceName;
+    return name === instanceName;
+  });
+
+  if (!found) {
+    throw new Error(`Instância ${instanceName} não encontrada na Evolution.`);
+  }
+
+  const instanceId = found.id ?? found.instanceId;
+  if (!instanceId) {
+    throw new Error(`Instância ${instanceName} encontrada sem instanceId.`);
+  }
+
+  return instanceId;
 };
 
 const mapEvolutionStatus = (payload: EvolutionInstanceResponse): StoreBotStatus => {
@@ -125,8 +195,7 @@ const extractConnectedPhone = (payload: EvolutionInstanceResponse) => {
 
 export const ensureInstance = async (instanceName: string) => {
   try {
-    const found = await evolutionRequest(`/instance/fetchInstances`);
-    const list = Array.isArray(found) ? found : [];
+    const list = await fetchInstances();
     const exists = list.some((item) => {
       const name =
         (item?.name as string | undefined) ??
@@ -185,11 +254,7 @@ export const getInstanceStatus = async (instanceName: string) => {
   };
 
   const tryFetchInstances = async () => {
-    const payload = await evolutionRequest(`/instance/fetchInstances`, {
-      method: "GET",
-    });
-
-    const list = Array.isArray(payload) ? (payload as EvolutionFetchInstanceItem[]) : [];
+    const list = await fetchInstances();
     const found = list.find((item) => {
       const name = item.name ?? item.instanceName ?? item.instance?.instanceName;
       return name === instanceName;
@@ -244,23 +309,55 @@ export const disconnect = async (instanceName: string) => {
   };
 };
 
-export const registerIncomingWebhook = async (instanceName: string) => {
+export const registerIncomingWebhook = async (
+  instanceName: string
+): Promise<EvolutionManagerWebhookResult> => {
   const webhookUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim();
   if (!webhookUrl) {
     throw new Error("ACTIVEPIECES_INCOMING_WEBHOOK_URL não configurada.");
   }
 
-  const payload = (await evolutionRequest(`/webhook/${instanceName}`, {
-    method: "POST",
-    body: JSON.stringify({
-      url: webhookUrl,
-      events: ["messages.upsert"],
-    }),
-  })) as EvolutionWebhookResponse;
+  const instanceId = await resolveInstanceIdByName(instanceName);
+  const managerPayload: EvolutionManagerWebhookPayload = {
+    url: webhookUrl,
+    headers: null,
+    enabled: true,
+    events: ["MESSAGES_UPSERT"],
+    webhookByEvents: false,
+    webhookBase64: false,
+  };
+
+  let response: Response;
+  try {
+    response = await evolutionRequest(`/manager/instance/${instanceId}/webhook`, {
+      method: "PUT",
+      body: JSON.stringify(managerPayload),
+      parseJson: false,
+    });
+  } catch {
+    response = await evolutionRequest(`/manager/instance/${instanceId}/webhook`, {
+      method: "POST",
+      body: JSON.stringify(managerPayload),
+      parseJson: false,
+    });
+  }
+
+  const statusCode = response.status;
+  const bodyText = await response.text().catch(() => "");
+  let payload: EvolutionWebhookResponse = {};
+  if (bodyText) {
+    try {
+      payload = JSON.parse(bodyText) as EvolutionWebhookResponse;
+    } catch {
+      payload = {};
+    }
+  }
 
   return {
     webhookUrl: payload.webhook?.url ?? payload.url ?? webhookUrl,
-    events: payload.webhook?.events ?? payload.events ?? ["messages.upsert"],
-    message: payload.message ?? null,
+    webhookEnabled: payload.webhook?.enabled ?? payload.enabled ?? true,
+    webhookEvents: payload.webhook?.events ?? payload.events ?? ["MESSAGES_UPSERT"],
+    statusCode,
+    instanceId,
   };
 };

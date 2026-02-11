@@ -43,6 +43,7 @@ import {
   getInstanceStatus,
   getQr,
   registerIncomingWebhook,
+  isEvolutionApiError,
 } from "./evolution";
 
 
@@ -2765,6 +2766,10 @@ const registerRoutes = () => {
       connectedPhone: string | null;
       webhookStatus: string | null;
       webhookUrl: string | null;
+      webhookEnabled: boolean | null;
+      webhookEvents: string[];
+      webhookAppliedAt: Date | null;
+      lastWebhookError: string | null;
       updatedAt: Date;
     };
     request: FastifyRequest;
@@ -2789,6 +2794,10 @@ const registerRoutes = () => {
       connectedPhone: config.connectedPhone,
       webhookStatus: config.webhookStatus,
       webhookUrl: config.webhookUrl,
+      webhookEnabled: config.webhookEnabled,
+      webhookEvents: config.webhookEvents,
+      webhookAppliedAt: config.webhookAppliedAt,
+      lastWebhookError: config.lastWebhookError,
       isActive: store.isActive,
       updatedAt: config.updatedAt,
     },
@@ -2911,21 +2920,66 @@ const registerRoutes = () => {
           ? StoreBotStatus.WAITING_QR
           : result.status;
 
-      let webhookStatus: string | null = null;
-      let webhookUrl: string | null = null;
+      const webhookTargetUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim() ?? null;
+      let webhookPatch: {
+        webhookStatus?: string | null;
+        webhookUrl?: string | null;
+        webhookEnabled?: boolean | null;
+        webhookEvents?: string[];
+        webhookAppliedAt?: Date | null;
+        lastWebhookError?: string | null;
+      } = {};
 
-      if (status === StoreBotStatus.CONNECTED) {
-        try {
-          const webhookResult = await registerIncomingWebhook(config.instanceName);
-          webhookStatus = "REGISTERED";
-          webhookUrl = webhookResult.webhookUrl;
-        } catch (error) {
-          webhookStatus = "ERROR";
-          webhookUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim() ?? null;
-          request.log.error(
-            { error, instanceName: config.instanceName },
-            "Falha ao registrar webhook da instância na Evolution."
-          );
+      if (status === StoreBotStatus.CONNECTED && webhookTargetUrl) {
+        const shouldApplyWebhook =
+          !config.webhookAppliedAt ||
+          config.webhookUrl !== webhookTargetUrl ||
+          !config.webhookEnabled ||
+          config.webhookEvents.length !== 1 ||
+          config.webhookEvents[0] !== "MESSAGES_UPSERT";
+
+        if (shouldApplyWebhook) {
+          try {
+            const webhookResult = await registerIncomingWebhook(config.instanceName);
+            webhookPatch = {
+              webhookStatus: "REGISTERED",
+              webhookUrl: webhookResult.webhookUrl,
+              webhookEnabled: webhookResult.webhookEnabled,
+              webhookEvents: webhookResult.webhookEvents,
+              webhookAppliedAt: new Date(),
+              lastWebhookError: null,
+            };
+            request.log.info(
+              {
+                tag: "evolution webhook",
+                statusCode: webhookResult.statusCode,
+                instanceName: config.instanceName,
+                instanceId: webhookResult.instanceId,
+              },
+              "Webhook da Evolution configurado com sucesso."
+            );
+          } catch (error) {
+            webhookPatch = {
+              webhookStatus: "ERROR",
+              webhookUrl: webhookTargetUrl,
+              webhookEnabled: false,
+              webhookEvents: ["MESSAGES_UPSERT"],
+              lastWebhookError: isEvolutionApiError(error)
+                ? `${error.statusCode} ${error.responseBody}`
+                : error instanceof Error
+                  ? error.message
+                  : "Erro desconhecido ao configurar webhook.",
+            };
+            request.log.error(
+              {
+                tag: "evolution webhook",
+                statusCode: isEvolutionApiError(error) ? error.statusCode : null,
+                body: isEvolutionApiError(error) ? error.responseBody : null,
+                instanceName: config.instanceName,
+              },
+              "Falha ao configurar webhook da instância na Evolution."
+            );
+          }
         }
       }
 
@@ -2936,8 +2990,7 @@ const registerRoutes = () => {
           connectedPhone:
             status === StoreBotStatus.CONNECTED ? result.connectedPhone : null,
           instanceName: store.slug,
-          webhookStatus,
-          webhookUrl,
+          ...webhookPatch,
         },
       });
 
@@ -2970,6 +3023,68 @@ const registerRoutes = () => {
 
     try {
       const instance = await getInstanceStatus(config.instanceName);
+      const webhookTargetUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim() ?? null;
+      let webhookPatch: {
+        webhookStatus?: string | null;
+        webhookUrl?: string | null;
+        webhookEnabled?: boolean | null;
+        webhookEvents?: string[];
+        webhookAppliedAt?: Date | null;
+        lastWebhookError?: string | null;
+      } = {};
+
+      if (instance.status === StoreBotStatus.CONNECTED && webhookTargetUrl) {
+        const shouldApplyWebhook =
+          !config.webhookAppliedAt ||
+          config.webhookUrl !== webhookTargetUrl ||
+          !config.webhookEnabled ||
+          config.webhookEvents.length !== 1 ||
+          config.webhookEvents[0] !== "MESSAGES_UPSERT";
+
+        if (shouldApplyWebhook) {
+          try {
+            const webhookResult = await registerIncomingWebhook(config.instanceName);
+            webhookPatch = {
+              webhookStatus: "REGISTERED",
+              webhookUrl: webhookResult.webhookUrl,
+              webhookEnabled: webhookResult.webhookEnabled,
+              webhookEvents: webhookResult.webhookEvents,
+              webhookAppliedAt: new Date(),
+              lastWebhookError: null,
+            };
+            request.log.info(
+              {
+                tag: "evolution webhook",
+                statusCode: webhookResult.statusCode,
+                instanceName: config.instanceName,
+                instanceId: webhookResult.instanceId,
+              },
+              "Webhook da Evolution configurado com sucesso."
+            );
+          } catch (error) {
+            webhookPatch = {
+              webhookStatus: "ERROR",
+              webhookUrl: webhookTargetUrl,
+              webhookEnabled: false,
+              webhookEvents: ["MESSAGES_UPSERT"],
+              lastWebhookError: isEvolutionApiError(error)
+                ? `${error.statusCode} ${error.responseBody}`
+                : error instanceof Error
+                  ? error.message
+                  : "Erro desconhecido ao configurar webhook.",
+            };
+            request.log.error(
+              {
+                tag: "evolution webhook",
+                statusCode: isEvolutionApiError(error) ? error.statusCode : null,
+                body: isEvolutionApiError(error) ? error.responseBody : null,
+                instanceName: config.instanceName,
+              },
+              "Falha ao configurar webhook da instância na Evolution."
+            );
+          }
+        }
+      }
 
       const updated = await prisma.storeBotConfig.update({
         where: { storeId: store.id },
@@ -2978,6 +3093,7 @@ const registerRoutes = () => {
           connectedPhone:
             instance.status === StoreBotStatus.CONNECTED ? instance.connectedPhone : null,
           instanceName: store.slug,
+          ...webhookPatch,
         },
       });
 
@@ -3019,6 +3135,10 @@ const registerRoutes = () => {
         instanceName: store.slug,
         webhookStatus: null,
         webhookUrl: null,
+        webhookEnabled: null,
+        webhookEvents: [],
+        webhookAppliedAt: null,
+        lastWebhookError: null,
       },
     });
 

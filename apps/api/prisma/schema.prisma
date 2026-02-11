@@ -127,6 +127,10 @@ model StoreBotConfig {
   connectedPhone        String?
   webhookStatus         String?
   webhookUrl            String?
+  webhookEnabled        Boolean?
+  webhookEvents         String[]       @default([])
+  webhookAppliedAt      DateTime?
+  lastWebhookError      String?
   keywords              String         @default("cardapio,menu")
   sendMenuOnKeywords    Boolean        @default(true)
   sendOrderConfirmation Boolean        @default(true)
