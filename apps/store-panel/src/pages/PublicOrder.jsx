@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import confetti from "canvas-confetti";
-import { toPng } from "html-to-image";
+import { toJpeg, toPng } from "html-to-image";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
@@ -931,13 +931,23 @@ const PublicOrder = () => {
       fulfillmentTypeLabels[receipt?.fulfillmentType] || fulfillmentTypeLabels.PICKUP;
     const hasAddress = Boolean(receipt?.addressLine || receipt?.deliveryAreaName);
 
+    const MIN_RECEIPT_DATA_URL_LENGTH = 1000;
+
+    const validateGeneratedDataUrl = (dataUrl, formatLabel) => {
+      if (!dataUrl || dataUrl.length < MIN_RECEIPT_DATA_URL_LENGTH) {
+        throw new Error(
+          `Comprovante ${formatLabel} inválido (conteúdo vazio ou muito pequeno).`
+        );
+      }
+
+      return dataUrl;
+    };
+
     const handleSaveReceipt = async () => {
       if (savingReceipt) return;
 
       setSavingReceipt(true);
       setReceiptError("");
-
-      let offscreenWrapper = null;
 
       try {
         if (!receiptRef.current) {
@@ -946,31 +956,47 @@ const PublicOrder = () => {
         await new Promise((resolve) => requestAnimationFrame(resolve));
 
         const receiptNode = receiptRef.current;
-        offscreenWrapper = document.createElement("div");
-        offscreenWrapper.style.position = "fixed";
-        offscreenWrapper.style.left = "-99999px";
-        offscreenWrapper.style.top = "0";
-        offscreenWrapper.style.backgroundColor = "#fff";
-        offscreenWrapper.style.padding = "24px";
-        offscreenWrapper.style.boxSizing = "border-box";
-        offscreenWrapper.style.zIndex = "-1";
+        const rect = receiptNode.getBoundingClientRect();
+        const width = Math.ceil(rect.width);
+        const height = Math.ceil(rect.height);
 
-        const receiptClone = receiptNode.cloneNode(true);
-        offscreenWrapper.appendChild(receiptClone);
-        document.body.appendChild(offscreenWrapper);
+        if (width <= 0 || height <= 0) {
+          throw new Error(
+            `Tamanho do comprovante inválido para exportação (width=${width}, height=${height}).`
+          );
+        }
 
-        const pngDataUrl = await toPng(offscreenWrapper, {
+        const exportOptions = {
           pixelRatio: 2,
           cacheBust: true,
           backgroundColor: "#fff",
-        });
-        if (!pngDataUrl) {
-          throw new Error("Não foi possível gerar o comprovante.");
+          width,
+          height,
+          style: {
+            padding: "24px",
+            boxSizing: "border-box",
+            backgroundColor: "#fff",
+          },
+        };
+
+        let fileName = `comprovante-${orderResult.number}.png`;
+        let receiptDataUrl;
+
+        try {
+          const pngDataUrl = await toPng(receiptNode, exportOptions);
+          receiptDataUrl = validateGeneratedDataUrl(pngDataUrl, "PNG");
+        } catch (pngError) {
+          console.error("save receipt png export failed:", pngError);
+          const jpegDataUrl = await toJpeg(receiptNode, {
+            ...exportOptions,
+            quality: 0.95,
+          });
+          receiptDataUrl = validateGeneratedDataUrl(jpegDataUrl, "JPEG");
+          fileName = `comprovante-${orderResult.number}.jpg`;
         }
 
-        const fileName = `comprovante-${orderResult.number}.png`;
         const link = document.createElement("a");
-        link.href = pngDataUrl;
+        link.href = receiptDataUrl;
         link.download = fileName;
         document.body.appendChild(link);
         link.click();
@@ -979,9 +1005,6 @@ const PublicOrder = () => {
         console.error("save receipt failed:", err);
         setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
       } finally {
-        if (offscreenWrapper && offscreenWrapper.parentNode) {
-          offscreenWrapper.parentNode.removeChild(offscreenWrapper);
-        }
         setSavingReceipt(false);
       }
     };
