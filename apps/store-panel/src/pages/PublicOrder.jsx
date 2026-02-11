@@ -347,7 +347,6 @@ const PublicOrder = () => {
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
   const [downloadingReceiptPng, setDownloadingReceiptPng] = useState(false);
-  const [downloadingReceiptPdf, setDownloadingReceiptPdf] = useState(false);
   const [receiptPngError, setReceiptPngError] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
@@ -874,43 +873,6 @@ const PublicOrder = () => {
     [downloadingReceiptPng, orderResult]
   );
 
-  const handleDownloadReceiptPdf = useCallback(
-    async (event) => {
-      event.stopPropagation();
-      if (!orderResult || downloadingReceiptPdf) {
-        return;
-      }
-
-      const receiptToken = orderResult.receiptToken;
-      const orderId = orderResult.id || orderResult.orderId;
-      if (!receiptToken || !orderId) {
-        setReceiptPngError("Comprovante indisponível no momento.");
-        return;
-      }
-      const shortCode = (orderResult.shortCode || orderResult.number || orderId || "").toString();
-      const fileCode = shortCode.slice(-6) || orderId.slice(-6);
-      const pdfUrl = `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`;
-
-      try {
-        setReceiptPngError("");
-        setDownloadingReceiptPdf(true);
-        await downloadReceiptFile({
-          url: pdfUrl,
-          fallbackUrl: pdfUrl,
-          fileName: `comprovante-${fileCode}.pdf`,
-          fetchErrorMessage: "Não foi possível baixar o comprovante em PDF.",
-        });
-      } catch (downloadError) {
-        setReceiptPngError(
-          downloadError.message || "Não foi possível baixar o comprovante em PDF. Tente novamente."
-        );
-      } finally {
-        setDownloadingReceiptPdf(false);
-      }
-    },
-    [downloadingReceiptPdf, orderResult]
-  );
-
   const handleSubmit = async () => {
     if (submitting) return;
     if (!isFormValid) {
@@ -1044,11 +1006,6 @@ const PublicOrder = () => {
     const orderId = orderResult?.id || orderResult?.orderId;
     const orderDisplayNumber = orderResult?.shortCode || orderResult?.number;
     const storeName = receipt?.storeName || menu.store?.name || "Loja";
-    const pdfUrl =
-      receiptToken && orderId
-        ? `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`
-        : null;
-
 
     return (
       <div className="flex min-h-screen flex-col">
@@ -1134,16 +1091,6 @@ const PublicOrder = () => {
                   {downloadingReceiptPng
                     ? "Baixando comprovante (imagem)..."
                     : "Salvar comprovante (imagem)"}
-                </button>
-              ) : null}
-              {pdfUrl ? (
-                <button
-                  type="button"
-                  onClick={handleDownloadReceiptPdf}
-                  disabled={downloadingReceiptPdf}
-                  className="rounded-full border border-emerald-300 px-5 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-                >
-                  {downloadingReceiptPdf ? "Baixando comprovante (PDF)..." : "Baixar comprovante (PDF)"}
                 </button>
               ) : null}
             </div>
