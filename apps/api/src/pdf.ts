@@ -72,9 +72,128 @@ export type PublicOrderReceiptPdfData = Pick<
   | "notes"
   | "paymentMethod"
   | "fulfillmentType"
+  | "addressLine"
+  | "addressNumber"
+  | "addressNeighborhood"
+  | "addressCity"
+  | "addressReference"
+  | "deliveryFeeCents"
+  | "convenienceFeeCents"
+  | "convenienceFeeLabel"
+  | "changeForCents"
   | "total"
 > & {
+  shortCode?: string | null;
+  store: Pick<Store, "name">;
   items: Array<OrderItem & { product: Product; options?: OrderItemOption[] }>;
+};
+
+type ReceiptTextLine = {
+  align?: "left" | "center";
+  fontSize?: number;
+  text: string;
+};
+
+const orderShortCode = (order: PublicOrderReceiptPdfData) =>
+  order.shortCode?.trim() || order.id.slice(-6);
+
+const buildPublicReceiptLines = (order: PublicOrderReceiptPdfData): ReceiptTextLine[] => {
+  const paymentLabels = {
+    PIX: "PIX",
+    CASH: "Dinheiro",
+    CARD: "Cartão",
+  } as const;
+
+  const fulfillmentLabels = {
+    DELIVERY: "Entrega",
+    PICKUP: "Retirada",
+    DINE_IN: "Consumo no local",
+  } as const;
+
+  const lines: ReceiptTextLine[] = [
+    {
+      text: order.store?.name?.trim() || "Restaurante",
+      align: "center",
+      fontSize: 15,
+    },
+    {
+      text: "Comprovante do pedido",
+      align: "center",
+      fontSize: 11,
+    },
+    { text: `Pedido #${orderShortCode(order)}`, fontSize: 11 },
+    { text: `Data: ${formatDate(order.createdAt)}` },
+    { text: "" },
+    { text: "Itens", fontSize: 11 },
+  ];
+
+  order.items.forEach((item) => {
+    const lineTotalCents = item.unitPriceCents * item.quantity;
+    lines.push({
+      text: `${item.quantity}x ${item.product.name} — ${currency.format(lineTotalCents / 100)}`,
+    });
+
+    item.options?.forEach((option) => {
+      const optionPrice =
+        option.priceDeltaCents > 0
+          ? ` (+${currency.format(option.priceDeltaCents / 100)})`
+          : "";
+      lines.push({ text: `  • ${option.groupName}: ${option.itemName}${optionPrice}` });
+    });
+
+    if (item.notes) {
+      lines.push({ text: `  Obs. item: ${item.notes}` });
+    }
+  });
+
+  if (order.notes) {
+    lines.push({ text: "" }, { text: `Observações: ${order.notes}` });
+  }
+
+  lines.push(
+    { text: "" },
+    { text: `Pagamento: ${paymentLabels[order.paymentMethod] ?? "Não informado"}` },
+    { text: `Tipo: ${fulfillmentLabels[order.fulfillmentType] ?? "Não informado"}` }
+  );
+
+  if (order.fulfillmentType === "DELIVERY") {
+    const address = [
+      order.addressLine,
+      order.addressNumber,
+      order.addressNeighborhood,
+      order.addressCity,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    if (address) {
+      lines.push({ text: `Endereço: ${address}` });
+    }
+    if (order.addressReference) {
+      lines.push({ text: `Referência: ${order.addressReference}` });
+    }
+  }
+
+  if (order.paymentMethod === "CASH" && order.changeForCents && order.changeForCents > 0) {
+    lines.push({ text: `Troco para: ${currency.format(order.changeForCents / 100)}` });
+  }
+
+  if (order.deliveryFeeCents > 0) {
+    lines.push({ text: `Taxa de entrega: ${currency.format(order.deliveryFeeCents / 100)}` });
+  }
+
+  if (order.convenienceFeeCents > 0) {
+    lines.push({
+      text: `${order.convenienceFeeLabel || "Taxa"}: ${currency.format(order.convenienceFeeCents / 100)}`,
+    });
+  }
+
+  lines.push({ text: `Total: ${currency.format(order.total.toNumber())}`, fontSize: 11 });
+
+  if (lines.length === 0) {
+    return [{ text: order.store?.name || "Comprovante" }, { text: `Pedido #${orderShortCode(order)}` }];
+  }
+
+  return lines;
 };
 
 export const buildOrderPdf = (order: OrderReceipt) => {
@@ -297,75 +416,32 @@ export const buildRevenuePdf = (report: RevenueReport) => {
 };
 
 export const buildPublicOrderReceiptPdf = (order: PublicOrderReceiptPdfData) => {
+  const widthPts = 80 * 2.83464567;
+  const lineHeight = 14;
+  const padding = 16;
+  const lines = buildPublicReceiptLines(order);
+  const wrappedLineCount = lines.reduce((count, line) => {
+    if (!line.text.trim()) {
+      return count + 1;
+    }
+    return count + Math.max(1, Math.ceil(line.text.length / 34));
+  }, 0);
+  const heightPts = padding + wrappedLineCount * lineHeight + padding;
+
   const doc = new PDFDocument({
-    size: "A4",
-    margins: { top: 40, bottom: 40, left: 40, right: 40 },
+    size: [widthPts, heightPts],
+    margins: { top: 12, bottom: 12, left: 12, right: 12 },
   });
 
-  const paymentLabels = {
-    PIX: "PIX",
-    CASH: "Dinheiro",
-    CARD: "Cartão",
-  } as const;
-
-  const fulfillmentLabels = {
-    DELIVERY: "Entrega",
-    PICKUP: "Retirada",
-    DINE_IN: "Consumo no local",
-  } as const;
-
-  doc.fontSize(18).text("Comprovante do pedido", { align: "center" });
-  doc.moveDown(0.6);
-  doc.fontSize(12).text(`Pedido #${order.id.slice(0, 6)}`);
-  doc.text(`Data: ${formatDate(order.createdAt)}`);
-
-  doc.moveDown(0.8);
-  doc.fontSize(13).text("Itens");
-  doc.moveDown(0.4);
-
-  order.items.forEach((item) => {
-    const lineTotalCents = item.unitPriceCents * item.quantity;
-    doc.fontSize(11).text(`${item.quantity}x ${item.product.name}`);
-    doc.fontSize(10).fillColor("#334155").text(currency.format(lineTotalCents / 100));
-    doc.fillColor("black");
-
-    if (item.options && item.options.length > 0) {
-      item.options.forEach((option) => {
-        const extraLabel =
-          option.priceDeltaCents > 0
-            ? ` (+${currency.format(option.priceDeltaCents / 100)})`
-            : "";
-        doc
-          .fontSize(9)
-          .fillColor("#475569")
-          .text(`• ${option.groupName}: ${option.itemName}${extraLabel}`, { indent: 10 });
+  doc.font("Helvetica");
+  lines.forEach((line, index) => {
+    const isStoreName = index === 0;
+    doc
+      .fontSize(line.fontSize ?? (isStoreName ? 15 : 10))
+      .text(line.text || " ", {
+        align: line.align ?? (isStoreName ? "center" : "left"),
+        lineGap: 2,
       });
-      doc.fillColor("black");
-    }
-
-    if (item.notes) {
-      doc.fontSize(9).fillColor("#475569").text(`Obs. item: ${item.notes}`, {
-        indent: 10,
-      });
-      doc.fillColor("black");
-    }
-
-    doc.moveDown(0.4);
-  });
-
-  if (order.notes) {
-    doc.moveDown(0.6);
-    doc.fontSize(11).text("Observações");
-    doc.fontSize(10).fillColor("#334155").text(order.notes);
-    doc.fillColor("black");
-  }
-
-  doc.moveDown(0.8);
-  doc.fontSize(11).text(`Pagamento: ${paymentLabels[order.paymentMethod] ?? "Não informado"}`);
-  doc.text(`Tipo: ${fulfillmentLabels[order.fulfillmentType] ?? "Não informado"}`);
-  doc.moveDown(0.6);
-  doc.fontSize(14).text(`Total: ${currency.format(order.total.toNumber())}`, {
-    align: "right",
   });
 
   doc.end();
@@ -419,122 +495,17 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
   const horizontalPadding = 40;
   const verticalPadding = 42;
   const maxTextWidth = width - horizontalPadding * 2;
+  const lines = buildPublicReceiptLines(order);
 
-  const paymentLabels = {
-    PIX: "PIX",
-    CASH: "Dinheiro",
-    CARD: "Cartão",
-  } as const;
-
-  const fulfillmentLabels = {
-    DELIVERY: "Entrega",
-    PICKUP: "Retirada",
-    DINE_IN: "Consumo no local",
-  } as const;
-
-  const entries: ReceiptPngEntry[] = [
-    {
-      text: "Comprovante do pedido",
-      fontSize: 36,
-      fontWeight: "bold",
-      spacingAfter: 12,
-    },
-    {
-      text: `Pedido #${order.id.slice(0, 6)}`,
-      fontSize: 24,
-      fontWeight: "bold",
-      spacingAfter: 6,
-    },
-    {
-      text: `Data: ${formatDate(order.createdAt)}`,
-      fontSize: 20,
-      color: "#334155",
-      spacingAfter: 18,
-    },
-    {
-      text: "Itens",
-      fontSize: 24,
-      fontWeight: "bold",
-      spacingAfter: 10,
-    },
-  ];
-
-  order.items.forEach((item) => {
-    const lineTotalCents = item.unitPriceCents * item.quantity;
-    entries.push({
-      text: `${item.quantity}x ${item.product.name} — ${currency.format(lineTotalCents / 100)}`,
-      fontSize: 21,
-      fontWeight: "bold",
-      spacingAfter: 4,
-    });
-
-    if (item.options && item.options.length > 0) {
-      item.options.forEach((option) => {
-        const optionPrice =
-          option.priceDeltaCents > 0
-            ? ` (+${currency.format(option.priceDeltaCents / 100)})`
-            : "";
-
-        entries.push({
-          text: `• ${option.groupName}: ${option.itemName}${optionPrice}`,
-          fontSize: 18,
-          color: "#475569",
-          indent: 14,
-          spacingAfter: 2,
-        });
-      });
-    }
-
-    if (item.notes) {
-      entries.push({
-        text: `Obs. item: ${item.notes}`,
-        fontSize: 18,
-        color: "#475569",
-        indent: 14,
-        spacingAfter: 2,
-      });
-    }
-
-    entries.push({
-      text: "",
-      fontSize: 8,
-      spacingAfter: 8,
-    });
-  });
-
-  if (order.notes) {
-    entries.push({
-      text: "Observações",
-      fontSize: 21,
-      fontWeight: "bold",
-      spacingBefore: 6,
-      spacingAfter: 4,
-    });
-    entries.push({
-      text: order.notes,
-      fontSize: 18,
-      color: "#334155",
-      spacingAfter: 12,
-    });
-  }
-
-  entries.push(
-    {
-      text: `Pagamento: ${paymentLabels[order.paymentMethod] ?? "Não informado"}`,
-      fontSize: 20,
-      spacingAfter: 4,
-    },
-    {
-      text: `Tipo: ${fulfillmentLabels[order.fulfillmentType] ?? "Não informado"}`,
-      fontSize: 20,
-      spacingAfter: 12,
-    },
-    {
-      text: `Total: ${currency.format(order.total.toNumber())}`,
-      fontSize: 28,
-      fontWeight: "bold",
-    }
-  );
+  const entries: ReceiptPngEntry[] = (lines.length > 0
+    ? lines
+    : [{ text: order.store?.name || "Comprovante" }, { text: `Pedido #${orderShortCode(order)}` }]
+  ).map((line, index) => ({
+    text: line.text,
+    fontSize: index === 0 ? 24 : 18,
+    fontWeight: index === 0 ? "bold" : "normal",
+    spacingAfter: 6,
+  }));
 
   const measureCanvas = createCanvas(width, 10);
   const measureContext = measureCanvas.getContext("2d");

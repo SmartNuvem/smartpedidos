@@ -1840,6 +1840,9 @@ const registerRoutes = () => {
     const order = await prisma.order.findUnique({
       where: { id },
       include: {
+        store: {
+          select: { name: true },
+        },
         items: {
           include: {
             product: true,
@@ -1857,7 +1860,7 @@ const registerRoutes = () => {
       return reply.status(403).send({ message: "Token de comprovante inválido." });
     }
 
-    const shortId = order.id.slice(0, 6);
+    const shortId = order.id.slice(-6);
     const pdf = buildPublicOrderReceiptPdf(order);
 
     reply.header("Content-Type", "application/pdf");
@@ -1880,6 +1883,9 @@ const registerRoutes = () => {
     const order = await prisma.order.findUnique({
       where: { id },
       include: {
+        store: {
+          select: { name: true },
+        },
         items: {
           include: {
             product: true,
@@ -1897,7 +1903,7 @@ const registerRoutes = () => {
       return reply.status(403).send({ message: "Token de comprovante inválido." });
     }
 
-    const shortId = order.id.slice(0, 6);
+    const shortId = order.id.slice(-6);
     const png = await buildPublicOrderReceiptPng(order);
 
     reply.header("Content-Type", "image/png");

@@ -938,6 +938,7 @@ const PublicOrder = () => {
               className="mx-auto mt-6 w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm sm:p-5"
             >
               <h2 className="text-base font-semibold text-slate-900">Comprovante do pedido</h2>
+              <p className="mt-1 text-sm font-medium text-slate-700">{menu.store?.name || "Loja"}</p>
               <p className="mt-1 text-xs text-slate-500">Pedido #{orderDisplayNumber}</p>
 
               <div className="mt-4 space-y-3">
