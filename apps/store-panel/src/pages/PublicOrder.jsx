@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import confetti from "canvas-confetti";
-import { toJpeg, toPng } from "html-to-image";
+import { toPng } from "html-to-image";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
@@ -949,55 +949,44 @@ const PublicOrder = () => {
       setSavingReceipt(true);
       setReceiptError("");
 
+      let sandboxNode;
+
       try {
         if (!receiptRef.current) {
           throw new Error("Receipt element not found.");
         }
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-
         const receiptNode = receiptRef.current;
-        const width = Math.ceil(receiptNode.scrollWidth || receiptNode.offsetWidth);
-        const height = Math.ceil(receiptNode.scrollHeight || receiptNode.offsetHeight);
-        const bleed = 24;
-        const canvasWidth = width + bleed * 2;
-        const canvasHeight = height + bleed * 2;
 
-        if (width <= 0 || height <= 0) {
-          throw new Error(
-            `Tamanho do comprovante inválido para exportação (width=${width}, height=${height}).`
-          );
-        }
+        sandboxNode = document.createElement("div");
+        sandboxNode.style.position = "fixed";
+        sandboxNode.style.left = "0";
+        sandboxNode.style.top = "0";
+        sandboxNode.style.opacity = "0";
+        sandboxNode.style.padding = "24px";
+        sandboxNode.style.background = "#fff";
+        sandboxNode.style.zIndex = "-1";
+        sandboxNode.style.pointerEvents = "none";
+        sandboxNode.style.overflow = "visible";
+        document.body.appendChild(sandboxNode);
 
-        const exportOptions = {
+        const clonedReceiptNode = receiptNode.cloneNode(true);
+        clonedReceiptNode.style.overflow = "visible";
+        clonedReceiptNode.style.maxHeight = "none";
+        clonedReceiptNode.style.height = "auto";
+        clonedReceiptNode.style.transform = "none";
+        sandboxNode.appendChild(clonedReceiptNode);
+
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+
+        const pngDataUrl = await toPng(sandboxNode, {
           pixelRatio: 2,
           cacheBust: true,
           backgroundColor: "#fff",
-          width,
-          height,
-          canvasWidth,
-          canvasHeight,
-          style: {
-            backgroundColor: "#fff",
-            transform: `translate(${bleed}px, ${bleed}px)`,
-            transformOrigin: "top left",
-          },
-        };
-
-        let fileName = `comprovante-${orderResult.number}.png`;
-        let receiptDataUrl;
-
-        try {
-          const pngDataUrl = await toPng(receiptNode, exportOptions);
-          receiptDataUrl = validateGeneratedDataUrl(pngDataUrl, "PNG");
-        } catch (pngError) {
-          console.error("save receipt png export failed:", pngError);
-          const jpegDataUrl = await toJpeg(receiptNode, {
-            ...exportOptions,
-            quality: 0.95,
-          });
-          receiptDataUrl = validateGeneratedDataUrl(jpegDataUrl, "JPEG");
-          fileName = `comprovante-${orderResult.number}.jpg`;
-        }
+        });
+        const receiptDataUrl = validateGeneratedDataUrl(pngDataUrl, "PNG");
+        const fileName = `comprovante-${orderResult.number}.png`;
 
         const link = document.createElement("a");
         link.href = receiptDataUrl;
@@ -1009,6 +998,9 @@ const PublicOrder = () => {
         console.error("save receipt failed:", err);
         setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
       } finally {
+        if (sandboxNode && sandboxNode.parentNode) {
+          sandboxNode.parentNode.removeChild(sandboxNode);
+        }
         setSavingReceipt(false);
       }
     };
