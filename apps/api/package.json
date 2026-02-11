@@ -19,7 +19,8 @@
     "bcryptjs": "^2.4.3",
     "fastify": "^4.28.1",
     "pdfkit": "^0.15.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@napi-rs/canvas": "^0.1.64"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

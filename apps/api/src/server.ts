@@ -30,6 +30,7 @@ import {
   buildBillingPdf,
   buildOrderPdf,
   buildPublicOrderReceiptPdf,
+  buildPublicOrderReceiptPng,
   buildRevenuePdf,
   buildTableSummaryPdf,
 } from "./pdf";
@@ -1861,6 +1862,46 @@ const registerRoutes = () => {
     );
 
     return reply.send(pdf);
+  });
+
+
+  app.get("/public/orders/:id/receipt.png", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const querySchema = z.object({ token: z.string().min(1).max(64) });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { token } = querySchema.parse(request.query);
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: true,
+            options: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return reply.status(404).send({ message: "Comprovante não encontrado." });
+    }
+
+    if (!order.receiptToken || order.receiptToken !== token) {
+      return reply.status(403).send({ message: "Token de comprovante inválido." });
+    }
+
+    const shortId = order.id.slice(0, 6);
+    const png = await buildPublicOrderReceiptPng(order);
+
+    reply.header("Content-Type", "image/png");
+    reply.header(
+      "Content-Disposition",
+      `attachment; filename="comprovante-${shortId}.png"`
+    );
+
+    return reply.send(png);
   });
 
   app.post("/auth/store/login", async (request, reply) => {

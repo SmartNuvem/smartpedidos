@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import {
   Order,
   OrderItem,
@@ -369,4 +370,219 @@ export const buildPublicOrderReceiptPdf = (order: PublicOrderReceiptPdfData) => 
 
   doc.end();
   return doc;
+};
+
+type ReceiptPngEntry = {
+  color?: string;
+  fontSize: number;
+  fontWeight?: "normal" | "bold";
+  indent?: number;
+  spacingAfter?: number;
+  spacingBefore?: number;
+  text: string;
+};
+
+const wrapCanvasText = (params: {
+  context: SKRSContext2D;
+  maxWidth: number;
+  text: string;
+}) => {
+  const words = params.text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return [""];
+  }
+
+  const lines: string[] = [];
+  let currentLine = "";
+
+  words.forEach((word) => {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    const candidateWidth = params.context.measureText(candidate).width;
+    if (candidateWidth <= params.maxWidth || !currentLine) {
+      currentLine = candidate;
+      return;
+    }
+
+    lines.push(currentLine);
+    currentLine = word;
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+};
+
+export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfData) => {
+  const width = 720;
+  const horizontalPadding = 40;
+  const verticalPadding = 42;
+  const maxTextWidth = width - horizontalPadding * 2;
+
+  const paymentLabels = {
+    PIX: "PIX",
+    CASH: "Dinheiro",
+    CARD: "Cartão",
+  } as const;
+
+  const fulfillmentLabels = {
+    DELIVERY: "Entrega",
+    PICKUP: "Retirada",
+    DINE_IN: "Consumo no local",
+  } as const;
+
+  const entries: ReceiptPngEntry[] = [
+    {
+      text: "Comprovante do pedido",
+      fontSize: 36,
+      fontWeight: "bold",
+      spacingAfter: 12,
+    },
+    {
+      text: `Pedido #${order.id.slice(0, 6)}`,
+      fontSize: 24,
+      fontWeight: "bold",
+      spacingAfter: 6,
+    },
+    {
+      text: `Data: ${formatDate(order.createdAt)}`,
+      fontSize: 20,
+      color: "#334155",
+      spacingAfter: 18,
+    },
+    {
+      text: "Itens",
+      fontSize: 24,
+      fontWeight: "bold",
+      spacingAfter: 10,
+    },
+  ];
+
+  order.items.forEach((item) => {
+    const lineTotalCents = item.unitPriceCents * item.quantity;
+    entries.push({
+      text: `${item.quantity}x ${item.product.name} — ${currency.format(lineTotalCents / 100)}`,
+      fontSize: 21,
+      fontWeight: "bold",
+      spacingAfter: 4,
+    });
+
+    if (item.options && item.options.length > 0) {
+      item.options.forEach((option) => {
+        const optionPrice =
+          option.priceDeltaCents > 0
+            ? ` (+${currency.format(option.priceDeltaCents / 100)})`
+            : "";
+
+        entries.push({
+          text: `• ${option.groupName}: ${option.itemName}${optionPrice}`,
+          fontSize: 18,
+          color: "#475569",
+          indent: 14,
+          spacingAfter: 2,
+        });
+      });
+    }
+
+    if (item.notes) {
+      entries.push({
+        text: `Obs. item: ${item.notes}`,
+        fontSize: 18,
+        color: "#475569",
+        indent: 14,
+        spacingAfter: 2,
+      });
+    }
+
+    entries.push({
+      text: "",
+      fontSize: 8,
+      spacingAfter: 8,
+    });
+  });
+
+  if (order.notes) {
+    entries.push({
+      text: "Observações",
+      fontSize: 21,
+      fontWeight: "bold",
+      spacingBefore: 6,
+      spacingAfter: 4,
+    });
+    entries.push({
+      text: order.notes,
+      fontSize: 18,
+      color: "#334155",
+      spacingAfter: 12,
+    });
+  }
+
+  entries.push(
+    {
+      text: `Pagamento: ${paymentLabels[order.paymentMethod] ?? "Não informado"}`,
+      fontSize: 20,
+      spacingAfter: 4,
+    },
+    {
+      text: `Tipo: ${fulfillmentLabels[order.fulfillmentType] ?? "Não informado"}`,
+      fontSize: 20,
+      spacingAfter: 12,
+    },
+    {
+      text: `Total: ${currency.format(order.total.toNumber())}`,
+      fontSize: 28,
+      fontWeight: "bold",
+    }
+  );
+
+  const measureCanvas = createCanvas(width, 10);
+  const measureContext = measureCanvas.getContext("2d");
+
+  let totalHeight = verticalPadding * 2;
+  entries.forEach((entry) => {
+    const fontWeight = entry.fontWeight ?? "normal";
+    measureContext.font = `${fontWeight} ${entry.fontSize}px sans-serif`;
+    const maxWidth = maxTextWidth - (entry.indent ?? 0);
+    const wrappedLines = wrapCanvasText({
+      context: measureContext,
+      text: entry.text,
+      maxWidth,
+    });
+    const lineHeight = entry.fontSize * 1.42;
+    totalHeight += entry.spacingBefore ?? 0;
+    totalHeight += wrappedLines.length * lineHeight;
+    totalHeight += entry.spacingAfter ?? 0;
+  });
+
+  const canvas = createCanvas(width, Math.ceil(totalHeight));
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, canvas.height);
+
+  let y = verticalPadding;
+  entries.forEach((entry) => {
+    y += entry.spacingBefore ?? 0;
+    const fontWeight = entry.fontWeight ?? "normal";
+    context.font = `${fontWeight} ${entry.fontSize}px sans-serif`;
+    context.fillStyle = entry.color ?? "#0f172a";
+    context.textBaseline = "top";
+    const lineHeight = entry.fontSize * 1.42;
+    const indent = entry.indent ?? 0;
+    const maxWidth = maxTextWidth - indent;
+    const wrappedLines = wrapCanvasText({
+      context,
+      text: entry.text,
+      maxWidth,
+    });
+
+    wrappedLines.forEach((line) => {
+      context.fillText(line, horizontalPadding + indent, y, maxWidth);
+      y += lineHeight;
+    });
+
+    y += entry.spacingAfter ?? 0;
+  });
+
+  return canvas.encode("png");
 };
