@@ -933,7 +933,10 @@ const PublicOrder = () => {
         return;
       }
       const url = `${API_URL}/public/orders/${orderResult.orderId}/receipt.pdf?token=${receiptToken}`;
-      window.open(url, "_blank", "noopener,noreferrer");
+      const openedWindow = window.open(url, "_blank", "noopener,noreferrer");
+      if (!openedWindow) {
+        window.location.href = url;
+      }
     };
 
     return (
@@ -1008,6 +1011,7 @@ const PublicOrder = () => {
             </div>
 
             <button
+              type="button"
               className="mt-4 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={handleDownloadReceipt}
             >
