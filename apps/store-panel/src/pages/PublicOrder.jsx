@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min?url";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const initialAddress = {
   line: "",
@@ -267,6 +271,56 @@ const reconcileCartItems = (items, menu) => {
   });
 };
 
+const downloadReceiptPngFromPdf = async ({ orderId, receiptToken, shortCode }) => {
+  if (!orderId || !receiptToken) {
+    throw new Error("Comprovante indisponível no momento.");
+  }
+
+  const pdfUrl = `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`;
+  const response = await fetch(pdfUrl);
+
+  if (!response.ok) {
+    throw new Error("Não foi possível baixar o comprovante em PDF.");
+  }
+
+  const ab = await response.arrayBuffer();
+  const document = await pdfjsLib.getDocument({ data: ab }).promise;
+  const page = await document.getPage(1);
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = window.document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) {
+    throw new Error("Seu navegador não suporta gerar imagem do comprovante.");
+  }
+
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((value) => {
+      if (value) {
+        resolve(value);
+        return;
+      }
+      reject(new Error("Não foi possível gerar o arquivo de imagem."));
+    }, "image/png", 1);
+  });
+
+  const blobUrl = URL.createObjectURL(blob);
+  const link = window.document.createElement("a");
+  link.href = blobUrl;
+  link.download = `comprovante-${shortCode || orderId}.png`;
+  window.document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+};
+
 const PublicOrder = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -291,6 +345,8 @@ const PublicOrder = () => {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
+  const [downloadingReceiptPng, setDownloadingReceiptPng] = useState(false);
+  const [receiptPngError, setReceiptPngError] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
@@ -778,6 +834,33 @@ const PublicOrder = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleDownloadReceiptPng = useCallback(
+    async (event) => {
+      event.stopPropagation();
+      if (!orderResult || downloadingReceiptPng) {
+        return;
+      }
+
+      const receiptToken = orderResult.receiptToken;
+      const orderId = orderResult.id || orderResult.orderId;
+      const shortCode = orderResult.shortCode || orderResult.number;
+
+      try {
+        setReceiptPngError("");
+        setDownloadingReceiptPng(true);
+        await downloadReceiptPngFromPdf({ orderId, receiptToken, shortCode });
+      } catch (downloadError) {
+        setReceiptPngError(
+          downloadError.message ||
+            "Não foi possível salvar o comprovante em imagem. Tente novamente."
+        );
+      } finally {
+        setDownloadingReceiptPng(false);
+      }
+    },
+    [downloadingReceiptPng, orderResult]
+  );
+
   const handleSubmit = async () => {
     if (submitting) return;
     if (!isFormValid) {
@@ -910,14 +993,9 @@ const PublicOrder = () => {
     const receiptToken = orderResult?.receiptToken;
     const orderId = orderResult?.id || orderResult?.orderId;
     const orderDisplayNumber = orderResult?.shortCode || orderResult?.number;
-    const base = window.location.origin;
     const pdfUrl =
       receiptToken && orderId
-        ? `${base}/api/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`
-        : null;
-    const pngUrl =
-      receiptToken && orderId
-        ? `${base}/api/public/orders/${orderId}/receipt.png?token=${encodeURIComponent(receiptToken)}`
+        ? `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`
         : null;
 
 
@@ -995,17 +1073,17 @@ const PublicOrder = () => {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-              {pngUrl ? (
-                <a
-                  href={pngUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download
-                  onClick={(event) => event.stopPropagation()}
-                  className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              {receiptToken && orderId ? (
+                <button
+                  type="button"
+                  onClick={handleDownloadReceiptPng}
+                  disabled={downloadingReceiptPng}
+                  className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  Salvar comprovante (imagem)
-                </a>
+                  {downloadingReceiptPng
+                    ? "Gerando comprovante (imagem)..."
+                    : "Salvar comprovante (imagem)"}
+                </button>
               ) : null}
               {pdfUrl ? (
                 <a
@@ -1020,6 +1098,10 @@ const PublicOrder = () => {
                 </a>
               ) : null}
             </div>
+
+            {receiptPngError ? (
+              <p className="mt-3 text-sm font-medium text-rose-700">{receiptPngError}</p>
+            ) : null}
 
             {orderResult?.paymentMethod === "PIX" && (
               <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
