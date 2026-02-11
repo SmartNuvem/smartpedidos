@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import { GlobalFonts, createCanvas } from "@napi-rs/canvas";
+import { createCanvas } from "@napi-rs/canvas";
 import {
   Order,
   OrderItem,
@@ -25,15 +25,6 @@ const formatDateOnly = (date: Date) =>
     dateStyle: "short",
     timeZone: "America/Sao_Paulo",
   }).format(date);
-
-
-const registerFont = (path: string, options: { family: string }) => {
-  GlobalFonts.registerFromPath(path, options.family);
-};
-
-registerFont("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", {
-  family: "DejaVuMono",
-});
 
 export type OrderReceipt = Order & {
   store: Store;
@@ -463,11 +454,13 @@ const RECEIPT_WIDTH_PX = 576;
 const RECEIPT_HORIZONTAL_PADDING = 30;
 const RECEIPT_VERTICAL_PADDING = 30;
 const CHARS_PER_LINE = 46;
-const RECEIPT_FONT_FAMILY = "DejaVuMono";
+const RECEIPT_MONO_FONT_FAMILY = '"DejaVu Sans Mono", monospace';
+const RECEIPT_TITLE_FONT_FAMILY = '"DejaVu Sans", sans-serif';
 
 type ReceiptPngEntry = {
   align?: "left" | "center";
   color?: string;
+  fontFamily?: string;
   fontSize: number;
   fontWeight?: "normal" | "bold";
   indent?: number;
@@ -529,6 +522,7 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
 
   const entries: ReceiptPngEntry[] = receiptLines.map((line, index) => ({
     align: line.align,
+    fontFamily: index === 0 ? RECEIPT_TITLE_FONT_FAMILY : RECEIPT_MONO_FONT_FAMILY,
     text: line.text || " ",
     fontSize: index === 0 ? 28 : line.fontSize === 11 ? 22 : 20,
     fontWeight: index === 0 ? "bold" : "normal",
@@ -541,7 +535,8 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
   let totalHeight = RECEIPT_VERTICAL_PADDING * 2;
   entries.forEach((entry) => {
     const fontWeight = entry.fontWeight ?? "normal";
-    measureContext.font = `${fontWeight} ${entry.fontSize}px ${RECEIPT_FONT_FAMILY}`;
+    const fontFamily = entry.fontFamily ?? RECEIPT_MONO_FONT_FAMILY;
+    measureContext.font = `${fontWeight} ${entry.fontSize}px ${fontFamily}`;
     const wrappedLines = wrapReceiptTextByChars(entry.text);
     const lineHeight = entry.fontSize * 1.42;
     totalHeight += entry.spacingBefore ?? 0;
@@ -558,7 +553,8 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
   entries.forEach((entry) => {
     y += entry.spacingBefore ?? 0;
     const fontWeight = entry.fontWeight ?? "normal";
-    context.font = `${fontWeight} ${entry.fontSize}px ${RECEIPT_FONT_FAMILY}`;
+    const fontFamily = entry.fontFamily ?? RECEIPT_MONO_FONT_FAMILY;
+    context.font = `${fontWeight} ${entry.fontSize}px ${fontFamily}`;
     context.fillStyle = entry.color ?? "#0f172a";
     context.textBaseline = "top";
     const lineHeight = entry.fontSize * 1.42;
