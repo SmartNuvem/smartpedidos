@@ -29,6 +29,7 @@ import {
 import {
   buildBillingPdf,
   buildOrderPdf,
+  buildPublicOrderReceiptPdf,
   buildRevenuePdf,
   buildTableSummaryPdf,
 } from "./pdf";
@@ -1818,7 +1819,43 @@ const registerRoutes = () => {
       number: order.id.slice(0, 6),
       status: order.status,
       paymentMethod: order.paymentMethod,
+      receiptToken: order.receiptToken,
     });
+  });
+
+  app.get("/public/orders/:id/receipt.pdf", async (request, reply) => {
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const querySchema = z.object({ token: z.string().uuid() });
+
+    const { id } = paramsSchema.parse(request.params);
+    const { token } = querySchema.parse(request.query);
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: true,
+            options: true,
+          },
+        },
+      },
+    });
+
+    if (!order || order.receiptToken !== token) {
+      return reply.status(404).send({ message: "Comprovante não encontrado." });
+    }
+
+    const shortId = order.id.slice(0, 6);
+    const pdf = buildPublicOrderReceiptPdf(order);
+
+    reply.header("Content-Type", "application/pdf");
+    reply.header(
+      "Content-Disposition",
+      `attachment; filename="comprovante-${shortId}.pdf"`
+    );
+
+    return reply.send(pdf);
   });
 
   app.post("/auth/store/login", async (request, reply) => {
