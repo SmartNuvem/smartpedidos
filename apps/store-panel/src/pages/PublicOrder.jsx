@@ -300,6 +300,8 @@ const PublicOrder = () => {
 
   // 🔥 DETECÇÃO DO BANNER (CLARO/ESCURO)
   const [isBannerLight, setIsBannerLight] = useState(false);
+  const confettiCanvasRef = useRef(null);
+  const confettiFireRef = useRef(null);
 
   const [rememberCustomerData, setRememberCustomerData] = useState(true);
   const allowPickup = menu?.store?.allowPickup ?? true;
@@ -350,13 +352,28 @@ const PublicOrder = () => {
   useEffect(() => {
     if (!orderResult) return undefined;
 
-    confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+    if (!confettiCanvasRef.current) {
+      const canvas = document.createElement("canvas");
+      canvas.style.position = "fixed";
+      canvas.style.inset = "0";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.style.pointerEvents = "none";
+      canvas.style.zIndex = "0";
+      document.body.appendChild(canvas);
+      confettiCanvasRef.current = canvas;
+      confettiFireRef.current = confetti.create(canvas, { resize: true, useWorker: true });
+    }
+
+    const fireConfetti = confettiFireRef.current;
+
+    fireConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
     const t1 = setTimeout(
-      () => confetti({ particleCount: 60, spread: 90, origin: { y: 0.6 } }),
+      () => fireConfetti({ particleCount: 60, spread: 90, origin: { y: 0.6 } }),
       250
     );
     const t2 = setTimeout(
-      () => confetti({ particleCount: 40, spread: 110, origin: { y: 0.6 } }),
+      () => fireConfetti({ particleCount: 40, spread: 110, origin: { y: 0.6 } }),
       500
     );
 
@@ -365,6 +382,16 @@ const PublicOrder = () => {
       clearTimeout(t2);
     };
   }, [orderResult]);
+
+  useEffect(() => {
+    return () => {
+      if (confettiCanvasRef.current) {
+        confettiCanvasRef.current.remove();
+        confettiCanvasRef.current = null;
+      }
+      confettiFireRef.current = null;
+    };
+  }, []);
 
   const optionGroups = optionProduct?.optionGroups ?? [];
   const promoProducts = useMemo(() => {
@@ -927,9 +954,12 @@ const PublicOrder = () => {
       fulfillmentTypeLabels[receipt?.fulfillmentType] || fulfillmentTypeLabels.PICKUP;
     const hasAddress = Boolean(receipt?.addressLine || receipt?.deliveryAreaName);
 
-    const handleDownloadReceipt = () => {
+    const handleDownloadReceipt = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       const receiptToken = orderResult?.receiptToken;
       const orderId = orderResult?.orderId;
+      console.log("download click", { orderId, receiptToken });
       if (!receiptToken || !orderId) {
         return;
       }
@@ -941,8 +971,8 @@ const PublicOrder = () => {
 
     return (
       <div className="flex min-h-screen flex-col">
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 py-12 text-center">
-          <div className="w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-6 sm:px-6 sm:py-8">
+        <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 py-12 text-center">
+          <div className="relative z-10 w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-6 sm:px-6 sm:py-8">
             <h1 className="text-2xl font-semibold text-emerald-700">Pedido enviado!</h1>
             <p className="mt-2 text-sm text-emerald-700">
               Seu pedido foi encaminhado para a loja. Aguarde a confirmação.
@@ -1027,6 +1057,7 @@ const PublicOrder = () => {
               </div>
             )}
             <button
+              type="button"
               className="mt-6 rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700"
               onClick={() => setOrderResult(null)}
             >
