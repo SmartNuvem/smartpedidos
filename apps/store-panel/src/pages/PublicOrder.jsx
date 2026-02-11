@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import confetti from "canvas-confetti";
-import { toBlob } from "html-to-image";
+import { toPng } from "html-to-image";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
@@ -81,20 +81,6 @@ const fulfillmentTypeLabels = {
   DELIVERY: "Entrega",
   PICKUP: "Retirada",
   DINE_IN: "Consumo no local",
-};
-
-const downloadBlob = (blob, fileName) => {
-  const blobUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = blobUrl;
-  link.download = fileName;
-  try {
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
 };
 
 const calculatePricingForGroups = ({ pricingRule, basePriceCents, groups }) => {
@@ -957,17 +943,29 @@ const PublicOrder = () => {
         }
         await new Promise((resolve) => requestAnimationFrame(resolve));
 
-        const blob = await toBlob(receiptRef.current, {
+        const receiptNode = receiptRef.current;
+        const pngDataUrl = await toPng(receiptNode, {
+          width: receiptNode.scrollWidth,
+          height: receiptNode.scrollHeight,
           pixelRatio: 2,
           cacheBust: true,
           backgroundColor: "#fff",
+          style: {
+            padding: "16px",
+            boxSizing: "border-box",
+          },
         });
-        if (!blob) {
+        if (!pngDataUrl) {
           throw new Error("Não foi possível gerar o comprovante.");
         }
 
         const fileName = `comprovante-${orderResult.number}.png`;
-        downloadBlob(blob, fileName);
+        const link = document.createElement("a");
+        link.href = pngDataUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } catch (err) {
         console.error("save receipt failed:", err);
         setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
