@@ -929,14 +929,14 @@ const PublicOrder = () => {
 
     const handleDownloadReceipt = () => {
       const receiptToken = orderResult?.receiptToken;
-      if (!receiptToken || !orderResult?.orderId) {
+      const orderId = orderResult?.orderId;
+      if (!receiptToken || !orderId) {
         return;
       }
-      const url = `${API_URL}/public/orders/${orderResult.orderId}/receipt.pdf?token=${receiptToken}`;
-      const openedWindow = window.open(url, "_blank", "noopener,noreferrer");
-      if (!openedWindow) {
-        window.location.href = url;
-      }
+
+      const url = new URL(`/api/public/orders/${orderId}/receipt.pdf`, window.location.origin);
+      url.searchParams.set("token", receiptToken);
+      window.location.href = url.toString();
     };
 
     return (

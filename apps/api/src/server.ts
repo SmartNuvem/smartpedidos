@@ -1843,8 +1843,12 @@ const registerRoutes = () => {
       },
     });
 
-    if (!order || order.receiptToken !== token) {
+    if (!order) {
       return reply.status(404).send({ message: "Comprovante não encontrado." });
+    }
+
+    if (!order.receiptToken || order.receiptToken !== token) {
+      return reply.status(403).send({ message: "Token de comprovante inválido." });
     }
 
     const shortId = order.id.slice(0, 6);
