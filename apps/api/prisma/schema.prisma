@@ -125,6 +125,8 @@ model StoreBotConfig {
   instanceName          String
   status                StoreBotStatus @default(DISCONNECTED)
   connectedPhone        String?
+  webhookStatus         String?
+  webhookUrl            String?
   keywords              String         @default("cardapio,menu")
   sendMenuOnKeywords    Boolean        @default(true)
   sendOrderConfirmation Boolean        @default(true)

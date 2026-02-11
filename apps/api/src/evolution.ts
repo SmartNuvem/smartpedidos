@@ -21,6 +21,16 @@ type EvolutionInstanceResponse = {
   connectedPhone?: string;
 };
 
+type EvolutionWebhookResponse = {
+  webhook?: {
+    url?: string;
+    events?: string[];
+  };
+  url?: string;
+  events?: string[];
+  message?: string;
+};
+
 const getConfig = () => {
   const baseUrl = process.env.EVOLUTION_BASE_URL?.trim();
   const apiKey = process.env.EVOLUTION_API_KEY?.trim();
@@ -150,5 +160,26 @@ export const disconnect = async (instanceName: string) => {
   return {
     status: mapEvolutionStatus(payload),
     connectedPhone: extractConnectedPhone(payload),
+  };
+};
+
+export const registerIncomingWebhook = async (instanceName: string) => {
+  const webhookUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim();
+  if (!webhookUrl) {
+    throw new Error("ACTIVEPIECES_INCOMING_WEBHOOK_URL não configurada.");
+  }
+
+  const payload = (await evolutionRequest(`/webhook/${instanceName}`, {
+    method: "POST",
+    body: JSON.stringify({
+      url: webhookUrl,
+      events: ["messages.upsert"],
+    }),
+  })) as EvolutionWebhookResponse;
+
+  return {
+    webhookUrl: payload.webhook?.url ?? payload.url ?? webhookUrl,
+    events: payload.webhook?.events ?? payload.events ?? ["messages.upsert"],
+    message: payload.message ?? null,
   };
 };

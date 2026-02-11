@@ -37,7 +37,7 @@ import {
 } from "./pdf";
 import type { JwtUser } from "./types/jwt";
 import { getOrderCode } from "./utils/orderCode";
-import { disconnect, ensureInstance, getQr } from "./evolution";
+import { disconnect, ensureInstance, getQr, registerIncomingWebhook } from "./evolution";
 
 
 
@@ -2757,6 +2757,8 @@ const registerRoutes = () => {
       pixTemplate: string;
       cooldownMinutes: number;
       connectedPhone: string | null;
+      webhookStatus: string | null;
+      webhookUrl: string | null;
       updatedAt: Date;
     };
     request: FastifyRequest;
@@ -2779,6 +2781,8 @@ const registerRoutes = () => {
       name: store.name,
       slug: store.slug,
       connectedPhone: config.connectedPhone,
+      webhookStatus: config.webhookStatus,
+      webhookUrl: config.webhookUrl,
       isActive: store.isActive,
       updatedAt: config.updatedAt,
     },
@@ -2901,6 +2905,24 @@ const registerRoutes = () => {
           ? StoreBotStatus.WAITING_QR
           : result.status;
 
+      let webhookStatus: string | null = null;
+      let webhookUrl: string | null = null;
+
+      if (status === StoreBotStatus.CONNECTED) {
+        try {
+          const webhookResult = await registerIncomingWebhook(config.instanceName);
+          webhookStatus = "REGISTERED";
+          webhookUrl = webhookResult.webhookUrl;
+        } catch (error) {
+          webhookStatus = "ERROR";
+          webhookUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim() ?? null;
+          request.log.error(
+            { error, instanceName: config.instanceName },
+            "Falha ao registrar webhook da instância na Evolution."
+          );
+        }
+      }
+
       const updated = await prisma.storeBotConfig.update({
         where: { storeId: store.id },
         data: {
@@ -2908,6 +2930,8 @@ const registerRoutes = () => {
           connectedPhone:
             status === StoreBotStatus.CONNECTED ? result.connectedPhone : null,
           instanceName: store.slug,
+          webhookStatus,
+          webhookUrl,
         },
       });
 
@@ -2950,6 +2974,8 @@ const registerRoutes = () => {
         status: StoreBotStatus.DISCONNECTED,
         connectedPhone: null,
         instanceName: store.slug,
+        webhookStatus: null,
+        webhookUrl: null,
       },
     });
 
