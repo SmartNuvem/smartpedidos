@@ -937,6 +937,8 @@ const PublicOrder = () => {
       setSavingReceipt(true);
       setReceiptError("");
 
+      let offscreenWrapper = null;
+
       try {
         if (!receiptRef.current) {
           throw new Error("Receipt element not found.");
@@ -944,16 +946,23 @@ const PublicOrder = () => {
         await new Promise((resolve) => requestAnimationFrame(resolve));
 
         const receiptNode = receiptRef.current;
-        const pngDataUrl = await toPng(receiptNode, {
-          width: receiptNode.scrollWidth,
-          height: receiptNode.scrollHeight,
+        offscreenWrapper = document.createElement("div");
+        offscreenWrapper.style.position = "fixed";
+        offscreenWrapper.style.left = "-99999px";
+        offscreenWrapper.style.top = "0";
+        offscreenWrapper.style.backgroundColor = "#fff";
+        offscreenWrapper.style.padding = "24px";
+        offscreenWrapper.style.boxSizing = "border-box";
+        offscreenWrapper.style.zIndex = "-1";
+
+        const receiptClone = receiptNode.cloneNode(true);
+        offscreenWrapper.appendChild(receiptClone);
+        document.body.appendChild(offscreenWrapper);
+
+        const pngDataUrl = await toPng(offscreenWrapper, {
           pixelRatio: 2,
           cacheBust: true,
           backgroundColor: "#fff",
-          style: {
-            padding: "16px",
-            boxSizing: "border-box",
-          },
         });
         if (!pngDataUrl) {
           throw new Error("Não foi possível gerar o comprovante.");
@@ -970,6 +979,9 @@ const PublicOrder = () => {
         console.error("save receipt failed:", err);
         setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
       } finally {
+        if (offscreenWrapper && offscreenWrapper.parentNode) {
+          offscreenWrapper.parentNode.removeChild(offscreenWrapper);
+        }
         setSavingReceipt(false);
       }
     };
