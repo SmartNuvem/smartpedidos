@@ -178,6 +178,7 @@ model Order {
   paymentMethod       PaymentMethod   @default(CASH)
   changeForCents      Int?
   paidStatus          PaidStatus      @default(UNPAID)
+  receiptToken        String          @default(uuid())
   total               Decimal         @db.Decimal(10, 2)
   items               OrderItem[]
   createdAt           DateTime        @default(now())

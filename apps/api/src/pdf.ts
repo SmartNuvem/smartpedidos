@@ -64,6 +64,18 @@ export type RevenueReport = {
   generatedAt: Date;
 };
 
+export type PublicOrderReceiptPdfData = Pick<
+  Order,
+  | "id"
+  | "createdAt"
+  | "notes"
+  | "paymentMethod"
+  | "fulfillmentType"
+  | "total"
+> & {
+  items: Array<OrderItem & { product: Product; options?: OrderItemOption[] }>;
+};
+
 export const buildOrderPdf = (order: OrderReceipt) => {
   const doc = new PDFDocument({
     size: [226, 1000],
@@ -278,6 +290,82 @@ export const buildRevenuePdf = (report: RevenueReport) => {
 
   doc.moveDown(4);
   doc.fontSize(10).text("SmartNuvem Informática", { align: "center" });
+
+  doc.end();
+  return doc;
+};
+
+export const buildPublicOrderReceiptPdf = (order: PublicOrderReceiptPdfData) => {
+  const doc = new PDFDocument({
+    size: "A4",
+    margins: { top: 40, bottom: 40, left: 40, right: 40 },
+  });
+
+  const paymentLabels = {
+    PIX: "PIX",
+    CASH: "Dinheiro",
+    CARD: "Cartão",
+  } as const;
+
+  const fulfillmentLabels = {
+    DELIVERY: "Entrega",
+    PICKUP: "Retirada",
+    DINE_IN: "Consumo no local",
+  } as const;
+
+  doc.fontSize(18).text("Comprovante do pedido", { align: "center" });
+  doc.moveDown(0.6);
+  doc.fontSize(12).text(`Pedido #${order.id.slice(0, 6)}`);
+  doc.text(`Data: ${formatDate(order.createdAt)}`);
+
+  doc.moveDown(0.8);
+  doc.fontSize(13).text("Itens");
+  doc.moveDown(0.4);
+
+  order.items.forEach((item) => {
+    const lineTotalCents = item.unitPriceCents * item.quantity;
+    doc.fontSize(11).text(`${item.quantity}x ${item.product.name}`);
+    doc.fontSize(10).fillColor("#334155").text(currency.format(lineTotalCents / 100));
+    doc.fillColor("black");
+
+    if (item.options && item.options.length > 0) {
+      item.options.forEach((option) => {
+        const extraLabel =
+          option.priceDeltaCents > 0
+            ? ` (+${currency.format(option.priceDeltaCents / 100)})`
+            : "";
+        doc
+          .fontSize(9)
+          .fillColor("#475569")
+          .text(`• ${option.groupName}: ${option.itemName}${extraLabel}`, { indent: 10 });
+      });
+      doc.fillColor("black");
+    }
+
+    if (item.notes) {
+      doc.fontSize(9).fillColor("#475569").text(`Obs. item: ${item.notes}`, {
+        indent: 10,
+      });
+      doc.fillColor("black");
+    }
+
+    doc.moveDown(0.4);
+  });
+
+  if (order.notes) {
+    doc.moveDown(0.6);
+    doc.fontSize(11).text("Observações");
+    doc.fontSize(10).fillColor("#334155").text(order.notes);
+    doc.fillColor("black");
+  }
+
+  doc.moveDown(0.8);
+  doc.fontSize(11).text(`Pagamento: ${paymentLabels[order.paymentMethod] ?? "Não informado"}`);
+  doc.text(`Tipo: ${fulfillmentLabels[order.fulfillmentType] ?? "Não informado"}`);
+  doc.moveDown(0.6);
+  doc.fontSize(14).text(`Total: ${currency.format(order.total.toNumber())}`, {
+    align: "right",
+  });
 
   doc.end();
   return doc;

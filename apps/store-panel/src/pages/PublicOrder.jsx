@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import confetti from "canvas-confetti";
-import { toPng } from "html-to-image";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
@@ -75,46 +74,6 @@ const paymentMethodLabels = {
   PIX: "PIX",
   CASH: "Dinheiro",
   CARD: "Cartão",
-};
-
-let html2CanvasLoaderPromise;
-
-const loadHtml2Canvas = async () => {
-  if (typeof window === "undefined") {
-    throw new Error("html2canvas só pode ser usado no navegador.");
-  }
-
-  if (typeof window.html2canvas === "function") {
-    return window.html2canvas;
-  }
-
-  if (!html2CanvasLoaderPromise) {
-    html2CanvasLoaderPromise = new Promise((resolve, reject) => {
-      const existingScript = document.getElementById("html2canvas-cdn-loader");
-
-      if (existingScript) {
-        existingScript.addEventListener("load", () => resolve(window.html2canvas));
-        existingScript.addEventListener("error", () => reject(new Error("Falha ao carregar html2canvas.")));
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.id = "html2canvas-cdn-loader";
-      script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
-      script.async = true;
-      script.onload = () => {
-        if (typeof window.html2canvas === "function") {
-          resolve(window.html2canvas);
-          return;
-        }
-        reject(new Error("html2canvas carregado, mas indisponível na janela global."));
-      };
-      script.onerror = () => reject(new Error("Falha ao carregar html2canvas."));
-      document.head.appendChild(script);
-    });
-  }
-
-  return html2CanvasLoaderPromise;
 };
 
 const fulfillmentTypeLabels = {
@@ -316,7 +275,6 @@ const PublicOrder = () => {
   const tableId = searchParams.get("table");
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
-  const receiptRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -334,8 +292,6 @@ const PublicOrder = () => {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
-  const [receiptError, setReceiptError] = useState("");
-  const [savingReceipt, setSavingReceipt] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
@@ -971,96 +927,13 @@ const PublicOrder = () => {
       fulfillmentTypeLabels[receipt?.fulfillmentType] || fulfillmentTypeLabels.PICKUP;
     const hasAddress = Boolean(receipt?.addressLine || receipt?.deliveryAreaName);
 
-    const MIN_RECEIPT_DATA_URL_LENGTH = 1000;
-
-    const validateGeneratedDataUrl = (dataUrl, formatLabel) => {
-      if (!dataUrl || dataUrl.length < MIN_RECEIPT_DATA_URL_LENGTH) {
-        throw new Error(
-          `Comprovante ${formatLabel} inválido (conteúdo vazio ou muito pequeno).`
-        );
+    const handleDownloadReceipt = () => {
+      const receiptToken = orderResult?.receiptToken;
+      if (!receiptToken || !orderResult?.orderId) {
+        return;
       }
-
-      return dataUrl;
-    };
-
-    const handleSaveReceipt = async () => {
-      if (savingReceipt) return;
-
-      setSavingReceipt(true);
-      setReceiptError("");
-
-      let sandboxNode;
-
-      try {
-        if (!receiptRef.current) {
-          throw new Error("Receipt element not found.");
-        }
-        const receiptNode = receiptRef.current;
-
-        sandboxNode = document.createElement("div");
-        sandboxNode.style.position = "fixed";
-        sandboxNode.style.left = "-10000px";
-        sandboxNode.style.top = "0";
-        sandboxNode.style.padding = "24px";
-        sandboxNode.style.background = "#fff";
-        sandboxNode.style.display = "inline-block";
-        sandboxNode.style.zIndex = "99999";
-        sandboxNode.style.pointerEvents = "none";
-        sandboxNode.style.overflow = "visible";
-        document.body.appendChild(sandboxNode);
-
-        const clonedReceiptNode = receiptNode.cloneNode(true);
-        clonedReceiptNode.style.overflow = "visible";
-        clonedReceiptNode.style.maxHeight = "none";
-        clonedReceiptNode.style.height = "auto";
-        clonedReceiptNode.style.transform = "none";
-        sandboxNode.appendChild(clonedReceiptNode);
-
-        await new Promise((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(resolve));
-        });
-
-        let receiptDataUrl = "";
-
-        try {
-          const pngDataUrl = await toPng(sandboxNode, {
-            pixelRatio: 2,
-            cacheBust: true,
-            backgroundColor: "#fff",
-          });
-          receiptDataUrl = validateGeneratedDataUrl(pngDataUrl, "PNG (html-to-image)");
-        } catch (primaryError) {
-          console.warn("Primary receipt export failed. Falling back to html2canvas:", primaryError);
-        }
-
-        if (!receiptDataUrl) {
-          const html2canvas = await loadHtml2Canvas();
-          const fallbackCanvas = await html2canvas(sandboxNode, {
-            backgroundColor: "#fff",
-            scale: 2,
-            useCORS: true,
-            allowTaint: true,
-          });
-          const fallbackDataUrl = fallbackCanvas.toDataURL("image/png");
-          receiptDataUrl = validateGeneratedDataUrl(fallbackDataUrl, "PNG (html2canvas)");
-        }
-
-        const fileName = `comprovante-${orderResult.number}.png`;
-        const link = document.createElement("a");
-        link.href = receiptDataUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } catch (err) {
-        console.error("save receipt failed:", err);
-        setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
-      } finally {
-        if (sandboxNode && sandboxNode.parentNode) {
-          sandboxNode.parentNode.removeChild(sandboxNode);
-        }
-        setSavingReceipt(false);
-      }
+      const url = `${API_URL}/public/orders/${orderResult.orderId}/receipt.pdf?token=${receiptToken}`;
+      window.open(url, "_blank", "noopener,noreferrer");
     };
 
     return (
@@ -1076,7 +949,6 @@ const PublicOrder = () => {
             </p>
 
             <div
-              ref={receiptRef}
               className="mx-auto mt-6 w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm sm:p-5"
             >
               <h2 className="text-base font-semibold text-slate-900">Comprovante do pedido</h2>
@@ -1137,13 +1009,10 @@ const PublicOrder = () => {
 
             <button
               className="mt-4 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
-              onClick={handleSaveReceipt}
-              disabled={savingReceipt}
+              onClick={handleDownloadReceipt}
             >
-              {savingReceipt ? "Salvando..." : "Salvar comprovante"}
+              Baixar comprovante (PDF)
             </button>
-
-            {receiptError ? <p className="mt-2 text-xs text-rose-600">{receiptError}</p> : null}
 
             {orderResult?.paymentMethod === "PIX" && (
               <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
