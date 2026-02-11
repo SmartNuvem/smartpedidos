@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import confetti from "canvas-confetti";
+import { toBlob } from "html-to-image";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
@@ -82,59 +83,17 @@ const fulfillmentTypeLabels = {
   DINE_IN: "Consumo no local",
 };
 
-const downloadDataUrl = (dataUrl, fileName) => {
+const downloadBlob = (blob, fileName) => {
+  const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = dataUrl;
+  link.href = blobUrl;
   link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-const elementToPngDataUrl = async (element, pixelRatio = 2) => {
-  const { width, height } = element.getBoundingClientRect();
-  const cloned = element.cloneNode(true);
-  cloned.setAttribute(
-    "style",
-    "margin:0;box-sizing:border-box;background:#ffffff;color:#0f172a;padding:16px;border-radius:16px;"
-  );
-
-  const serializer = new XMLSerializer();
-  const content = serializer.serializeToString(cloned);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(width)}" height="${Math.ceil(height)}">
-      <foreignObject width="100%" height="100%">${content}</foreignObject>
-    </svg>
-  `;
-
-  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  const objectUrl = URL.createObjectURL(svgBlob);
-
   try {
-    const image = await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = objectUrl;
-    });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(width * pixelRatio);
-    canvas.height = Math.ceil(height * pixelRatio);
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Não foi possível gerar o comprovante.");
-    }
-
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
-
-    return canvas.toDataURL("image/png");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   } finally {
-    URL.revokeObjectURL(objectUrl);
+    URL.revokeObjectURL(blobUrl);
   }
 };
 
@@ -987,32 +946,30 @@ const PublicOrder = () => {
     const hasAddress = Boolean(receipt?.addressLine || receipt?.deliveryAreaName);
 
     const handleSaveReceipt = async () => {
-      if (!receiptRef.current || savingReceipt) return;
+      if (savingReceipt) return;
 
       setSavingReceipt(true);
       setReceiptError("");
 
       try {
-        const dataUrl = await elementToPngDataUrl(receiptRef.current, 2);
-        const blob = await fetch(dataUrl).then((response) => response.blob());
-        const fileName = `comprovante-${orderResult.number}.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
+        if (!receiptRef.current) {
+          throw new Error("Receipt element not found.");
+        }
+        await new Promise((resolve) => requestAnimationFrame(resolve));
 
-        if (
-          typeof navigator !== "undefined" &&
-          navigator.canShare &&
-          navigator.share &&
-          navigator.canShare({ files: [file] })
-        ) {
-          await navigator.share({
-            files: [file],
-            title: "Comprovante do pedido",
-          });
-          return;
+        const blob = await toBlob(receiptRef.current, {
+          pixelRatio: 2,
+          cacheBust: true,
+          backgroundColor: "#fff",
+        });
+        if (!blob) {
+          throw new Error("Não foi possível gerar o comprovante.");
         }
 
-        downloadDataUrl(dataUrl, fileName);
+        const fileName = `comprovante-${orderResult.number}.png`;
+        downloadBlob(blob, fileName);
       } catch (err) {
+        console.error("save receipt failed:", err);
         setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
       } finally {
         setSavingReceipt(false);
