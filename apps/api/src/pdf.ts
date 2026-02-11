@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import { GlobalFonts, createCanvas } from "@napi-rs/canvas";
 import {
   Order,
   OrderItem,
@@ -17,12 +17,23 @@ const formatDate = (date: Date) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(date);
 
 const formatDateOnly = (date: Date) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(date);
+
+
+const registerFont = (path: string, options: { family: string }) => {
+  GlobalFonts.registerFromPath(path, options.family);
+};
+
+registerFont("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", {
+  family: "DejaVuMono",
+});
 
 export type OrderReceipt = Order & {
   store: Store;
@@ -448,9 +459,14 @@ export const buildPublicOrderReceiptPdf = (order: PublicOrderReceiptPdfData) => 
   return doc;
 };
 
-const RECEIPT_FONT_FAMILY = "\"DejaVu Sans\", sans-serif";
+const RECEIPT_WIDTH_PX = 576;
+const RECEIPT_HORIZONTAL_PADDING = 30;
+const RECEIPT_VERTICAL_PADDING = 30;
+const CHARS_PER_LINE = 46;
+const RECEIPT_FONT_FAMILY = "DejaVuMono";
 
 type ReceiptPngEntry = {
+  align?: "left" | "center";
   color?: string;
   fontSize: number;
   fontWeight?: "normal" | "bold";
@@ -460,12 +476,8 @@ type ReceiptPngEntry = {
   text: string;
 };
 
-const wrapCanvasText = (params: {
-  context: SKRSContext2D;
-  maxWidth: number;
-  text: string;
-}) => {
-  const words = params.text.trim().split(/\s+/).filter(Boolean);
+const wrapReceiptTextByChars = (text: string, charsPerLine = CHARS_PER_LINE) => {
+  const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) {
     return [""];
   }
@@ -473,16 +485,30 @@ const wrapCanvasText = (params: {
   const lines: string[] = [];
   let currentLine = "";
 
-  words.forEach((word) => {
-    const candidate = currentLine ? `${currentLine} ${word}` : word;
-    const candidateWidth = params.context.measureText(candidate).width;
-    if (candidateWidth <= params.maxWidth || !currentLine) {
-      currentLine = candidate;
-      return;
+  const splitLongWord = (word: string) => {
+    if (word.length <= charsPerLine) {
+      return [word];
     }
 
-    lines.push(currentLine);
-    currentLine = word;
+    const chunks: string[] = [];
+    for (let index = 0; index < word.length; index += charsPerLine) {
+      chunks.push(word.slice(index, index + charsPerLine));
+    }
+    return chunks;
+  };
+
+  words.forEach((originalWord) => {
+    const fragments = splitLongWord(originalWord);
+    fragments.forEach((word) => {
+      const candidate = currentLine ? `${currentLine} ${word}` : word;
+      if (candidate.length <= charsPerLine || !currentLine) {
+        currentLine = candidate;
+        return;
+      }
+
+      lines.push(currentLine);
+      currentLine = word;
+    });
   });
 
   if (currentLine) {
@@ -493,35 +519,30 @@ const wrapCanvasText = (params: {
 };
 
 export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfData) => {
-  const width = 720;
-  const horizontalPadding = 40;
-  const verticalPadding = 42;
-  const maxTextWidth = width - horizontalPadding * 2;
+  const width = RECEIPT_WIDTH_PX;
+  const maxTextWidth = width - RECEIPT_HORIZONTAL_PADDING * 2;
   const lines = buildPublicReceiptLines(order);
 
-  const entries: ReceiptPngEntry[] = (lines.length > 0
+  const receiptLines: ReceiptTextLine[] = lines.length > 0
     ? lines
-    : [{ text: order.store?.name || "Comprovante" }, { text: `Pedido #${orderShortCode(order)}` }]
-  ).map((line, index) => ({
-    text: line.text,
-    fontSize: index === 0 ? 24 : 18,
+    : [{ text: order.store?.name || "Comprovante" }, { text: `Pedido #${orderShortCode(order)}` }];
+
+  const entries: ReceiptPngEntry[] = receiptLines.map((line, index) => ({
+    align: line.align,
+    text: line.text || " ",
+    fontSize: index === 0 ? 28 : line.fontSize === 11 ? 22 : 20,
     fontWeight: index === 0 ? "bold" : "normal",
-    spacingAfter: 6,
+    spacingAfter: line.text ? 4 : 10,
   }));
 
-  const measureCanvas = createCanvas(width, 10);
+  const measureCanvas = createCanvas(10, 10);
   const measureContext = measureCanvas.getContext("2d");
 
-  let totalHeight = verticalPadding * 2;
+  let totalHeight = RECEIPT_VERTICAL_PADDING * 2;
   entries.forEach((entry) => {
     const fontWeight = entry.fontWeight ?? "normal";
     measureContext.font = `${fontWeight} ${entry.fontSize}px ${RECEIPT_FONT_FAMILY}`;
-    const maxWidth = maxTextWidth - (entry.indent ?? 0);
-    const wrappedLines = wrapCanvasText({
-      context: measureContext,
-      text: entry.text,
-      maxWidth,
-    });
+    const wrappedLines = wrapReceiptTextByChars(entry.text);
     const lineHeight = entry.fontSize * 1.42;
     totalHeight += entry.spacingBefore ?? 0;
     totalHeight += wrappedLines.length * lineHeight;
@@ -533,7 +554,7 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, canvas.height);
 
-  let y = verticalPadding;
+  let y = RECEIPT_VERTICAL_PADDING;
   entries.forEach((entry) => {
     y += entry.spacingBefore ?? 0;
     const fontWeight = entry.fontWeight ?? "normal";
@@ -543,14 +564,17 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
     const lineHeight = entry.fontSize * 1.42;
     const indent = entry.indent ?? 0;
     const maxWidth = maxTextWidth - indent;
-    const wrappedLines = wrapCanvasText({
-      context,
-      text: entry.text,
-      maxWidth,
-    });
+    const wrappedLines = wrapReceiptTextByChars(entry.text);
 
     wrappedLines.forEach((line) => {
-      context.fillText(line, horizontalPadding + indent, y, maxWidth);
+      const baseX = RECEIPT_HORIZONTAL_PADDING + indent;
+      if (entry.align === "center") {
+        const lineWidth = context.measureText(line).width;
+        const centerX = Math.max(baseX, baseX + (maxWidth - lineWidth) / 2);
+        context.fillText(line, centerX, y, maxWidth);
+      } else {
+        context.fillText(line, baseX, y, maxWidth);
+      }
       y += lineHeight;
     });
 
