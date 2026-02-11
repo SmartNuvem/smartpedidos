@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
-import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.min.js?url";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const initialAddress = {
   line: "",
@@ -271,54 +267,59 @@ const reconcileCartItems = (items, menu) => {
   });
 };
 
-const downloadReceiptPngFromPdf = async ({ orderId, receiptToken, shortCode }) => {
-  if (!orderId || !receiptToken) {
-    throw new Error("Comprovante indisponível no momento.");
+const isSafariOrIOS = () => {
+  if (typeof navigator === "undefined") {
+    return false;
   }
 
-  const pdfUrl = `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`;
-  const response = await fetch(pdfUrl);
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isSafari =
+    /Safari/i.test(ua) &&
+    !/Chrome|CriOS|Chromium|Edg|OPR|FxiOS|Firefox/i.test(ua);
+
+  return isIOS || isSafari;
+};
+
+const openReceiptInNewTab = (url) => {
+  const popup = window.open(url, "_blank", "noopener,noreferrer");
+  if (!popup) {
+    throw new Error("Não foi possível abrir o comprovante. Verifique o bloqueador de pop-ups.");
+  }
+};
+
+const downloadReceiptFile = async ({ url, fileName, fallbackUrl, fetchErrorMessage }) => {
+  const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error("Não foi possível baixar o comprovante em PDF.");
+    throw new Error(fetchErrorMessage);
   }
 
-  const ab = await response.arrayBuffer();
-  const document = await pdfjsLib.getDocument({ data: ab }).promise;
-  const page = await document.getPage(1);
-  const viewport = page.getViewport({ scale: 2 });
-  const canvas = window.document.createElement("canvas");
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-
-  const ctx = canvas.getContext("2d", { alpha: false });
-  if (!ctx) {
-    throw new Error("Seu navegador não suporta gerar imagem do comprovante.");
-  }
-
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: ctx, viewport }).promise;
-
-  const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob((value) => {
-      if (value) {
-        resolve(value);
-        return;
-      }
-      reject(new Error("Não foi possível gerar o arquivo de imagem."));
-    }, "image/png", 1);
-  });
-
+  const blob = await response.blob();
   const blobUrl = URL.createObjectURL(blob);
-  const link = window.document.createElement("a");
-  link.href = blobUrl;
-  link.download = `comprovante-${shortCode || orderId}.png`;
-  window.document.body.appendChild(link);
-  link.click();
-  link.remove();
 
-  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+  try {
+    const link = window.document.createElement("a");
+    link.href = blobUrl;
+    link.download = fileName;
+    link.rel = "noopener noreferrer";
+    window.document.body.appendChild(link);
+
+    try {
+      link.click();
+    } catch (error) {
+      openReceiptInNewTab(fallbackUrl);
+      return;
+    } finally {
+      link.remove();
+    }
+
+    if (isSafariOrIOS()) {
+      openReceiptInNewTab(fallbackUrl);
+    }
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+  }
 };
 
 const PublicOrder = () => {
@@ -346,6 +347,7 @@ const PublicOrder = () => {
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
   const [downloadingReceiptPng, setDownloadingReceiptPng] = useState(false);
+  const [downloadingReceiptPdf, setDownloadingReceiptPdf] = useState(false);
   const [receiptPngError, setReceiptPngError] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
@@ -843,12 +845,23 @@ const PublicOrder = () => {
 
       const receiptToken = orderResult.receiptToken;
       const orderId = orderResult.id || orderResult.orderId;
-      const shortCode = orderResult.shortCode || orderResult.number;
+      if (!receiptToken || !orderId) {
+        setReceiptPngError("Comprovante indisponível no momento.");
+        return;
+      }
+      const shortCode = (orderResult.shortCode || orderResult.number || orderId || "").toString();
+      const fileCode = shortCode.slice(-6) || orderId.slice(-6);
+      const pngUrl = `${API_URL}/public/orders/${orderId}/receipt.png?token=${encodeURIComponent(receiptToken)}`;
 
       try {
         setReceiptPngError("");
         setDownloadingReceiptPng(true);
-        await downloadReceiptPngFromPdf({ orderId, receiptToken, shortCode });
+        await downloadReceiptFile({
+          url: pngUrl,
+          fallbackUrl: pngUrl,
+          fileName: `comprovante-${fileCode}.png`,
+          fetchErrorMessage: "Não foi possível baixar o comprovante em imagem.",
+        });
       } catch (downloadError) {
         setReceiptPngError(
           downloadError.message ||
@@ -859,6 +872,43 @@ const PublicOrder = () => {
       }
     },
     [downloadingReceiptPng, orderResult]
+  );
+
+  const handleDownloadReceiptPdf = useCallback(
+    async (event) => {
+      event.stopPropagation();
+      if (!orderResult || downloadingReceiptPdf) {
+        return;
+      }
+
+      const receiptToken = orderResult.receiptToken;
+      const orderId = orderResult.id || orderResult.orderId;
+      if (!receiptToken || !orderId) {
+        setReceiptPngError("Comprovante indisponível no momento.");
+        return;
+      }
+      const shortCode = (orderResult.shortCode || orderResult.number || orderId || "").toString();
+      const fileCode = shortCode.slice(-6) || orderId.slice(-6);
+      const pdfUrl = `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`;
+
+      try {
+        setReceiptPngError("");
+        setDownloadingReceiptPdf(true);
+        await downloadReceiptFile({
+          url: pdfUrl,
+          fallbackUrl: pdfUrl,
+          fileName: `comprovante-${fileCode}.pdf`,
+          fetchErrorMessage: "Não foi possível baixar o comprovante em PDF.",
+        });
+      } catch (downloadError) {
+        setReceiptPngError(
+          downloadError.message || "Não foi possível baixar o comprovante em PDF. Tente novamente."
+        );
+      } finally {
+        setDownloadingReceiptPdf(false);
+      }
+    },
+    [downloadingReceiptPdf, orderResult]
   );
 
   const handleSubmit = async () => {
@@ -993,6 +1043,7 @@ const PublicOrder = () => {
     const receiptToken = orderResult?.receiptToken;
     const orderId = orderResult?.id || orderResult?.orderId;
     const orderDisplayNumber = orderResult?.shortCode || orderResult?.number;
+    const storeName = receipt?.storeName || menu.store?.name || "Loja";
     const pdfUrl =
       receiptToken && orderId
         ? `${API_URL}/public/orders/${orderId}/receipt.pdf?token=${encodeURIComponent(receiptToken)}`
@@ -1016,7 +1067,7 @@ const PublicOrder = () => {
               className="mx-auto mt-6 w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm sm:p-5"
             >
               <h2 className="text-base font-semibold text-slate-900">Comprovante do pedido</h2>
-              <p className="mt-1 text-sm font-medium text-slate-700">{menu.store?.name || "Loja"}</p>
+              <p className="mt-1 text-sm font-medium text-slate-700">{storeName}</p>
               <p className="mt-1 text-xs text-slate-500">Pedido #{orderDisplayNumber}</p>
 
               <div className="mt-4 space-y-3">
@@ -1081,21 +1132,19 @@ const PublicOrder = () => {
                   className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {downloadingReceiptPng
-                    ? "Gerando comprovante (imagem)..."
+                    ? "Baixando comprovante (imagem)..."
                     : "Salvar comprovante (imagem)"}
                 </button>
               ) : null}
               {pdfUrl ? (
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download
-                  onClick={(event) => event.stopPropagation()}
+                <button
+                  type="button"
+                  onClick={handleDownloadReceiptPdf}
+                  disabled={downloadingReceiptPdf}
                   className="rounded-full border border-emerald-300 px-5 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
                 >
-                  Baixar comprovante (PDF)
-                </a>
+                  {downloadingReceiptPdf ? "Baixando comprovante (PDF)..." : "Baixar comprovante (PDF)"}
+                </button>
               ) : null}
             </div>
 
