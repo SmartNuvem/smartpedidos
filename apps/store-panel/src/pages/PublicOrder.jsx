@@ -368,6 +368,17 @@ const PublicOrder = () => {
     const fireConfetti = confettiFireRef.current;
 
     fireConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+
+    requestAnimationFrame(() => {
+      document.querySelectorAll("canvas").forEach((canvas) => {
+        if (!(canvas instanceof HTMLCanvasElement)) return;
+        canvas.style.pointerEvents = "none";
+        canvas.style.position = "fixed";
+        canvas.style.inset = "0";
+        canvas.style.zIndex = "0";
+      });
+    });
+
     const t1 = setTimeout(
       () => fireConfetti({ particleCount: 60, spread: 90, origin: { y: 0.6 } }),
       250
@@ -959,7 +970,6 @@ const PublicOrder = () => {
       event.stopPropagation();
       const receiptToken = orderResult?.receiptToken;
       const orderId = orderResult?.orderId;
-      console.log("download click", { orderId, receiptToken });
       if (!receiptToken || !orderId) {
         return;
       }
@@ -971,6 +981,7 @@ const PublicOrder = () => {
 
     return (
       <div className="flex min-h-screen flex-col">
+        <div className="pointer-events-none fixed inset-0 z-0" aria-hidden="true" />
         <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 py-12 text-center">
           <div className="relative z-10 w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-6 sm:px-6 sm:py-8">
             <h1 className="text-2xl font-semibold text-emerald-700">Pedido enviado!</h1>
