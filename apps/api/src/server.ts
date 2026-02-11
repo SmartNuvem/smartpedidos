@@ -1816,12 +1816,17 @@ const registerRoutes = () => {
       sendSalonStreamEvent(store.id, { reason: "order_created" });
     }
 
+    const shortCode = order.id.slice(0, 6);
+
     return reply.status(201).send({
-      orderId: order.id,
-      number: order.id.slice(0, 6),
+      id: order.id,
+      shortCode,
+      receiptToken: order.receiptToken,
       status: order.status,
       paymentMethod: order.paymentMethod,
-      receiptToken: order.receiptToken,
+      // Compatibilidade retroativa para frontends ainda não migrados.
+      orderId: order.id,
+      number: shortCode,
     });
   });
 
