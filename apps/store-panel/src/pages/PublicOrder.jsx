@@ -70,6 +70,74 @@ const formatPhoneBR = (digits = "") => {
 const isFlavorGroupName = (name = "") =>
   name.trim().toLowerCase() === "sabores";
 
+const paymentMethodLabels = {
+  PIX: "PIX",
+  CASH: "Dinheiro",
+  CARD: "Cartão",
+};
+
+const fulfillmentTypeLabels = {
+  DELIVERY: "Entrega",
+  PICKUP: "Retirada",
+  DINE_IN: "Consumo no local",
+};
+
+const downloadDataUrl = (dataUrl, fileName) => {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const elementToPngDataUrl = async (element, pixelRatio = 2) => {
+  const { width, height } = element.getBoundingClientRect();
+  const cloned = element.cloneNode(true);
+  cloned.setAttribute(
+    "style",
+    "margin:0;box-sizing:border-box;background:#ffffff;color:#0f172a;padding:16px;border-radius:16px;"
+  );
+
+  const serializer = new XMLSerializer();
+  const content = serializer.serializeToString(cloned);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(width)}" height="${Math.ceil(height)}">
+      <foreignObject width="100%" height="100%">${content}</foreignObject>
+    </svg>
+  `;
+
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = objectUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(width * pixelRatio);
+    canvas.height = Math.ceil(height * pixelRatio);
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Não foi possível gerar o comprovante.");
+    }
+
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
 const calculatePricingForGroups = ({ pricingRule, basePriceCents, groups }) => {
   if (pricingRule === "SUM") {
     const extrasCents = groups.reduce(
@@ -263,6 +331,7 @@ const PublicOrder = () => {
   const tableId = searchParams.get("table");
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
+  const receiptRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -280,6 +349,8 @@ const PublicOrder = () => {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
+  const [receiptError, setReceiptError] = useState("");
+  const [savingReceipt, setSavingReceipt] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [changeFor, setChangeFor] = useState("");
   const [pixCopied, setPixCopied] = useState(false);
@@ -841,6 +912,16 @@ const PublicOrder = () => {
       }
 
       const data = await response.json();
+      const orderReceipt = {
+        items: cartItems,
+        notes: notes.trim() || "",
+        totalCents,
+        paymentMethod: isDineInOrder ? data.paymentMethod : paymentMethod,
+        fulfillmentType: isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
+        deliveryAreaName: selectedDeliveryArea?.name || "",
+        addressLine: isDelivery ? address.line.trim() : "",
+        addressReference: isDelivery ? address.reference.trim() : "",
+      };
 
       const resetOrderState = (shouldRememberCustomer) => {
         setCartItems([]);
@@ -865,7 +946,7 @@ const PublicOrder = () => {
         return;
       }
 
-      setOrderResult(data);
+      setOrderResult({ ...data, receipt: orderReceipt });
       resetOrderState(rememberCustomerData);
     } catch (err) {
       setError(err.message || "Não foi possível enviar o pedido.");
@@ -899,10 +980,49 @@ const PublicOrder = () => {
   }
 
   if (orderResult) {
+    const receipt = orderResult.receipt;
+    const paymentLabel = paymentMethodLabels[receipt?.paymentMethod] || "Não informado";
+    const fulfillmentLabel =
+      fulfillmentTypeLabels[receipt?.fulfillmentType] || fulfillmentTypeLabels.PICKUP;
+    const hasAddress = Boolean(receipt?.addressLine || receipt?.deliveryAreaName);
+
+    const handleSaveReceipt = async () => {
+      if (!receiptRef.current || savingReceipt) return;
+
+      setSavingReceipt(true);
+      setReceiptError("");
+
+      try {
+        const dataUrl = await elementToPngDataUrl(receiptRef.current, 2);
+        const blob = await fetch(dataUrl).then((response) => response.blob());
+        const fileName = `comprovante-${orderResult.number}.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+
+        if (
+          typeof navigator !== "undefined" &&
+          navigator.canShare &&
+          navigator.share &&
+          navigator.canShare({ files: [file] })
+        ) {
+          await navigator.share({
+            files: [file],
+            title: "Comprovante do pedido",
+          });
+          return;
+        }
+
+        downloadDataUrl(dataUrl, fileName);
+      } catch (err) {
+        setReceiptError("Não foi possível salvar o comprovante. Tente novamente.");
+      } finally {
+        setSavingReceipt(false);
+      }
+    };
+
     return (
       <div className="flex min-h-screen flex-col">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 py-12 text-center">
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-6 py-8">
+          <div className="w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-6 sm:px-6 sm:py-8">
             <h1 className="text-2xl font-semibold text-emerald-700">Pedido enviado!</h1>
             <p className="mt-2 text-sm text-emerald-700">
               Seu pedido foi encaminhado para a loja. Aguarde a confirmação.
@@ -910,6 +1030,77 @@ const PublicOrder = () => {
             <p className="mt-4 text-lg font-semibold text-slate-900">
               Número do pedido: #{orderResult.number}
             </p>
+
+            <div
+              ref={receiptRef}
+              className="mx-auto mt-6 w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm sm:p-5"
+            >
+              <h2 className="text-base font-semibold text-slate-900">Comprovante do pedido</h2>
+              <p className="mt-1 text-xs text-slate-500">Pedido #{orderResult.number}</p>
+
+              <div className="mt-4 space-y-3">
+                {receipt?.items?.map((item) => (
+                  <div key={item.id} className="border-b border-dashed border-slate-200 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-800">
+                        {item.quantity}x {item.name}
+                      </p>
+                    </div>
+                    {item.options?.length > 0 && (
+                      <div className="mt-1 space-y-1">
+                        {item.options.map((group) => (
+                          <p key={group.groupId} className="text-xs text-slate-600">
+                            {group.groupName}: {group.items.map((option) => option.name).join(", ")}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {item.notes ? <p className="mt-1 text-xs text-slate-500">Obs. item: {item.notes}</p> : null}
+                  </div>
+                ))}
+              </div>
+
+              {receipt?.notes ? (
+                <p className="mt-3 text-sm text-slate-700">
+                  <span className="font-medium">Observações:</span> {receipt.notes}
+                </p>
+              ) : null}
+
+              <div className="mt-4 space-y-1 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                <p>
+                  <span className="font-medium">Pagamento:</span> {paymentLabel}
+                </p>
+                <p>
+                  <span className="font-medium">Tipo:</span> {fulfillmentLabel}
+                </p>
+                {hasAddress && (
+                  <p>
+                    <span className="font-medium">Endereço:</span>{" "}
+                    {[receipt.deliveryAreaName, receipt.addressLine, receipt.addressReference]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-dashed border-slate-300 pt-3">
+                <span className="text-sm text-slate-600">Total</span>
+                <strong className="text-base text-slate-900">
+                  {formatCurrency((receipt?.totalCents ?? 0) / 100)}
+                </strong>
+              </div>
+            </div>
+
+            <button
+              className="mt-4 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+              onClick={handleSaveReceipt}
+              disabled={savingReceipt}
+            >
+              {savingReceipt ? "Salvando..." : "Salvar comprovante"}
+            </button>
+
+            {receiptError ? <p className="mt-2 text-xs text-rose-600">{receiptError}</p> : null}
+
             {orderResult?.paymentMethod === "PIX" && (
               <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
                 <div className="font-semibold">Pagamento via Pix</div>
