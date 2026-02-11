@@ -1826,7 +1826,7 @@ const registerRoutes = () => {
 
   app.get("/public/orders/:id/receipt.pdf", async (request, reply) => {
     const paramsSchema = z.object({ id: z.string().uuid() });
-    const querySchema = z.object({ token: z.string().uuid() });
+    const querySchema = z.object({ token: z.string().min(1).max(64) });
 
     const { id } = paramsSchema.parse(request.params);
     const { token } = querySchema.parse(request.query);

@@ -7,6 +7,4 @@ UPDATE "Order"
 SET "receiptToken" = substr(md5(random()::text || clock_timestamp()::text), 1, 32)
 WHERE "receiptToken" IS NULL;
 
--- Enforce required after backfill
-ALTER TABLE "Order"
-ALTER COLUMN "receiptToken" SET NOT NULL;
+-- Keep nullable in this migration for safe rollout (db push + backfill first).
