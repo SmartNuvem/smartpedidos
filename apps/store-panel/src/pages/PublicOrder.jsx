@@ -907,19 +907,24 @@ const PublicOrder = () => {
       fulfillmentTypeLabels[receipt?.fulfillmentType] || fulfillmentTypeLabels.PICKUP;
     const hasAddress = Boolean(receipt?.addressLine || receipt?.deliveryAreaName);
 
-    const handleDownloadReceipt = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const receiptToken = orderResult?.receiptToken;
-      const orderId = orderResult?.orderId;
-      if (!receiptToken || !orderId) {
-        return;
-      }
+    const receiptToken = orderResult?.receiptToken;
+    const orderId = orderResult?.orderId;
+    const pdfUrl =
+      receiptToken && orderId
+        ? new URL(`/api/public/orders/${orderId}/receipt.pdf`, window.location.origin)
+        : null;
+    if (pdfUrl) {
+      pdfUrl.searchParams.set("token", receiptToken);
+    }
 
-      const url = new URL(`/api/public/orders/${orderId}/receipt.pdf`, window.location.origin);
-      url.searchParams.set("token", receiptToken);
-      window.location.href = url.toString();
-    };
+    const pngUrl =
+      receiptToken && orderId
+        ? new URL(`/api/public/orders/${orderId}/receipt.png`, window.location.origin)
+        : null;
+    if (pngUrl) {
+      pngUrl.searchParams.set("token", receiptToken);
+    }
+
 
     return (
       <div className="flex min-h-screen flex-col">
@@ -993,13 +998,28 @@ const PublicOrder = () => {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="mt-4 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
-              onClick={handleDownloadReceipt}
-            >
-              Baixar comprovante (PDF)
-            </button>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              {pngUrl ? (
+                <a
+                  href={pngUrl.toString()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                >
+                  Salvar comprovante (imagem)
+                </a>
+              ) : null}
+              {pdfUrl ? (
+                <a
+                  href={pdfUrl.toString()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-emerald-300 px-5 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                >
+                  Baixar comprovante (PDF)
+                </a>
+              ) : null}
+            </div>
 
             {orderResult?.paymentMethod === "PIX" && (
               <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
