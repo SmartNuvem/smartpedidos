@@ -77,6 +77,46 @@ const paymentMethodLabels = {
   CARD: "Cartão",
 };
 
+let html2CanvasLoaderPromise;
+
+const loadHtml2Canvas = async () => {
+  if (typeof window === "undefined") {
+    throw new Error("html2canvas só pode ser usado no navegador.");
+  }
+
+  if (typeof window.html2canvas === "function") {
+    return window.html2canvas;
+  }
+
+  if (!html2CanvasLoaderPromise) {
+    html2CanvasLoaderPromise = new Promise((resolve, reject) => {
+      const existingScript = document.getElementById("html2canvas-cdn-loader");
+
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(window.html2canvas));
+        existingScript.addEventListener("error", () => reject(new Error("Falha ao carregar html2canvas.")));
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.id = "html2canvas-cdn-loader";
+      script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+      script.async = true;
+      script.onload = () => {
+        if (typeof window.html2canvas === "function") {
+          resolve(window.html2canvas);
+          return;
+        }
+        reject(new Error("html2canvas carregado, mas indisponível na janela global."));
+      };
+      script.onerror = () => reject(new Error("Falha ao carregar html2canvas."));
+      document.head.appendChild(script);
+    });
+  }
+
+  return html2CanvasLoaderPromise;
+};
+
 const fulfillmentTypeLabels = {
   DELIVERY: "Entrega",
   PICKUP: "Retirada",
@@ -959,12 +999,12 @@ const PublicOrder = () => {
 
         sandboxNode = document.createElement("div");
         sandboxNode.style.position = "fixed";
-        sandboxNode.style.left = "0";
+        sandboxNode.style.left = "-10000px";
         sandboxNode.style.top = "0";
-        sandboxNode.style.opacity = "0";
         sandboxNode.style.padding = "24px";
         sandboxNode.style.background = "#fff";
-        sandboxNode.style.zIndex = "-1";
+        sandboxNode.style.display = "inline-block";
+        sandboxNode.style.zIndex = "99999";
         sandboxNode.style.pointerEvents = "none";
         sandboxNode.style.overflow = "visible";
         document.body.appendChild(sandboxNode);
@@ -980,14 +1020,32 @@ const PublicOrder = () => {
           requestAnimationFrame(() => requestAnimationFrame(resolve));
         });
 
-        const pngDataUrl = await toPng(sandboxNode, {
-          pixelRatio: 2,
-          cacheBust: true,
-          backgroundColor: "#fff",
-        });
-        const receiptDataUrl = validateGeneratedDataUrl(pngDataUrl, "PNG");
-        const fileName = `comprovante-${orderResult.number}.png`;
+        let receiptDataUrl = "";
 
+        try {
+          const pngDataUrl = await toPng(sandboxNode, {
+            pixelRatio: 2,
+            cacheBust: true,
+            backgroundColor: "#fff",
+          });
+          receiptDataUrl = validateGeneratedDataUrl(pngDataUrl, "PNG (html-to-image)");
+        } catch (primaryError) {
+          console.warn("Primary receipt export failed. Falling back to html2canvas:", primaryError);
+        }
+
+        if (!receiptDataUrl) {
+          const html2canvas = await loadHtml2Canvas();
+          const fallbackCanvas = await html2canvas(sandboxNode, {
+            backgroundColor: "#fff",
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+          });
+          const fallbackDataUrl = fallbackCanvas.toDataURL("image/png");
+          receiptDataUrl = validateGeneratedDataUrl(fallbackDataUrl, "PNG (html2canvas)");
+        }
+
+        const fileName = `comprovante-${orderResult.number}.png`;
         const link = document.createElement("a");
         link.href = receiptDataUrl;
         link.download = fileName;
