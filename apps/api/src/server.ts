@@ -3,7 +3,7 @@ import fastifyJwt from "@fastify/jwt";
 import fastifyCookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import {
   OpenOverride,
   OrderStatus,
@@ -1774,7 +1774,7 @@ const registerRoutes = () => {
             !isDineIn && paymentMethod === "CASH"
               ? changeForCents ?? null
               : null,
-          receiptToken: randomUUID(),
+          receiptToken: randomBytes(16).toString("hex"),
           total,
           printingClaimedAt: initialPrintingClaimedAt,
         },

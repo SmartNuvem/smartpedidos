@@ -11,8 +11,16 @@ SET "receiptToken" = substr(md5(random()::text || clock_timestamp()::text), 1, 3
 WHERE "receiptToken" IS NULL;
 ```
 
-3. **Schema como obrigatório** (`String`) e novo `prisma db push`.
+3. **Validar backfill**:
+
+```sql
+SELECT COUNT(*) FROM "Order" WHERE "receiptToken" IS NULL;
+```
+
+> O resultado deve ser `0`.
+
+4. **Opcional, após validar**: tornar o campo obrigatório (`String`) e executar novo `prisma db push`.
 
 ## Observação
 
-O backend já preenche `receiptToken` na criação do pedido e o schema Prisma também tem `@default(uuid())` para reforçar a geração em novos registros.
+O backend já preenche `receiptToken` na criação do pedido, sem depender de default no Prisma.
