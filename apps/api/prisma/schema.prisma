@@ -75,6 +75,12 @@ enum TableStatus {
   CLOSED
 }
 
+enum StoreBotStatus {
+  DISCONNECTED
+  WAITING_QR
+  CONNECTED
+}
+
 model Store {
   id                 String                @id @default(uuid())
   name               String
@@ -106,8 +112,29 @@ model Store {
   hours              StoreHours?
   paymentSettings    StorePaymentSettings?
   printJobs          PrintJob[]
+  botConfig          StoreBotConfig?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
+}
+
+model StoreBotConfig {
+  id                    String         @id @default(uuid())
+  storeId               String         @unique
+  store                 Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  enabled               Boolean        @default(false)
+  instanceName          String
+  status                StoreBotStatus @default(DISCONNECTED)
+  connectedPhone        String?
+  keywords              String         @default("cardapio,menu")
+  sendMenuOnKeywords    Boolean        @default(true)
+  sendOrderConfirmation Boolean        @default(true)
+  sendReceiptLink       Boolean        @default(true)
+  pixMessageEnabled     Boolean        @default(true)
+  menuTemplate          String         @default("Olá! 👋\n\nAqui está o cardápio da {storeName}:\n{menuUrl}") @db.Text
+  orderTemplate         String         @default("Pedido {orderCode} confirmado ✅\nTotal: {total}\nComprovante: {receiptUrl}") @db.Text
+  pixTemplate           String         @default("Pagamento via PIX disponível. Se precisar, envie o comprovante por aqui.") @db.Text
+  cooldownMinutes       Int            @default(10)
+  updatedAt             DateTime       @updatedAt
 }
 
 model Category {

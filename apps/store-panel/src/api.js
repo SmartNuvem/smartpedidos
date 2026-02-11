@@ -181,6 +181,34 @@ export const api = {
     });
     return handleResponse(response);
   },
+  getStoreBotConfig: async () => {
+    const response = await request(`${API_URL}/store/bot`, {
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  updateStoreBotConfig: async (payload) => {
+    const response = await request(`${API_URL}/store/bot`, {
+      method: "PUT",
+      headers: buildHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+  getStoreBotQr: async () => {
+    const response = await request(`${API_URL}/store/bot/whatsapp/qr`, {
+      method: "POST",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
+  disconnectStoreBotWhatsapp: async () => {
+    const response = await request(`${API_URL}/store/bot/whatsapp/disconnect`, {
+      method: "POST",
+      headers: buildHeaders(),
+    });
+    return handleResponse(response);
+  },
   getStoreAgents: async () => {
     const response = await request(`${API_URL}/store/agents`, {
       headers: buildHeaders(),

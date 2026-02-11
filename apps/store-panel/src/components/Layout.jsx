@@ -51,6 +51,9 @@ const Layout = ({ children }) => {
             <NavLink to="/settings" className={linkClass}>
               Configurações
             </NavLink>
+            <NavLink to="/settings/bot-whatsapp" className={linkClass}>
+              Robô/Bot (WhatsApp)
+            </NavLink>
           </nav>
           <div className="mt-auto px-2">
             <Button variant="secondary" className="w-full" onClick={handleLogout}>

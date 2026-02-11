@@ -15,6 +15,7 @@ import OrderDetails from "./pages/OrderDetails";
 import Salon from "./pages/Salon";
 import SalonTable from "./pages/SalonTable";
 import Settings from "./pages/Settings";
+import BotSettings from "./pages/BotSettings";
 import Categories from "./pages/Categories";
 import Products from "./pages/Products";
 import PublicOrder from "./pages/PublicOrder";
@@ -168,6 +169,16 @@ const App = () => (
         <RequireAuth>
           <Layout>
             <Settings />
+          </Layout>
+        </RequireAuth>
+      }
+    />
+    <Route
+      path="/settings/bot-whatsapp"
+      element={
+        <RequireAuth>
+          <Layout>
+            <BotSettings />
           </Layout>
         </RequireAuth>
       }
