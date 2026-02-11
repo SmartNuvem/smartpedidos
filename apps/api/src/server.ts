@@ -1774,6 +1774,7 @@ const registerRoutes = () => {
             !isDineIn && paymentMethod === "CASH"
               ? changeForCents ?? null
               : null,
+          receiptToken: randomUUID(),
           total,
           printingClaimedAt: initialPrintingClaimedAt,
         },
