@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import confetti from "canvas-confetti";
 import { API_URL, formatCurrency } from "../api";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
@@ -300,8 +299,6 @@ const PublicOrder = () => {
 
   // 🔥 DETECÇÃO DO BANNER (CLARO/ESCURO)
   const [isBannerLight, setIsBannerLight] = useState(false);
-  const confettiCanvasRef = useRef(null);
-  const confettiFireRef = useRef(null);
 
   const [rememberCustomerData, setRememberCustomerData] = useState(true);
   const allowPickup = menu?.store?.allowPickup ?? true;
@@ -347,61 +344,6 @@ const PublicOrder = () => {
     } catch {
       setIsBannerLight(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (!orderResult) return undefined;
-
-    if (!confettiCanvasRef.current) {
-      const canvas = document.createElement("canvas");
-      canvas.style.position = "fixed";
-      canvas.style.inset = "0";
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-      canvas.style.pointerEvents = "none";
-      canvas.style.zIndex = "0";
-      document.body.appendChild(canvas);
-      confettiCanvasRef.current = canvas;
-      confettiFireRef.current = confetti.create(canvas, { resize: true, useWorker: true });
-    }
-
-    const fireConfetti = confettiFireRef.current;
-
-    fireConfetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
-
-    requestAnimationFrame(() => {
-      document.querySelectorAll("canvas").forEach((canvas) => {
-        if (!(canvas instanceof HTMLCanvasElement)) return;
-        canvas.style.pointerEvents = "none";
-        canvas.style.position = "fixed";
-        canvas.style.inset = "0";
-        canvas.style.zIndex = "0";
-      });
-    });
-
-    const t1 = setTimeout(
-      () => fireConfetti({ particleCount: 60, spread: 90, origin: { y: 0.6 } }),
-      250
-    );
-    const t2 = setTimeout(
-      () => fireConfetti({ particleCount: 40, spread: 110, origin: { y: 0.6 } }),
-      500
-    );
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [orderResult]);
-
-  useEffect(() => {
-    return () => {
-      if (confettiCanvasRef.current) {
-        confettiCanvasRef.current.remove();
-        confettiCanvasRef.current = null;
-      }
-      confettiFireRef.current = null;
-    };
   }, []);
 
   const optionGroups = optionProduct?.optionGroups ?? [];
