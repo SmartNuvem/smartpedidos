@@ -37,7 +37,13 @@ import {
 } from "./pdf";
 import type { JwtUser } from "./types/jwt";
 import { getOrderCode } from "./utils/orderCode";
-import { disconnect, ensureInstance, getQr, registerIncomingWebhook } from "./evolution";
+import {
+  disconnect,
+  ensureInstance,
+  getInstanceStatus,
+  getQr,
+  registerIncomingWebhook,
+} from "./evolution";
 
 
 
@@ -2942,6 +2948,43 @@ const registerRoutes = () => {
     } catch (error) {
       request.log.error(error);
       return reply.status(502).send({ message: "Falha ao gerar QR na Evolution." });
+    }
+  });
+
+  app.post("/store/bot/whatsapp/refresh-status", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { id: true, slug: true },
+    });
+
+    if (!store) {
+      return reply.status(404).send({ message: "Store not found" });
+    }
+
+    const config = await ensureStoreBotConfig(store.id, store.slug);
+
+    try {
+      const instance = await getInstanceStatus(config.instanceName);
+
+      const updated = await prisma.storeBotConfig.update({
+        where: { storeId: store.id },
+        data: {
+          status: instance.status,
+          connectedPhone:
+            instance.status === StoreBotStatus.CONNECTED ? instance.connectedPhone : null,
+          instanceName: store.slug,
+        },
+      });
+
+      return reply.send(updated);
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(502).send({ message: "Falha ao consultar status na Evolution." });
     }
   });
 
