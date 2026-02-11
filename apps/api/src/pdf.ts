@@ -448,6 +448,8 @@ export const buildPublicOrderReceiptPdf = (order: PublicOrderReceiptPdfData) => 
   return doc;
 };
 
+const RECEIPT_FONT_FAMILY = "\"DejaVu Sans\", sans-serif";
+
 type ReceiptPngEntry = {
   color?: string;
   fontSize: number;
@@ -513,7 +515,7 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
   let totalHeight = verticalPadding * 2;
   entries.forEach((entry) => {
     const fontWeight = entry.fontWeight ?? "normal";
-    measureContext.font = `${fontWeight} ${entry.fontSize}px sans-serif`;
+    measureContext.font = `${fontWeight} ${entry.fontSize}px ${RECEIPT_FONT_FAMILY}`;
     const maxWidth = maxTextWidth - (entry.indent ?? 0);
     const wrappedLines = wrapCanvasText({
       context: measureContext,
@@ -535,7 +537,7 @@ export const buildPublicOrderReceiptPng = async (order: PublicOrderReceiptPdfDat
   entries.forEach((entry) => {
     y += entry.spacingBefore ?? 0;
     const fontWeight = entry.fontWeight ?? "normal";
-    context.font = `${fontWeight} ${entry.fontSize}px sans-serif`;
+    context.font = `${fontWeight} ${entry.fontSize}px ${RECEIPT_FONT_FAMILY}`;
     context.fillStyle = entry.color ?? "#0f172a";
     context.textBaseline = "top";
     const lineHeight = entry.fontSize * 1.42;
