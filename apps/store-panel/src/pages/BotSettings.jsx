@@ -11,14 +11,8 @@ const defaultForm = {
   keywords: "cardapio,menu",
   sendMenuOnKeywords: true,
   sendOrderConfirmation: true,
-  sendReceiptLink: true,
-  pixMessageEnabled: true,
   menuTemplate:
     "Olá! 👋\n\nAqui está o cardápio da {storeName}:\n{menuUrl}",
-  orderTemplate:
-    "✅ Pedido {orderNumber} confirmado!\nTipo: {fulfillmentLabel}\nCliente: {customerName}\n{addressBlock}\nItens:\n{itemsBlock}\n{totalBlock}\n{paymentBlock}",
-  pixTemplate:
-    "Pagamento via PIX disponível. Se precisar, envie o comprovante por aqui.",
   cooldownMinutes: 10,
 };
 
@@ -124,11 +118,7 @@ const BotSettings = () => {
         keywords: form.keywords,
         sendMenuOnKeywords: form.sendMenuOnKeywords,
         sendOrderConfirmation: form.sendOrderConfirmation,
-        sendReceiptLink: form.sendReceiptLink,
-        pixMessageEnabled: form.pixMessageEnabled,
         menuTemplate: form.menuTemplate,
-        orderTemplate: form.orderTemplate,
-        pixTemplate: form.pixTemplate,
         cooldownMinutes: Number(form.cooldownMinutes) || 0,
       };
       const updated = await api.updateStoreBotConfig(payload);
@@ -262,8 +252,6 @@ const BotSettings = () => {
           {[
             ["sendMenuOnKeywords", "Enviar cardápio quando detectar keywords"],
             ["sendOrderConfirmation", "Enviar confirmação do pedido"],
-            ["sendReceiptLink", "Incluir link do comprovante"],
-            ["pixMessageEnabled", "Habilitar mensagem de PIX"],
           ].map(([field, label]) => (
             <label className="flex items-center gap-3" key={field}>
               <input
@@ -282,22 +270,6 @@ const BotSettings = () => {
           rows={4}
           value={form.menuTemplate}
           onChange={(event) => handleChange("menuTemplate", event.target.value)}
-        />
-
-        <label className="text-sm font-medium text-slate-700 block">Template de Pedido</label>
-        <textarea
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          rows={4}
-          value={form.orderTemplate}
-          onChange={(event) => handleChange("orderTemplate", event.target.value)}
-        />
-
-        <label className="text-sm font-medium text-slate-700 block">Template de PIX</label>
-        <textarea
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          rows={4}
-          value={form.pixTemplate}
-          onChange={(event) => handleChange("pixTemplate", event.target.value)}
         />
 
         <Button onClick={handleSave} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
