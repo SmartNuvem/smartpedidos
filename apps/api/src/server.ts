@@ -260,6 +260,28 @@ const ensureStoreBotConfig = async (storeId: string, storeSlug: string) =>
     },
   });
 
+const normalizeIncomingBotText = (value: string) => value.toLowerCase().trim();
+
+const parseBotKeywords = (rawKeywords: string) =>
+  rawKeywords
+    .split(",")
+    .map((keyword) => keyword.trim().toLowerCase())
+    .filter(Boolean);
+
+const applyMenuTemplateVariables = ({
+  template,
+  store,
+}: {
+  template: string;
+  store: { name: string; slug: string };
+}) => {
+  const menuUrl = `https://smartpedido.com.br/p/${store.slug}`;
+  return template
+    .replaceAll("{storeName}", store.name)
+    .replaceAll("{slug}", store.slug)
+    .replaceAll("{menuUrl}", menuUrl);
+};
+
 const app = Fastify({
   logger: true,
 });
@@ -3146,6 +3168,137 @@ const registerRoutes = () => {
     });
 
     return reply.send(updated);
+  });
+
+  app.post("/public/bot/whatsapp/incoming", async (request, reply) => {
+    if (!assertPublicBotSecret(request, reply)) {
+      return;
+    }
+
+    const schema = z.object({
+      instance: z.string().trim().min(1),
+      number: z.string().trim().min(1).max(32),
+      text: z.string().max(5000),
+    });
+
+    const { instance, number, text } = schema.parse(request.body ?? {});
+    const normalizedText = normalizeIncomingBotText(text);
+
+    if (!normalizedText || normalizedText.length > 1000) {
+      return reply.send({
+        shouldReply: false,
+        replyText: null,
+        reason: "invalid_text",
+      });
+    }
+
+    const store = await prisma.store.findUnique({
+      where: { slug: instance },
+      select: { id: true, slug: true, name: true },
+    });
+
+    if (!store) {
+      return reply.send({
+        shouldReply: false,
+        replyText: null,
+        reason: "store_not_found",
+      });
+    }
+
+    const config = await prisma.storeBotConfig.findUnique({
+      where: { storeId: store.id },
+      select: {
+        enabled: true,
+        keywords: true,
+        sendMenuOnKeywords: true,
+        menuTemplate: true,
+        cooldownMinutes: true,
+      },
+    });
+
+    if (!config) {
+      return reply.send({
+        shouldReply: false,
+        replyText: null,
+        reason: "bot_config_missing",
+      });
+    }
+
+    if (!config.enabled) {
+      return reply.send({
+        shouldReply: false,
+        replyText: null,
+        reason: "bot_disabled",
+      });
+    }
+
+    if (config.sendMenuOnKeywords) {
+      const keywords = parseBotKeywords(config.keywords);
+      const containsKeyword = keywords.some((keyword) =>
+        normalizedText.includes(keyword)
+      );
+      if (!containsKeyword) {
+        return reply.send({
+          shouldReply: false,
+          replyText: null,
+          reason: "no_keyword",
+        });
+      }
+    }
+
+    if (config.cooldownMinutes > 0) {
+      const state = await prisma.botReplyState.findUnique({
+        where: {
+          storeId_number: {
+            storeId: store.id,
+            number,
+          },
+        },
+        select: { lastReplyAt: true },
+      });
+
+      if (state) {
+        const elapsedMs = Date.now() - state.lastReplyAt.getTime();
+        const cooldownMs = config.cooldownMinutes * 60 * 1000;
+        if (elapsedMs < cooldownMs) {
+          return reply.send({
+            shouldReply: false,
+            replyText: null,
+            reason: "cooldown",
+          });
+        }
+      }
+    }
+
+    const replyText = applyMenuTemplateVariables({
+      template: config.menuTemplate,
+      store,
+    });
+
+    await prisma.botReplyState.upsert({
+      where: {
+        storeId_number: {
+          storeId: store.id,
+          number,
+        },
+      },
+      update: {
+        lastReplyAt: new Date(),
+        lastReplyType: "menu",
+      },
+      create: {
+        storeId: store.id,
+        number,
+        lastReplyAt: new Date(),
+        lastReplyType: "menu",
+      },
+    });
+
+    return reply.send({
+      shouldReply: true,
+      replyText,
+      reason: "reply_menu",
+    });
   });
 
   app.get("/public/bot/by-instance/:instanceName", async (request, reply) => {

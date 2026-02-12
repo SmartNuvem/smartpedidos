@@ -113,6 +113,7 @@ model Store {
   paymentSettings    StorePaymentSettings?
   printJobs          PrintJob[]
   botConfig          StoreBotConfig?
+  botReplyStates     BotReplyState[]
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 }
@@ -141,6 +142,19 @@ model StoreBotConfig {
   pixTemplate           String         @default("Pagamento via PIX disponível. Se precisar, envie o comprovante por aqui.") @db.Text
   cooldownMinutes       Int            @default(10)
   updatedAt             DateTime       @updatedAt
+}
+
+model BotReplyState {
+  id           String   @id @default(uuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  number       String
+  lastReplyAt  DateTime
+  lastReplyType String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([storeId, number])
 }
 
 model Category {
