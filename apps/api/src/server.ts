@@ -19,6 +19,7 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { purgeOldOrders } from "./jobs/purgeOldOrders";
 import { recoverStuckOrders } from "./jobs/recoverStuckOrders";
+import { notifyPrintedOrders } from "./jobs/notifyPrintedOrders";
 import { calculatePricing } from "./pricingRule";
 import {
   authenticateAgent,
@@ -46,6 +47,7 @@ import {
   isEvolutionApiError,
   isEvolutionWebhookOperationError,
 } from "./evolution";
+import { notifyCustomerOnPrinted } from "./services/orderPrintedNotification";
 
 
 
@@ -6169,6 +6171,8 @@ const registerRoutes = () => {
       data: { status: "PRINTED" },
     });
 
+    await notifyCustomerOnPrinted(prisma, updated.id, request.log);
+
     sendOrderStreamEvent(agent.storeId, "order.updated", {
       id: updated.id,
       createdAt: updated.createdAt,
@@ -6589,6 +6593,19 @@ const start = async () => {
   };
   runRecoverStuckOrders();
   setInterval(runRecoverStuckOrders, recoverIntervalMs);
+
+  const notifyIntervalMs = Number(
+    process.env.NOTIFY_PRINTED_ORDERS_INTERVAL_MS ?? 60000
+  );
+  const runNotifyPrintedOrders = async () => {
+    try {
+      await notifyPrintedOrders(prisma, { logger: app.log });
+    } catch (error) {
+      app.log.error({ err: error }, "notifyPrintedOrders: execution failed");
+    }
+  };
+  runNotifyPrintedOrders();
+  setInterval(runNotifyPrintedOrders, notifyIntervalMs);
 
   app.ready((err) => {
     if (err) {
