@@ -27,6 +27,7 @@ Edite o arquivo `.env` e ajuste:
 - `MAINTENANCE_TOKEN`: token usado para autorizar rotinas internas de manutenção (ex.: limpeza automática de pedidos antigos).
 - `EVOLUTION_BASE_URL`: URL base da Evolution API/Manager (ex.: `https://evolution.seudominio.com`).
 - `EVOLUTION_API_KEY`: chave da Evolution usada nas rotas de instância/webhook.
+- `NOTIFY_PRINTED_ORDERS_INTERVAL_MS`: intervalo do job de retentativa de notificações WhatsApp para pedidos `PRINTED` (padrão: `60000`).
 - `ACTIVEPIECES_INCOMING_WEBHOOK_URL`: webhook central do Activepieces para recebimento das mensagens da Evolution.
 
 Se preferir, deixe `VITE_API_URL=/api` para usar o proxy do Vite (útil no Docker). Nesse caso, a URL externa do painel continua `http://IP:5173`.
@@ -185,3 +186,23 @@ curl -o order.pdf http://localhost:3000/agent/orders/ORDER_ID/pdf \
 curl -X POST http://localhost:3000/agent/rotate-agent-token \
   -H 'Authorization: Bearer super-token'
 ```
+
+
+## WhatsApp automático ao imprimir pedido
+
+Quando um pedido muda para `PRINTED`, a API tenta enviar confirmação para o cliente via Evolution usando a instância da própria loja (`Store.slug`).
+
+Pré-requisitos:
+- `EVOLUTION_BASE_URL` e `EVOLUTION_API_KEY` configurados.
+- Bot da loja habilitado em `StoreBotConfig` (`enabled=true` e `sendOrderConfirmation=true`).
+
+Exemplo de teste manual (agente marcando pedido como impresso):
+
+```bash
+curl -X POST http://localhost:3000/agent/orders/ORDER_ID/printed \
+  -H 'Authorization: Bearer super-token'
+```
+
+Retentativa automática:
+- A API roda um job em background para reenviar notificações pendentes (`status=PRINTED` e `customerNotifiedAt IS NULL`) dos últimos 2 dias.
+- Intervalo configurável por `NOTIFY_PRINTED_ORDERS_INTERVAL_MS`.

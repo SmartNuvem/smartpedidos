@@ -322,6 +322,19 @@ export const disconnect = async (instanceName: string) => {
   };
 };
 
+
+export const sendTextMessage = async (
+  instanceName: string,
+  number: string,
+  text: string
+) => {
+  await evolutionRequest(`/message/sendText/${instanceName}`, {
+    method: "POST",
+    body: JSON.stringify({ number, text }),
+    parseJson: false,
+  });
+};
+
 export const syncIncomingWebhook = async (
   instanceName: string
 ): Promise<EvolutionWebhookSyncResult> => {
