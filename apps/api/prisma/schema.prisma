@@ -135,7 +135,7 @@ model StoreBotConfig {
   keywords              String         @default("cardapio,menu")
   sendMenuOnKeywords    Boolean        @default(true)
   sendOrderConfirmation Boolean        @default(true)
-  sendReceiptLink       Boolean        @default(true)
+  sendReceiptLink       Boolean        @default(false)
   pixMessageEnabled     Boolean        @default(true)
   menuTemplate          String         @default("Olá! 👋\n\nAqui está o cardápio da {storeName}:\n{menuUrl}") @db.Text
   orderTemplate         String         @default("✅ Pedido {orderNumber} confirmado!\nTipo: {fulfillmentLabel}\nCliente: {customerName}\n{addressBlock}\nItens:\n{itemsBlock}\n{totalBlock}\n{paymentBlock}") @db.Text
