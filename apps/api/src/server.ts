@@ -2958,11 +2958,13 @@ const registerRoutes = () => {
             webhookUrl: webhookTargetUrl,
             webhookEnabled: false,
             webhookEvents: ["MESSAGES_UPSERT"],
-            lastWebhookError: isEvolutionApiError(error)
-              ? `${error.statusCode} ${error.responseBody}`
-              : error instanceof Error
-                ? error.message
-                : "Erro desconhecido ao configurar webhook.",
+            lastWebhookError: isEvolutionWebhookOperationError(error)
+              ? `${error.operation} ${error.statusCode} ${error.responseBody}`
+              : isEvolutionApiError(error)
+                ? `request ${error.statusCode} ${error.responseBody}`
+                : error instanceof Error
+                  ? error.message
+                  : "Erro desconhecido ao configurar webhook.",
           };
           request.log.error(
             {
@@ -3060,11 +3062,13 @@ const registerRoutes = () => {
             webhookUrl: webhookTargetUrl,
             webhookEnabled: false,
             webhookEvents: ["MESSAGES_UPSERT"],
-            lastWebhookError: isEvolutionApiError(error)
-              ? `${error.statusCode} ${error.responseBody}`
-              : error instanceof Error
-                ? error.message
-                : "Erro desconhecido ao configurar webhook.",
+            lastWebhookError: isEvolutionWebhookOperationError(error)
+              ? `${error.operation} ${error.statusCode} ${error.responseBody}`
+              : isEvolutionApiError(error)
+                ? `request ${error.statusCode} ${error.responseBody}`
+                : error instanceof Error
+                  ? error.message
+                  : "Erro desconhecido ao configurar webhook.",
           };
           request.log.error(
             {
