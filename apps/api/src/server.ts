@@ -44,6 +44,7 @@ import {
   getQr,
   syncIncomingWebhook,
   isEvolutionApiError,
+  isEvolutionWebhookOperationError,
 } from "./evolution";
 
 
@@ -2966,8 +2967,15 @@ const registerRoutes = () => {
           request.log.error(
             {
               tag: "evolution webhook",
-              statusCode: isEvolutionApiError(error) ? error.statusCode : null,
-              body: isEvolutionApiError(error) ? error.responseBody : null,
+              operation: isEvolutionWebhookOperationError(error) ? error.operation : null,
+              statusCode:
+                isEvolutionWebhookOperationError(error) || isEvolutionApiError(error)
+                  ? error.statusCode
+                  : null,
+              body:
+                isEvolutionWebhookOperationError(error) || isEvolutionApiError(error)
+                  ? error.responseBody
+                  : null,
               instanceName: config.instanceName,
             },
             "webhook sync error"
@@ -3061,8 +3069,15 @@ const registerRoutes = () => {
           request.log.error(
             {
               tag: "evolution webhook",
-              statusCode: isEvolutionApiError(error) ? error.statusCode : null,
-              body: isEvolutionApiError(error) ? error.responseBody : null,
+              operation: isEvolutionWebhookOperationError(error) ? error.operation : null,
+              statusCode:
+                isEvolutionWebhookOperationError(error) || isEvolutionApiError(error)
+                  ? error.statusCode
+                  : null,
+              body:
+                isEvolutionWebhookOperationError(error) || isEvolutionApiError(error)
+                  ? error.responseBody
+                  : null,
               instanceName: config.instanceName,
             },
             "webhook sync error"
