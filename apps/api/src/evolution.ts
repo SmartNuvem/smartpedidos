@@ -44,14 +44,6 @@ type EvolutionFetchInstanceItem = {
 };
 
 type EvolutionWebhookResponse = {
-  webhook?: {
-    url?: string;
-    events?: string[];
-    enabled?: boolean;
-    webhookByEvents?: boolean;
-    webhookBase64?: boolean;
-    headers?: Record<string, string>;
-  };
   url?: string;
   events?: string[];
   enabled?: boolean;
@@ -374,24 +366,42 @@ export const syncIncomingWebhook = async (
     };
   };
 
-  const findResult = await performWebhookRequest(`/webhook/find/${instanceName}`, {
-    method: "GET",
-  });
+  let currentWebhook: EvolutionWebhookResponse | null = null;
 
-  if (!findResult.ok && findResult.statusCode !== 404) {
-    throw new EvolutionWebhookOperationError("find", findResult.statusCode, findResult.bodyText);
+  try {
+    const findResult = await performWebhookRequest(`/webhook/find/${instanceName}`, {
+      method: "GET",
+    });
+
+    if (!findResult.ok) {
+      if (findResult.statusCode === 404) {
+        currentWebhook = null;
+      } else {
+        throw new EvolutionWebhookOperationError(
+          "find",
+          findResult.statusCode,
+          findResult.bodyText
+        );
+      }
+    } else {
+      currentWebhook = findResult.bodyJson;
+    }
+  } catch (error) {
+    if (isEvolutionWebhookOperationError(error)) {
+      throw error;
+    }
+    throw new EvolutionWebhookOperationError(
+      "find",
+      error instanceof EvolutionApiError ? error.statusCode : 500,
+      error instanceof Error ? error.message : String(error)
+    );
   }
 
-  const findResponse = findResult.statusCode === 404 ? {} : findResult.bodyJson;
-
-  const currentWebhookUrl = findResponse.webhook?.url ?? findResponse.url ?? null;
-  const currentWebhookEnabled = findResponse.webhook?.enabled ?? findResponse.enabled ?? false;
-  const currentWebhookEvents = findResponse.webhook?.events ?? findResponse.events ?? [];
   const shouldApplyWebhook =
-    currentWebhookUrl !== webhookUrl ||
-    currentWebhookEnabled !== true ||
-    currentWebhookEvents.length !== 1 ||
-    currentWebhookEvents[0] !== expectedEvents[0];
+    currentWebhook === null ||
+    currentWebhook.url !== webhookUrl ||
+    currentWebhook.enabled !== true ||
+    !currentWebhook.events?.includes(expectedEvents[0]);
 
   if (!shouldApplyWebhook) {
     return {
@@ -429,9 +439,9 @@ export const syncIncomingWebhook = async (
   const responsePayload = setResult.bodyJson;
 
   return {
-    webhookUrl: responsePayload.webhook?.url ?? responsePayload.url ?? webhookUrl,
-    webhookEnabled: responsePayload.webhook?.enabled ?? responsePayload.enabled ?? true,
-    webhookEvents: responsePayload.webhook?.events ?? responsePayload.events ?? expectedEvents,
+    webhookUrl: responsePayload.url ?? webhookUrl,
+    webhookEnabled: responsePayload.enabled ?? true,
+    webhookEvents: responsePayload.events ?? expectedEvents,
     statusCode,
     responseBody: bodyText || null,
     applied: true,
