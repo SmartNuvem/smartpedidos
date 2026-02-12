@@ -2952,11 +2952,19 @@ const registerRoutes = () => {
             request.log.info(
               {
                 tag: "evolution webhook",
+                instanceName: config.instanceName,
+                instanceId: webhookResult.instanceId,
+              },
+              "resolved instanceId"
+            );
+            request.log.info(
+              {
+                tag: "evolution webhook",
                 statusCode: webhookResult.statusCode,
                 instanceName: config.instanceName,
                 instanceId: webhookResult.instanceId,
               },
-              "Webhook da Evolution configurado com sucesso."
+              "webhook applied"
             );
           } catch (error) {
             webhookPatch = {
@@ -2977,7 +2985,7 @@ const registerRoutes = () => {
                 body: isEvolutionApiError(error) ? error.responseBody : null,
                 instanceName: config.instanceName,
               },
-              "Falha ao configurar webhook da instância na Evolution."
+              "webhook applied error"
             );
           }
         }
@@ -3055,11 +3063,19 @@ const registerRoutes = () => {
             request.log.info(
               {
                 tag: "evolution webhook",
+                instanceName: config.instanceName,
+                instanceId: webhookResult.instanceId,
+              },
+              "resolved instanceId"
+            );
+            request.log.info(
+              {
+                tag: "evolution webhook",
                 statusCode: webhookResult.statusCode,
                 instanceName: config.instanceName,
                 instanceId: webhookResult.instanceId,
               },
-              "Webhook da Evolution configurado com sucesso."
+              "webhook applied"
             );
           } catch (error) {
             webhookPatch = {
@@ -3080,7 +3096,7 @@ const registerRoutes = () => {
                 body: isEvolutionApiError(error) ? error.responseBody : null,
                 instanceName: config.instanceName,
               },
-              "Falha ao configurar webhook da instância na Evolution."
+              "webhook applied error"
             );
           }
         }

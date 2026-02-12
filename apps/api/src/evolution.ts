@@ -130,11 +130,22 @@ const evolutionRequest = async (
 
 
 const fetchInstances = async () => {
-  const payload = await evolutionRequest(`/instance/fetchInstances`, {
-    method: "GET",
-  });
+  const endpoints = ["/manager/instance/fetchInstances", "/instance/fetchInstances"];
+  let lastError: unknown = null;
 
-  return Array.isArray(payload) ? (payload as EvolutionFetchInstanceItem[]) : [];
+  for (const endpoint of endpoints) {
+    try {
+      const payload = await evolutionRequest(endpoint, {
+        method: "GET",
+      });
+
+      return Array.isArray(payload) ? (payload as EvolutionFetchInstanceItem[]) : [];
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Falha ao listar instâncias na Evolution.");
 };
 
 const resolveInstanceIdByName = async (instanceName: string) => {
@@ -327,20 +338,11 @@ export const registerIncomingWebhook = async (
     webhookBase64: false,
   };
 
-  let response: Response;
-  try {
-    response = await evolutionRequest(`/manager/instance/${instanceId}/webhook`, {
-      method: "PUT",
-      body: JSON.stringify(managerPayload),
-      parseJson: false,
-    });
-  } catch {
-    response = await evolutionRequest(`/manager/instance/${instanceId}/webhook`, {
-      method: "POST",
-      body: JSON.stringify(managerPayload),
-      parseJson: false,
-    });
-  }
+  const response = await evolutionRequest(`/manager/instance/${instanceId}/webhook`, {
+    method: "PUT",
+    body: JSON.stringify(managerPayload),
+    parseJson: false,
+  });
 
   const statusCode = response.status;
   const bodyText = await response.text().catch(() => "");
