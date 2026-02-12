@@ -48,28 +48,37 @@ type EvolutionWebhookResponse = {
     url?: string;
     events?: string[];
     enabled?: boolean;
+    webhookByEvents?: boolean;
+    webhookBase64?: boolean;
+    headers?: Record<string, string>;
   };
   url?: string;
   events?: string[];
   enabled?: boolean;
+  webhookByEvents?: boolean;
+  webhookBase64?: boolean;
+  headers?: Record<string, string>;
   message?: string;
 };
 
-type EvolutionManagerWebhookPayload = {
-  url: string;
-  headers: null;
-  enabled: true;
-  events: ["MESSAGES_UPSERT"];
-  webhookByEvents: false;
-  webhookBase64: false;
+type EvolutionWebhookSetPayload = {
+  webhook: {
+    url: string;
+    enabled: true;
+    events: ["MESSAGES_UPSERT"];
+    webhookByEvents: false;
+    webhookBase64: false;
+    headers: Record<string, string>;
+  };
 };
 
-type EvolutionManagerWebhookResult = {
+type EvolutionWebhookSyncResult = {
   webhookUrl: string;
   webhookEnabled: boolean;
   webhookEvents: string[];
   statusCode: number | null;
-  instanceId: string;
+  responseBody: string | null;
+  applied: boolean;
 };
 
 class EvolutionApiError extends Error {
@@ -146,25 +155,6 @@ const fetchInstances = async () => {
   }
 
   throw lastError instanceof Error ? lastError : new Error("Falha ao listar instâncias na Evolution.");
-};
-
-const resolveInstanceIdByName = async (instanceName: string) => {
-  const list = await fetchInstances();
-  const found = list.find((item) => {
-    const name = item.name ?? item.instanceName ?? item.instance?.instanceName;
-    return name === instanceName;
-  });
-
-  if (!found) {
-    throw new Error(`Instância ${instanceName} não encontrada na Evolution.`);
-  }
-
-  const instanceId = found.id ?? found.instanceId;
-  if (!instanceId) {
-    throw new Error(`Instância ${instanceName} encontrada sem instanceId.`);
-  }
-
-  return instanceId;
 };
 
 const mapEvolutionStatus = (payload: EvolutionInstanceResponse): StoreBotStatus => {
@@ -320,46 +310,74 @@ export const disconnect = async (instanceName: string) => {
   };
 };
 
-export const registerIncomingWebhook = async (
+export const syncIncomingWebhook = async (
   instanceName: string
-): Promise<EvolutionManagerWebhookResult> => {
+): Promise<EvolutionWebhookSyncResult> => {
   const webhookUrl = process.env.ACTIVEPIECES_INCOMING_WEBHOOK_URL?.trim();
   if (!webhookUrl) {
     throw new Error("ACTIVEPIECES_INCOMING_WEBHOOK_URL não configurada.");
   }
 
-  const instanceId = await resolveInstanceIdByName(instanceName);
-  const managerPayload: EvolutionManagerWebhookPayload = {
-    url: webhookUrl,
-    headers: null,
-    enabled: true,
-    events: ["MESSAGES_UPSERT"],
-    webhookByEvents: false,
-    webhookBase64: false,
+  const expectedEvents = ["MESSAGES_UPSERT"];
+
+  const findResponse = await evolutionRequest(`/webhook/find/${instanceName}`, {
+    method: "GET",
+  });
+
+  const currentWebhookUrl = findResponse.webhook?.url ?? findResponse.url ?? null;
+  const currentWebhookEnabled = findResponse.webhook?.enabled ?? findResponse.enabled ?? false;
+  const currentWebhookEvents = findResponse.webhook?.events ?? findResponse.events ?? [];
+  const shouldApplyWebhook =
+    currentWebhookUrl !== webhookUrl ||
+    currentWebhookEnabled !== true ||
+    currentWebhookEvents.length !== 1 ||
+    currentWebhookEvents[0] !== expectedEvents[0];
+
+  if (!shouldApplyWebhook) {
+    return {
+      webhookUrl,
+      webhookEnabled: true,
+      webhookEvents: expectedEvents,
+      statusCode: null,
+      responseBody: null,
+      applied: false,
+    };
+  }
+
+  const setPayload: EvolutionWebhookSetPayload = {
+    webhook: {
+      url: webhookUrl,
+      enabled: true,
+      events: ["MESSAGES_UPSERT"],
+      webhookByEvents: false,
+      webhookBase64: false,
+      headers: {},
+    },
   };
 
-  const response = await evolutionRequest(`/manager/instance/${instanceId}/webhook`, {
-    method: "PUT",
-    body: JSON.stringify(managerPayload),
+  const response = await evolutionRequest(`/webhook/set/${instanceName}`, {
+    method: "POST",
+    body: JSON.stringify(setPayload),
     parseJson: false,
   });
 
   const statusCode = response.status;
   const bodyText = await response.text().catch(() => "");
-  let payload: EvolutionWebhookResponse = {};
+  let responsePayload: EvolutionWebhookResponse = {};
   if (bodyText) {
     try {
-      payload = JSON.parse(bodyText) as EvolutionWebhookResponse;
+      responsePayload = JSON.parse(bodyText) as EvolutionWebhookResponse;
     } catch {
-      payload = {};
+      responsePayload = {};
     }
   }
 
   return {
-    webhookUrl: payload.webhook?.url ?? payload.url ?? webhookUrl,
-    webhookEnabled: payload.webhook?.enabled ?? payload.enabled ?? true,
-    webhookEvents: payload.webhook?.events ?? payload.events ?? ["MESSAGES_UPSERT"],
+    webhookUrl: responsePayload.webhook?.url ?? responsePayload.url ?? webhookUrl,
+    webhookEnabled: responsePayload.webhook?.enabled ?? responsePayload.enabled ?? true,
+    webhookEvents: responsePayload.webhook?.events ?? responsePayload.events ?? expectedEvents,
     statusCode,
-    instanceId,
+    responseBody: bodyText || null,
+    applied: true,
   };
 };

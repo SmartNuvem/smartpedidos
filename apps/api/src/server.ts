@@ -42,7 +42,7 @@ import {
   ensureInstance,
   getInstanceStatus,
   getQr,
-  registerIncomingWebhook,
+  syncIncomingWebhook,
   isEvolutionApiError,
 } from "./evolution";
 
@@ -2931,63 +2931,47 @@ const registerRoutes = () => {
       } = {};
 
       if (status === StoreBotStatus.CONNECTED && webhookTargetUrl) {
-        const shouldApplyWebhook =
-          !config.webhookAppliedAt ||
-          config.webhookUrl !== webhookTargetUrl ||
-          !config.webhookEnabled ||
-          config.webhookEvents.length !== 1 ||
-          config.webhookEvents[0] !== "MESSAGES_UPSERT";
-
-        if (shouldApplyWebhook) {
-          try {
-            const webhookResult = await registerIncomingWebhook(config.instanceName);
-            webhookPatch = {
-              webhookStatus: "REGISTERED",
-              webhookUrl: webhookResult.webhookUrl,
-              webhookEnabled: webhookResult.webhookEnabled,
-              webhookEvents: webhookResult.webhookEvents,
-              webhookAppliedAt: new Date(),
-              lastWebhookError: null,
-            };
-            request.log.info(
-              {
-                tag: "evolution webhook",
-                instanceName: config.instanceName,
-                instanceId: webhookResult.instanceId,
-              },
-              "resolved instanceId"
-            );
-            request.log.info(
-              {
-                tag: "evolution webhook",
-                statusCode: webhookResult.statusCode,
-                instanceName: config.instanceName,
-                instanceId: webhookResult.instanceId,
-              },
-              "webhook applied"
-            );
-          } catch (error) {
-            webhookPatch = {
-              webhookStatus: "ERROR",
-              webhookUrl: webhookTargetUrl,
-              webhookEnabled: false,
-              webhookEvents: ["MESSAGES_UPSERT"],
-              lastWebhookError: isEvolutionApiError(error)
-                ? `${error.statusCode} ${error.responseBody}`
-                : error instanceof Error
-                  ? error.message
-                  : "Erro desconhecido ao configurar webhook.",
-            };
-            request.log.error(
-              {
-                tag: "evolution webhook",
-                statusCode: isEvolutionApiError(error) ? error.statusCode : null,
-                body: isEvolutionApiError(error) ? error.responseBody : null,
-                instanceName: config.instanceName,
-              },
-              "webhook applied error"
-            );
-          }
+        try {
+          const webhookResult = await syncIncomingWebhook(config.instanceName);
+          webhookPatch = {
+            webhookStatus: "REGISTERED",
+            webhookUrl: webhookResult.webhookUrl,
+            webhookEnabled: webhookResult.webhookEnabled,
+            webhookEvents: webhookResult.webhookEvents,
+            webhookAppliedAt: new Date(),
+            lastWebhookError: null,
+          };
+          request.log.info(
+            {
+              tag: "evolution webhook",
+              statusCode: webhookResult.statusCode,
+              body: webhookResult.responseBody,
+              applied: webhookResult.applied,
+              instanceName: config.instanceName,
+            },
+            "webhook sync success"
+          );
+        } catch (error) {
+          webhookPatch = {
+            webhookStatus: "ERROR",
+            webhookUrl: webhookTargetUrl,
+            webhookEnabled: false,
+            webhookEvents: ["MESSAGES_UPSERT"],
+            lastWebhookError: isEvolutionApiError(error)
+              ? `${error.statusCode} ${error.responseBody}`
+              : error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao configurar webhook.",
+          };
+          request.log.error(
+            {
+              tag: "evolution webhook",
+              statusCode: isEvolutionApiError(error) ? error.statusCode : null,
+              body: isEvolutionApiError(error) ? error.responseBody : null,
+              instanceName: config.instanceName,
+            },
+            "webhook sync error"
+          );
         }
       }
 
@@ -3042,63 +3026,47 @@ const registerRoutes = () => {
       } = {};
 
       if (instance.status === StoreBotStatus.CONNECTED && webhookTargetUrl) {
-        const shouldApplyWebhook =
-          !config.webhookAppliedAt ||
-          config.webhookUrl !== webhookTargetUrl ||
-          !config.webhookEnabled ||
-          config.webhookEvents.length !== 1 ||
-          config.webhookEvents[0] !== "MESSAGES_UPSERT";
-
-        if (shouldApplyWebhook) {
-          try {
-            const webhookResult = await registerIncomingWebhook(config.instanceName);
-            webhookPatch = {
-              webhookStatus: "REGISTERED",
-              webhookUrl: webhookResult.webhookUrl,
-              webhookEnabled: webhookResult.webhookEnabled,
-              webhookEvents: webhookResult.webhookEvents,
-              webhookAppliedAt: new Date(),
-              lastWebhookError: null,
-            };
-            request.log.info(
-              {
-                tag: "evolution webhook",
-                instanceName: config.instanceName,
-                instanceId: webhookResult.instanceId,
-              },
-              "resolved instanceId"
-            );
-            request.log.info(
-              {
-                tag: "evolution webhook",
-                statusCode: webhookResult.statusCode,
-                instanceName: config.instanceName,
-                instanceId: webhookResult.instanceId,
-              },
-              "webhook applied"
-            );
-          } catch (error) {
-            webhookPatch = {
-              webhookStatus: "ERROR",
-              webhookUrl: webhookTargetUrl,
-              webhookEnabled: false,
-              webhookEvents: ["MESSAGES_UPSERT"],
-              lastWebhookError: isEvolutionApiError(error)
-                ? `${error.statusCode} ${error.responseBody}`
-                : error instanceof Error
-                  ? error.message
-                  : "Erro desconhecido ao configurar webhook.",
-            };
-            request.log.error(
-              {
-                tag: "evolution webhook",
-                statusCode: isEvolutionApiError(error) ? error.statusCode : null,
-                body: isEvolutionApiError(error) ? error.responseBody : null,
-                instanceName: config.instanceName,
-              },
-              "webhook applied error"
-            );
-          }
+        try {
+          const webhookResult = await syncIncomingWebhook(config.instanceName);
+          webhookPatch = {
+            webhookStatus: "REGISTERED",
+            webhookUrl: webhookResult.webhookUrl,
+            webhookEnabled: webhookResult.webhookEnabled,
+            webhookEvents: webhookResult.webhookEvents,
+            webhookAppliedAt: new Date(),
+            lastWebhookError: null,
+          };
+          request.log.info(
+            {
+              tag: "evolution webhook",
+              statusCode: webhookResult.statusCode,
+              body: webhookResult.responseBody,
+              applied: webhookResult.applied,
+              instanceName: config.instanceName,
+            },
+            "webhook sync success"
+          );
+        } catch (error) {
+          webhookPatch = {
+            webhookStatus: "ERROR",
+            webhookUrl: webhookTargetUrl,
+            webhookEnabled: false,
+            webhookEvents: ["MESSAGES_UPSERT"],
+            lastWebhookError: isEvolutionApiError(error)
+              ? `${error.statusCode} ${error.responseBody}`
+              : error instanceof Error
+                ? error.message
+                : "Erro desconhecido ao configurar webhook.",
+          };
+          request.log.error(
+            {
+              tag: "evolution webhook",
+              statusCode: isEvolutionApiError(error) ? error.statusCode : null,
+              body: isEvolutionApiError(error) ? error.responseBody : null,
+              instanceName: config.instanceName,
+            },
+            "webhook sync error"
+          );
         }
       }
 
