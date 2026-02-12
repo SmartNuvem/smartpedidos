@@ -16,7 +16,7 @@ const defaultForm = {
   menuTemplate:
     "Olá! 👋\n\nAqui está o cardápio da {storeName}:\n{menuUrl}",
   orderTemplate:
-    "Pedido {orderCode} confirmado ✅\nTotal: {total}\nComprovante: {receiptUrl}",
+    "✅ Pedido {orderNumber} confirmado!\nTipo: {fulfillmentLabel}\nCliente: {customerName}\n{addressBlock}\nItens:\n{itemsBlock}\n{totalBlock}\n{paymentBlock}",
   pixTemplate:
     "Pagamento via PIX disponível. Se precisar, envie o comprovante por aqui.",
   cooldownMinutes: 10,
