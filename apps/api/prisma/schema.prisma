@@ -138,7 +138,7 @@ model StoreBotConfig {
   sendReceiptLink       Boolean        @default(true)
   pixMessageEnabled     Boolean        @default(true)
   menuTemplate          String         @default("Olá! 👋\n\nAqui está o cardápio da {storeName}:\n{menuUrl}") @db.Text
-  orderTemplate         String         @default("Pedido {orderCode} confirmado ✅\nTotal: {total}\nComprovante: {receiptUrl}") @db.Text
+  orderTemplate         String         @default("✅ Pedido {orderNumber} confirmado!\nTipo: {fulfillmentLabel}\nCliente: {customerName}\n{addressBlock}\nItens:\n{itemsBlock}\n{totalBlock}\n{paymentBlock}") @db.Text
   pixTemplate           String         @default("Pagamento via PIX disponível. Se precisar, envie o comprovante por aqui.") @db.Text
   cooldownMinutes       Int            @default(10)
   updatedAt             DateTime       @updatedAt
