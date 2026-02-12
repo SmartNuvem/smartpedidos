@@ -81,6 +81,8 @@ type EvolutionWebhookSyncResult = {
   applied: boolean;
 };
 
+type WebhookOperation = "find" | "set";
+
 class EvolutionApiError extends Error {
   statusCode: number;
   responseBody: string;
@@ -95,6 +97,24 @@ class EvolutionApiError extends Error {
 
 export const isEvolutionApiError = (error: unknown): error is EvolutionApiError =>
   error instanceof EvolutionApiError;
+
+class EvolutionWebhookOperationError extends Error {
+  operation: WebhookOperation;
+  statusCode: number;
+  responseBody: string;
+
+  constructor(operation: WebhookOperation, statusCode: number, responseBody: string) {
+    super(`Evolution webhook ${operation} error: ${statusCode} ${responseBody}`);
+    this.name = "EvolutionWebhookOperationError";
+    this.operation = operation;
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
+  }
+}
+
+export const isEvolutionWebhookOperationError = (
+  error: unknown
+): error is EvolutionWebhookOperationError => error instanceof EvolutionWebhookOperationError;
 
 const getConfig = () => {
   const baseUrl = process.env.EVOLUTION_BASE_URL?.trim();
@@ -320,9 +340,49 @@ export const syncIncomingWebhook = async (
 
   const expectedEvents = ["MESSAGES_UPSERT"];
 
-  const findResponse = await evolutionRequest(`/webhook/find/${instanceName}`, {
+  const { baseUrl, apiKey } = getConfig();
+  if (!baseUrl || !apiKey) {
+    throw new Error("Evolution API não configurada.");
+  }
+
+  const performWebhookRequest = async (path: string, options: RequestInit = {}) => {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`,
+        ...(options.headers ?? {}),
+      },
+    });
+
+    const bodyText = await response.text().catch(() => "");
+    let bodyJson: EvolutionWebhookResponse = {};
+    if (bodyText) {
+      try {
+        bodyJson = JSON.parse(bodyText) as EvolutionWebhookResponse;
+      } catch {
+        bodyJson = {};
+      }
+    }
+
+    return {
+      ok: response.ok,
+      statusCode: response.status,
+      bodyText,
+      bodyJson,
+    };
+  };
+
+  const findResult = await performWebhookRequest(`/webhook/find/${instanceName}`, {
     method: "GET",
   });
+
+  if (!findResult.ok && findResult.statusCode !== 404) {
+    throw new EvolutionWebhookOperationError("find", findResult.statusCode, findResult.bodyText);
+  }
+
+  const findResponse = findResult.statusCode === 404 ? {} : findResult.bodyJson;
 
   const currentWebhookUrl = findResponse.webhook?.url ?? findResponse.url ?? null;
   const currentWebhookEnabled = findResponse.webhook?.enabled ?? findResponse.enabled ?? false;
@@ -355,22 +415,18 @@ export const syncIncomingWebhook = async (
     },
   };
 
-  const response = await evolutionRequest(`/webhook/set/${instanceName}`, {
+  const setResult = await performWebhookRequest(`/webhook/set/${instanceName}`, {
     method: "POST",
     body: JSON.stringify(setPayload),
-    parseJson: false,
   });
 
-  const statusCode = response.status;
-  const bodyText = await response.text().catch(() => "");
-  let responsePayload: EvolutionWebhookResponse = {};
-  if (bodyText) {
-    try {
-      responsePayload = JSON.parse(bodyText) as EvolutionWebhookResponse;
-    } catch {
-      responsePayload = {};
-    }
+  if (!setResult.ok) {
+    throw new EvolutionWebhookOperationError("set", setResult.statusCode, setResult.bodyText);
   }
+
+  const statusCode = setResult.statusCode;
+  const bodyText = setResult.bodyText;
+  const responsePayload = setResult.bodyJson;
 
   return {
     webhookUrl: responsePayload.webhook?.url ?? responsePayload.url ?? webhookUrl,
