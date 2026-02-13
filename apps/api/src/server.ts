@@ -171,12 +171,20 @@ const addDays = (date: Date, days: number) => {
   return next;
 };
 
+const getTodayUtcRangeInReportTimeZone = () => {
+  const startUtc = startOfDayInTimeZone(new Date(), reportTimeZone);
+  return {
+    startUtc,
+    endUtc: addDays(startUtc, 1),
+  };
+};
+
 const resolveRevenuePeriod = (params: {
   range: RevenueRange;
   start?: string;
   end?: string;
 }): RevenuePeriod => {
-  const todayStart = startOfDayInTimeZone(new Date(), reportTimeZone);
+  const { startUtc: todayStart } = getTodayUtcRangeInReportTimeZone();
 
   if (params.range === "today") {
     return {
@@ -249,8 +257,14 @@ const buildRevenueTimeseriesPoints = async (storeId: string, period: RevenuePeri
   }
 
   const points: Array<{ date: string; label: string; revenueCents: number }> = [];
+
+  const startDateLocal = parseLocalDateInput(formatDateInputLocal(period.startDate));
+  if (!startDateLocal) {
+    return points;
+  }
+
   for (
-    let day = startOfDay(period.startDate);
+    let day = startDateLocal;
     day < period.endDateExclusive;
     day = addDays(day, 1)
   ) {
@@ -3398,8 +3412,8 @@ const registerRoutes = () => {
       return reply.status(401).send({ message: "Unauthorized" });
     }
 
-    const todayStart = startOfDay(new Date());
-    const tomorrowStart = addDays(todayStart, 1);
+    const { startUtc: todayStart, endUtc: tomorrowStart } =
+      getTodayUtcRangeInReportTimeZone();
 
     const [newOrders, ordersToday, revenueToday] = await Promise.all([
       prisma.order.count({
