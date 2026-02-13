@@ -87,13 +87,63 @@ const revenueRangeQuerySchema = z
 
 const formatDateOnly = (date: Date) =>
   new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
     dateStyle: "short",
   }).format(date);
 
+const reportTimeZone = "America/Sao_Paulo";
+
+const getDatePartsInTimeZone = (date: Date, timeZone: string) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+
+  if (!year || !month || !day) {
+    throw new Error("Não foi possível resolver data no timezone configurado.");
+  }
+
+  return { year, month, day };
+};
+
+const getTimeZoneOffsetMs = (date: Date, timeZone: string) => {
+  const timeZoneName = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(date)
+    .find((part) => part.type === "timeZoneName")?.value;
+
+  if (!timeZoneName || timeZoneName === "GMT") {
+    return 0;
+  }
+
+  const offsetMatch = timeZoneName.match(/^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!offsetMatch) {
+    throw new Error("Não foi possível resolver offset do timezone configurado.");
+  }
+
+  const [, sign, hours, minutes = "00"] = offsetMatch;
+  const totalMinutes = Number(hours) * 60 + Number(minutes);
+  const totalMs = totalMinutes * 60 * 1000;
+  return sign === "+" ? totalMs : -totalMs;
+};
+
+const startOfDayInTimeZone = (date: Date, timeZone: string) => {
+  const { year, month, day } = getDatePartsInTimeZone(date, timeZone);
+  const utcMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  const offsetMs = getTimeZoneOffsetMs(utcMidnight, timeZone);
+  return new Date(utcMidnight.getTime() - offsetMs);
+};
+
 const formatDateInputLocal = (date: Date) => {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
+  const { year, month, day } = getDatePartsInTimeZone(date, reportTimeZone);
   return `${year}-${month}-${day}`;
 };
 
@@ -102,12 +152,11 @@ const parseLocalDateInput = (value: string) => {
   if (!year || !month || !day) {
     return null;
   }
-  const date = new Date(year, month - 1, day);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
+  const utcMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  const offsetMs = getTimeZoneOffsetMs(utcMidnight, reportTimeZone);
+  const date = new Date(utcMidnight.getTime() - offsetMs);
+  const parsed = getDatePartsInTimeZone(date, reportTimeZone);
+  if (parsed.year !== year || parsed.month !== month || parsed.day !== day) {
     return null;
   }
   return date;
@@ -127,7 +176,7 @@ const resolveRevenuePeriod = (params: {
   start?: string;
   end?: string;
 }): RevenuePeriod => {
-  const todayStart = startOfDay(new Date());
+  const todayStart = startOfDayInTimeZone(new Date(), reportTimeZone);
 
   if (params.range === "today") {
     return {
@@ -152,8 +201,8 @@ const resolveRevenuePeriod = (params: {
   if (!startDate || !endDate) {
     throw new Error("Período inválido.");
   }
-  const customStart = startOfDay(startDate);
-  const customEndExclusive = addDays(startOfDay(endDate), 1);
+  const customStart = startDate;
+  const customEndExclusive = addDays(endDate, 1);
   if (customStart >= customEndExclusive) {
     throw new Error("Período inválido.");
   }
