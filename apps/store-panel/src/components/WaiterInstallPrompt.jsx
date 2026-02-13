@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import Button from "./Button";
 
 const isIosDevice = () =>
@@ -12,8 +13,14 @@ const isStandaloneDisplay = () => {
 };
 
 const WaiterInstallPrompt = () => {
+  const location = useLocation();
   const [promptEvent, setPromptEvent] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
+
+  const isWaiterPath =
+    (location.pathname.startsWith("/s/") && location.pathname.includes("/garcom")) ||
+    location.pathname.startsWith("/garcom") ||
+    location.pathname.includes("/waiter");
 
   useEffect(() => {
     setIsInstalled(isStandaloneDisplay());
@@ -29,6 +36,10 @@ const WaiterInstallPrompt = () => {
   }, []);
 
   if (isInstalled) {
+    return null;
+  }
+
+  if (!isWaiterPath) {
     return null;
   }
 
