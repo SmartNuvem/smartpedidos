@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, formatCurrency } from "../api";
+import SalesByDayChart from "../components/SalesByDayChart";
+import TopProductsList from "../components/TopProductsList";
 
 const formatDateInput = (date) => {
   const offset = date.getTimezoneOffset();
@@ -12,33 +14,21 @@ const todayDateInput = () => formatDateInput(new Date());
 const rangeOptions = [
   { value: "today", label: "Hoje" },
   { value: "yesterday", label: "Ontem" },
-  { value: "7d", label: "7 dias" },
-  { value: "15d", label: "15 dias" },
-  { value: "30d", label: "30 dias" },
+  { value: "week", label: "7 dias" },
+  { value: "month", label: "30 dias" },
   { value: "custom", label: "Personalizado" },
 ];
 
 const getParamsFromRange = (range, customRange) => {
   if (range === "custom") {
     return {
-      range: "custom",
+      period: "custom",
       start: customRange.start,
       end: customRange.end,
     };
   }
 
-  if (range === "yesterday") {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const date = formatDateInput(yesterday);
-    return {
-      range: "custom",
-      start: date,
-      end: date,
-    };
-  }
-
-  return { range };
+  return { period: range };
 };
 
 const Billing = () => {
@@ -51,55 +41,71 @@ const Billing = () => {
     revenueCents: 0,
     ordersCount: 0,
     averageTicketCents: 0,
-    rangeLabel: "Hoje",
   });
-  const [timeseries, setTimeseries] = useState([]);
+  const [seriesByDay, setSeriesByDay] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const params = useMemo(() => getParamsFromRange(range, customRange), [range, customRange]);
+  const insightsParams = useMemo(() => getParamsFromRange(range, customRange), [range, customRange]);
+  const pdfParams = useMemo(() => {
+    if (range === "yesterday") {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const date = formatDateInput(yesterday);
+      return { range: "custom", start: date, end: date };
+    }
 
-  const loadRevenueData = useCallback(async () => {
+    if (range === "week") {
+      return { range: "7d" };
+    }
+
+    if (range === "month") {
+      return { range: "30d" };
+    }
+
+    if (range === "custom") {
+      return { range: "custom", start: customRange.start, end: customRange.end };
+    }
+
+    return { range: "today" };
+  }, [customRange.end, customRange.start, range]);
+
+  const loadBillingData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [summaryData, timeseriesData] = await Promise.all([
-        api.getRevenueSummary(params),
-        api.getRevenueTimeseries(params),
-      ]);
+      const response = await api.getBillingInsights(insightsParams);
       setSummary({
-        revenueCents: summaryData?.revenueCents ?? 0,
-        ordersCount: summaryData?.ordersCount ?? 0,
-        averageTicketCents: summaryData?.averageTicketCents ?? 0,
-        rangeLabel: summaryData?.rangeLabel ?? "Período",
+        revenueCents: response?.totals?.totalRevenue ?? 0,
+        ordersCount: response?.totals?.totalOrders ?? 0,
+        averageTicketCents: response?.totals?.avgTicket ?? 0,
       });
-      setTimeseries(Array.isArray(timeseriesData?.points) ? timeseriesData.points : []);
+      setSeriesByDay(Array.isArray(response?.seriesByDay) ? response.seriesByDay : []);
+      setTopProducts(Array.isArray(response?.topProducts) ? response.topProducts : []);
     } catch {
       setError("Não foi possível carregar o faturamento.");
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, [insightsParams]);
 
   useEffect(() => {
     if (range !== "custom") {
-      loadRevenueData();
+      loadBillingData();
       return;
     }
     if (customRange.start && customRange.end && customRange.start <= customRange.end) {
-      loadRevenueData();
+      loadBillingData();
     }
-  }, [customRange.end, customRange.start, loadRevenueData, range]);
-
-  const maxValue = useMemo(
-    () => timeseries.reduce((max, point) => Math.max(max, point.revenueCents ?? 0), 0),
-    [timeseries]
-  );
+  }, [customRange.end, customRange.start, loadBillingData, range]);
 
   const handlePrintPdf = useCallback(() => {
-    const pdfUrl = api.getRevenueReportPdfUrl(params);
+    const pdfUrl = api.getRevenueReportPdfUrl(pdfParams);
     window.open(pdfUrl, "_blank", "noopener,noreferrer");
-  }, [params]);
+  }, [pdfParams]);
+
+  const hasData = seriesByDay.some((point) => (point.orders ?? 0) > 0);
 
   return (
     <div className="space-y-6">
@@ -178,7 +184,6 @@ const Billing = () => {
           <p className="mt-2 text-2xl font-semibold text-slate-900">
             {loading ? "..." : formatCurrency(summary.revenueCents / 100)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">{summary.rangeLabel}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase text-slate-500">Total de pedidos</p>
@@ -194,34 +199,32 @@ const Billing = () => {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Faturamento por dia</h3>
-        {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Carregando gráfico...</p>
-        ) : timeseries.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">Sem dados para o período selecionado.</p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {timeseries.map((point) => {
-              const value = point.revenueCents ?? 0;
-              const percent = maxValue > 0 ? Math.max((value / maxValue) * 100, 2) : 2;
-              return (
-                <div key={point.date}>
-                  <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                    <span>{point.label}</span>
-                    <span>{formatCurrency(value / 100)}</span>
-                  </div>
-                  <div className="h-3 rounded-full bg-slate-100">
-                    <div
-                      className="h-3 rounded-full bg-blue-500"
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
+          <h3 className="text-lg font-semibold text-slate-900">Vendas por dia</h3>
+          {loading ? (
+            <p className="mt-4 text-sm text-slate-500">Carregando gráfico...</p>
+          ) : !hasData ? (
+            <p className="mt-4 text-sm text-slate-500">Sem pedidos PRINTED no período.</p>
+          ) : (
+            <div className="mt-4">
+              <SalesByDayChart data={seriesByDay} />
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+          <h3 className="text-lg font-semibold text-slate-900">Produtos mais vendidos</h3>
+          {loading ? (
+            <p className="mt-4 text-sm text-slate-500">Carregando produtos...</p>
+          ) : topProducts.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">Sem pedidos PRINTED no período.</p>
+          ) : (
+            <div className="mt-4">
+              <TopProductsList data={topProducts} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

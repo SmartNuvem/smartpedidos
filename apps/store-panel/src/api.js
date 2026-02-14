@@ -63,6 +63,20 @@ const buildStoreRevenueQuery = (params = {}) => {
   return query.toString();
 };
 
+const buildBillingInsightsQuery = (params = {}) => {
+  const query = new URLSearchParams();
+  if (params.period) {
+    query.set("period", params.period);
+  }
+  if (params.start) {
+    query.set("start", params.start);
+  }
+  if (params.end) {
+    query.set("end", params.end);
+  }
+  return query.toString();
+};
+
 const handleResponse = async (response) => {
   if (response.ok) {
     if (response.status === 204) {
@@ -164,6 +178,16 @@ export const api = {
   getRevenueReportPdfUrl: (params = {}) => {
     const query = buildStoreRevenueQuery(params);
     return `${API_URL}/store/revenue/report.pdf${query ? `?${query}` : ""}`;
+  },
+  getBillingInsights: async (params = {}) => {
+    const query = buildBillingInsightsQuery(params);
+    const response = await request(
+      `${API_URL}/store/billing/insights${query ? `?${query}` : ""}`,
+      {
+        headers: buildHeaders(),
+      }
+    );
+    return handleResponse(response);
   },
   updateStore: async (payload) => {
     const response = await request(`${API_URL}/store/me`, {

@@ -59,6 +59,13 @@ type RevenuePeriod = {
   endDateExclusive: Date;
 };
 
+type BillingInsightsPeriod = "today" | "yesterday" | "week" | "month" | "custom";
+
+type BillingInsightsRange = {
+  startUtc: Date;
+  endUtc: Date;
+};
+
 const revenueRangeQuerySchema = z
   .object({
     range: z.enum(["today", "7d", "15d", "30d", "custom"]).default("today"),
@@ -67,6 +74,32 @@ const revenueRangeQuerySchema = z
   })
   .superRefine((value, context) => {
     if (value.range !== "custom") {
+      return;
+    }
+    if (!value.start) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["start"],
+        message: "Data inicial é obrigatória para período personalizado.",
+      });
+    }
+    if (!value.end) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["end"],
+        message: "Data final é obrigatória para período personalizado.",
+      });
+    }
+  });
+
+const billingInsightsQuerySchema = z
+  .object({
+    period: z.enum(["today", "yesterday", "week", "month", "custom"]).default("today"),
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.period !== "custom") {
       return;
     }
     if (!value.start) {
@@ -225,6 +258,59 @@ const resolveRevenuePeriod = (params: {
 const buildRevenuePeriodLabel = (period: RevenuePeriod) => {
   const inclusiveEnd = addDays(period.endDateExclusive, -1);
   return `${formatDateOnly(period.startDate)} - ${formatDateOnly(inclusiveEnd)}`;
+};
+
+const resolveBillingInsightsRange = (params: {
+  period: BillingInsightsPeriod;
+  start?: string;
+  end?: string;
+}): BillingInsightsRange => {
+  const { startUtc: todayStart } = getTodayUtcRangeInReportTimeZone();
+
+  if (params.period === "today") {
+    return {
+      startUtc: todayStart,
+      endUtc: addDays(todayStart, 1),
+    };
+  }
+
+  if (params.period === "yesterday") {
+    const startUtc = addDays(todayStart, -1);
+    return {
+      startUtc,
+      endUtc: todayStart,
+    };
+  }
+
+  if (params.period === "week") {
+    return {
+      startUtc: addDays(todayStart, -6),
+      endUtc: addDays(todayStart, 1),
+    };
+  }
+
+  if (params.period === "month") {
+    return {
+      startUtc: addDays(todayStart, -29),
+      endUtc: addDays(todayStart, 1),
+    };
+  }
+
+  const startDate = parseLocalDateInput(params.start ?? "");
+  const endDate = parseLocalDateInput(params.end ?? "");
+  if (!startDate || !endDate) {
+    throw new Error("Período inválido.");
+  }
+
+  const endUtc = addDays(endDate, 1);
+  if (startDate >= endUtc) {
+    throw new Error("Período inválido.");
+  }
+
+  return {
+    startUtc: startDate,
+    endUtc,
+  };
 };
 
 
@@ -3633,6 +3719,127 @@ const registerRoutes = () => {
         .slice(0, 10)}.pdf`
     );
     return reply.send(pdf);
+  });
+
+  app.get("/store/billing/insights", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const queryResult = billingInsightsQuerySchema.safeParse(request.query ?? {});
+    if (!queryResult.success) {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    let range: BillingInsightsRange;
+    try {
+      range = resolveBillingInsightsRange(queryResult.data);
+    } catch {
+      return reply.status(400).send({ message: "Período inválido." });
+    }
+
+    const totalsAggregate = await prisma.order.aggregate({
+      where: {
+        storeId,
+        status: OrderStatus.PRINTED,
+        createdAt: {
+          gte: range.startUtc,
+          lt: range.endUtc,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    const seriesRows = await prisma.$queryRaw<
+      Array<{ date: string; revenueCents: bigint | number; orders: bigint | number }>
+    >`
+      SELECT
+        to_char(date_trunc('day', timezone(${reportTimeZone}, o."createdAt")), 'YYYY-MM-DD') AS "date",
+        COALESCE(SUM((o."total" * 100)::bigint), 0)::bigint AS "revenueCents",
+        COUNT(*)::bigint AS "orders"
+      FROM "Order" o
+      WHERE o."storeId" = ${storeId}
+        AND o."status" = 'PRINTED'
+        AND o."createdAt" >= ${range.startUtc}
+        AND o."createdAt" < ${range.endUtc}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    const seriesMap = new Map(
+      seriesRows.map((row) => [
+        row.date,
+        {
+          revenueCents: Number(row.revenueCents),
+          orders: Number(row.orders),
+        },
+      ])
+    );
+
+    const seriesByDay: Array<{ date: string; revenueCents: number; orders: number }> = [];
+    const startLocalDay = parseLocalDateInput(formatDateInputLocal(range.startUtc));
+    if (startLocalDay) {
+      for (let day = startLocalDay; day < range.endUtc; day = addDays(day, 1)) {
+        const date = formatDateInputLocal(day);
+        const point = seriesMap.get(date);
+        seriesByDay.push({
+          date,
+          revenueCents: point?.revenueCents ?? 0,
+          orders: point?.orders ?? 0,
+        });
+      }
+    }
+
+    const topProducts = await prisma.$queryRaw<
+      Array<{
+        productId: string;
+        name: string;
+        qty: bigint | number;
+        revenueCents: bigint | number;
+      }>
+    >`
+      SELECT
+        oi."productId" AS "productId",
+        p."name" AS "name",
+        COALESCE(SUM(oi."quantity"), 0)::bigint AS "qty",
+        COALESCE(SUM(oi."unitPriceCents" * oi."quantity"), 0)::bigint AS "revenueCents"
+      FROM "OrderItem" oi
+      INNER JOIN "Order" o ON o."id" = oi."orderId"
+      INNER JOIN "Product" p ON p."id" = oi."productId"
+      WHERE o."storeId" = ${storeId}
+        AND o."status" = 'PRINTED'
+        AND o."createdAt" >= ${range.startUtc}
+        AND o."createdAt" < ${range.endUtc}
+      GROUP BY oi."productId", p."name"
+      ORDER BY "qty" DESC, "revenueCents" DESC
+      LIMIT 10
+    `;
+
+    const totalRevenueCents = totalsAggregate._sum?.total
+      ? Math.round(totalsAggregate._sum.total.toNumber() * 100)
+      : 0;
+    const totalOrders = totalsAggregate._count?._all ?? 0;
+
+    return reply.send({
+      totals: {
+        totalRevenue: totalRevenueCents,
+        totalOrders,
+        avgTicket: totalOrders > 0 ? Math.round(totalRevenueCents / totalOrders) : 0,
+      },
+      seriesByDay,
+      topProducts: topProducts.map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        qty: Number(item.qty),
+        revenueCents: Number(item.revenueCents),
+      })),
+    });
   });
 
   app.patch("/store/me", async (request, reply) => {
