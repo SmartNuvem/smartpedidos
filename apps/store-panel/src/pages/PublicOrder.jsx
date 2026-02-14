@@ -24,6 +24,9 @@ const RETRY_INTERVAL_MS = 5000;
 const RETRY_WINDOW_MS = 2 * 60 * 1000;
 const SEND_RETRY_ERROR_MESSAGE =
   "Sem conexão / erro ao enviar. Vamos reenviar automaticamente.";
+const CATEGORY_SCROLL_GAP_PX = 8;
+const DEFAULT_CATEGORY_STICKY_OFFSET_PX = 110;
+const SCROLLSPY_BOTTOM_MARGIN_RATIO = 0.6;
 
 
 const isClassicProductPromo = (product = {}) =>
@@ -330,7 +333,6 @@ const PublicOrder = () => {
   const categoryHeadingRefs = useRef({});
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimeoutRef = useRef(null);
-  const categoryScrollRafRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -432,6 +434,20 @@ const PublicOrder = () => {
     });
   }, [isMenuV2, menu]);
 
+  const getStickyHeight = useCallback(() => {
+    const stickyElement = stickyRef.current;
+    if (!stickyElement) return 0;
+    return Math.ceil(stickyElement.getBoundingClientRect().height);
+  }, []);
+
+  const getCategoryStickyOffset = useCallback(() => {
+    const stickyHeight = getStickyHeight();
+    if (stickyHeight <= 0) {
+      return DEFAULT_CATEGORY_STICKY_OFFSET_PX;
+    }
+    return stickyHeight + CATEGORY_SCROLL_GAP_PX;
+  }, [getStickyHeight]);
+
   useEffect(() => {
     if (!isMenuV2) {
       setActiveCategoryId(null);
@@ -445,75 +461,81 @@ const PublicOrder = () => {
       return undefined;
     }
 
-    const getHeaderOffset = () => (window.innerWidth < 640 ? 120 : 140);
-    const limitGap = 8;
-
-    const headings = sortedCategories
+    const headingEntries = sortedCategories
       .map((category) => ({
         id: category.id,
         node: categoryHeadingRefs.current[category.id],
       }))
       .filter((heading) => Boolean(heading.node));
 
-    if (headings.length === 0) {
+    if (headingEntries.length === 0) {
       return undefined;
     }
 
-    const syncActiveCategory = () => {
+    const syncScrollMargin = () => {
+      const offset = getCategoryStickyOffset();
+      headingEntries.forEach((heading) => {
+        heading.node.style.scrollMarginTop = `${offset}px`;
+      });
+      return offset;
+    };
+
+    let stickyOffset = syncScrollMargin();
+    let isTicking = false;
+
+    const updateActiveFromViewport = () => {
+      isTicking = false;
       if (isProgrammaticScrollRef.current) {
         return;
       }
 
-      const limit = getHeaderOffset() + limitGap;
-      let closestPastId = null;
-      let closestPastTop = Number.NEGATIVE_INFINITY;
-      let closestFutureId = null;
-      let closestFutureTop = Number.POSITIVE_INFINITY;
+      let nextId = null;
+      let closestTop = Number.NEGATIVE_INFINITY;
 
-      headings.forEach((heading) => {
+      headingEntries.forEach((heading) => {
         const top = heading.node.getBoundingClientRect().top;
-
-        if (top <= limit && top > closestPastTop) {
-          closestPastTop = top;
-          closestPastId = heading.id;
-        }
-
-        if (top < closestFutureTop) {
-          closestFutureTop = top;
-          closestFutureId = heading.id;
+        if (top <= stickyOffset + CATEGORY_SCROLL_GAP_PX && top > closestTop) {
+          closestTop = top;
+          nextId = heading.id;
         }
       });
 
-      const nextId = closestPastId ?? closestFutureId;
-      if (nextId) {
-        setActiveCategoryId((currentId) => (currentId === nextId ? currentId : nextId));
+      if (!nextId) {
+        nextId = headingEntries[0].id;
       }
+
+      setActiveCategoryId((currentId) => (currentId === nextId ? currentId : nextId));
     };
 
-    const onScroll = () => {
-      if (categoryScrollRafRef.current !== null) {
+    const scheduleViewportSync = () => {
+      if (isTicking) {
         return;
       }
-
-      categoryScrollRafRef.current = window.requestAnimationFrame(() => {
-        categoryScrollRafRef.current = null;
-        syncActiveCategory();
-      });
+      isTicking = true;
+      window.requestAnimationFrame(updateActiveFromViewport);
     };
 
-    syncActiveCategory();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
+    const observer = new IntersectionObserver(scheduleViewportSync, {
+      root: null,
+      threshold: [0, 1],
+      rootMargin: `-${stickyOffset}px 0px -${Math.round(window.innerHeight * SCROLLSPY_BOTTOM_MARGIN_RATIO)}px 0px`,
+    });
+
+    headingEntries.forEach((heading) => observer.observe(heading.node));
+    updateActiveFromViewport();
+
+    const onResize = () => {
+      stickyOffset = syncScrollMargin();
+      scheduleViewportSync();
+    };
+
+    window.addEventListener("resize", onResize);
 
     return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (categoryScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(categoryScrollRafRef.current);
-        categoryScrollRafRef.current = null;
-      }
+      observer.disconnect();
+      window.removeEventListener("resize", onResize);
     };
-  }, [isMenuV2, sortedCategories]);
+  }, [getCategoryStickyOffset, isMenuV2, sortedCategories]);
 
   useEffect(() => {
     return () => {
@@ -939,12 +961,6 @@ const PublicOrder = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const getStickyHeight = () => {
-    const stickyElement = stickyRef.current;
-    if (!stickyElement) return 0;
-    return Math.ceil(stickyElement.getBoundingClientRect().height);
-  };
-
   const renderPublicMenu = () => {
     if (isMenuV2) {
       return (
@@ -971,28 +987,35 @@ const PublicOrder = () => {
     );
   };
 
-  const scrollToCategory = (categoryId) => {
-    setActiveCategoryId(categoryId);
-    isProgrammaticScrollRef.current = true;
-    if (programmaticScrollTimeoutRef.current) {
-      window.clearTimeout(programmaticScrollTimeoutRef.current);
-    }
-    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-      programmaticScrollTimeoutRef.current = null;
-    }, 450);
+  const scrollToCategory = useCallback(
+    (categoryId) => {
+      const heading = categoryHeadingRefs.current[categoryId];
+      if (!heading) return;
 
-    const target = document.getElementById(`cat-${categoryId}`);
-    if (!target) return;
-    const stickyHeight = getStickyHeight();
-    const gap = 8;
-    const scrollTop = target.getBoundingClientRect().top + window.scrollY - stickyHeight - gap;
-    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    window.scrollTo({
-      top: scrollTop,
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-    });
-  };
+      const nextActiveId = categoryId;
+      setActiveCategoryId((currentId) =>
+        currentId === nextActiveId ? currentId : nextActiveId
+      );
+      isProgrammaticScrollRef.current = true;
+      if (programmaticScrollTimeoutRef.current) {
+        window.clearTimeout(programmaticScrollTimeoutRef.current);
+      }
+      programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+        programmaticScrollTimeoutRef.current = null;
+      }, 550);
+
+      const offset = getCategoryStickyOffset();
+      const scrollTop = heading.getBoundingClientRect().top + window.scrollY - offset;
+      const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
+      window.scrollTo({
+        top: Math.max(0, scrollTop),
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+      });
+    },
+    [getCategoryStickyOffset]
+  );
 
   const handleDownloadReceiptPng = useCallback(
     async (event) => {
