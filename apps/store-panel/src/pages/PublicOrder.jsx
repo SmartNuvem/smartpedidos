@@ -782,6 +782,8 @@ const PublicOrder = () => {
   const convenienceFeeLabel = menu?.store?.feeLabel || "Taxa de conveniência do app";
   const totalCents = subtotalCents + deliveryFeeCents + convenienceFeeCents;
   const isStoreOpen = menu?.store?.isOpenNow ?? true;
+  const menuThemePreset = menu?.store?.themePreset ?? "DEFAULT";
+  const menuThemeClass = `theme-${menuThemePreset}`;
   const showLogo = Boolean(menu?.store?.logoUrl) && !logoLoadError;
   const showBanner = Boolean(menu?.store?.bannerUrl) && !bannerLoadError;
   const isFulfillmentAllowed = isDineInOrder ? true : fulfillmentType === "PICKUP" ? allowPickup : allowDelivery;
@@ -1120,7 +1122,7 @@ const PublicOrder = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col">
+      <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col`}>
         <div className="mx-auto flex w-full max-w-3xl flex-1 px-4 py-8 text-sm text-slate-500">
           Carregando cardápio...
         </div>
@@ -1131,7 +1133,7 @@ const PublicOrder = () => {
 
   if (!menu) {
     return (
-      <div className="flex min-h-screen flex-col">
+      <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col`}>
         <div className="mx-auto flex w-full max-w-3xl flex-1 px-4 py-8">
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error || "Cardápio não encontrado."}
@@ -1157,7 +1159,7 @@ const PublicOrder = () => {
     const storeName = receipt?.storeName || menu.store?.name || "Loja";
 
     return (
-      <div className="flex min-h-screen flex-col">
+      <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col`}>
         <div className="pointer-events-none fixed inset-0 z-0" aria-hidden="true" />
         <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 py-12 text-center">
           <div className="relative z-10 w-full rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-6 sm:px-6 sm:py-8">
@@ -1274,7 +1276,7 @@ const PublicOrder = () => {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col`}>
       <div className="mx-auto w-full max-w-4xl flex-1 px-4 pb-24 pt-6">
         <header className="mb-6">
   {/* HERO */}

@@ -78,6 +78,8 @@ const Settings = () => {
   });
   const [savingBranding, setSavingBranding] = useState(false);
   const [brandingError, setBrandingError] = useState("");
+  const [savingAppearance, setSavingAppearance] = useState(false);
+  const [appearanceError, setAppearanceError] = useState("");
   const [logoPreviewError, setLogoPreviewError] = useState(false);
   const [bannerPreviewError, setBannerPreviewError] = useState(false);
   const [toast, setToast] = useState(null);
@@ -101,7 +103,10 @@ const Settings = () => {
         if (!active) {
           return;
         }
-        setStore(storeData);
+        setStore({
+          ...storeData,
+          themePreset: storeData?.themePreset ?? "DEFAULT",
+        });
         setDeliveryAreas(
           areasData.map((area) => ({
             ...area,
@@ -538,6 +543,34 @@ const Settings = () => {
     }
   };
 
+
+  const handleSaveAppearance = async () => {
+    if (!store) {
+      return;
+    }
+    setSavingAppearance(true);
+    setAppearanceError("");
+    try {
+      const updated = await api.updateStoreSettings({
+        themePreset: store.themePreset ?? "DEFAULT",
+      });
+      setStore((prev) =>
+        prev
+          ? {
+              ...prev,
+              themePreset: updated.themePreset ?? "DEFAULT",
+            }
+          : prev
+      );
+    } catch (err) {
+      setAppearanceError(
+        err?.message || "Não foi possível salvar a aparência do cardápio."
+      );
+    } finally {
+      setSavingAppearance(false);
+    }
+  };
+
   const isTokenCopyError = tokenCopyStatus.startsWith("Não");
   const isWaiterLinkError = waiterLinkStatus.startsWith("Não");
   const waiterLink = store?.slug
@@ -653,6 +686,63 @@ const Settings = () => {
           </div>
         ) : (
           <p className="text-sm text-slate-500">
+            {error || "Carregando..."}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Aparência do Cardápio
+            </h3>
+            <p className="text-sm text-slate-500">
+              Escolha um tema visual predefinido para o cardápio público.
+            </p>
+          </div>
+          <Button onClick={handleSaveAppearance} disabled={savingAppearance || !store}>
+            {savingAppearance ? "Salvando..." : "Salvar aparência"}
+          </Button>
+        </div>
+        {appearanceError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {appearanceError}
+          </div>
+        ) : null}
+        {store ? (
+          <div className="mt-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="radio"
+                name="menu-theme-preset"
+                value="DEFAULT"
+                checked={(store.themePreset ?? "DEFAULT") === "DEFAULT"}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev ? { ...prev, themePreset: event.target.value } : prev
+                  )
+                }
+              />
+              Padrão
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="radio"
+                name="menu-theme-preset"
+                value="SMARTPEDIDO"
+                checked={(store.themePreset ?? "DEFAULT") === "SMARTPEDIDO"}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev ? { ...prev, themePreset: event.target.value } : prev
+                  )
+                }
+              />
+              SmartPedido (verde institucional)
+            </label>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
             {error || "Carregando..."}
           </p>
         )}

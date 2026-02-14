@@ -58,6 +58,11 @@ enum BillingModel {
   PER_ORDER
 }
 
+enum ThemePreset {
+  DEFAULT
+  SMARTPEDIDO
+}
+
 enum PrintJobType {
   KITCHEN_ORDER
   CASHIER_TABLE_SUMMARY
@@ -104,6 +109,7 @@ model Store {
   perOrderFeeCents   Int                   @default(0)
   showFeeOnPublicMenu Boolean              @default(false)
   feeLabel           String                @default("Taxa de conveniência do app")
+  themePreset        ThemePreset?
   categories         Category[]
   orders             Order[]
   tables             SalonTable[]
