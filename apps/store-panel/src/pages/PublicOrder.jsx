@@ -311,6 +311,7 @@ const PublicOrder = () => {
   const tableId = searchParams.get("table");
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
+  const categoryTabRefs = useRef({});
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -337,6 +338,7 @@ const PublicOrder = () => {
   const [bannerLoadError, setBannerLoadError] = useState(false);
   const [pendingOrder, setPendingOrder] = useState(null);
   const [retryingPending, setRetryingPending] = useState(false);
+  const [activeCategoryId, setActiveCategoryId] = useState(null);
 
   // 🔥 DETECÇÃO DO BANNER (CLARO/ESCURO)
   const [isBannerLight, setIsBannerLight] = useState(false);
@@ -409,6 +411,65 @@ const PublicOrder = () => {
       return { ...category, products: [...promoItems, ...regularItems] };
     });
   }, [menu]);
+
+  useEffect(() => {
+    if (!isMenuV2) {
+      setActiveCategoryId(null);
+      return;
+    }
+    setActiveCategoryId((prev) => prev ?? sortedCategories[0]?.id ?? null);
+  }, [isMenuV2, sortedCategories]);
+
+  useEffect(() => {
+    if (!isMenuV2 || sortedCategories.length === 0 || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const headings = sortedCategories
+      .map((category) => window.document.getElementById(`category-${category.id}`))
+      .filter(Boolean);
+
+    if (headings.length === 0) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntries = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+        const nextId = visibleEntries[0]?.target?.dataset?.categoryId;
+        if (nextId) {
+          setActiveCategoryId(nextId);
+        }
+      },
+      {
+        root: null,
+        rootMargin: "-140px 0px -60% 0px",
+        threshold: [0, 0.1, 0.25],
+      }
+    );
+
+    headings.forEach((heading) => observer.observe(heading));
+    return () => observer.disconnect();
+  }, [isMenuV2, sortedCategories]);
+
+  useEffect(() => {
+    if (!isMenuV2 || !activeCategoryId || typeof window === "undefined") {
+      return;
+    }
+    const tab = categoryTabRefs.current[activeCategoryId];
+    if (!tab) {
+      return;
+    }
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    tab.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+  }, [activeCategoryId, isMenuV2]);
 
   const fetchMenu = useCallback(
     async ({ showLoading = false } = {}) => {
@@ -825,8 +886,10 @@ const PublicOrder = () => {
   };
 
   const scrollToCategory = (categoryId) => {
+    setActiveCategoryId(categoryId);
     const target = window.document.getElementById(`category-${categoryId}`);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    target?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
   };
 
   const handleDownloadReceiptPng = useCallback(
@@ -1452,7 +1515,18 @@ const PublicOrder = () => {
                     <button
                       key={`tab-${category.id}`}
                       type="button"
-                      className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700"
+                      ref={(node) => {
+                        if (node) {
+                          categoryTabRefs.current[category.id] = node;
+                        } else {
+                          delete categoryTabRefs.current[category.id];
+                        }
+                      }}
+                      className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out motion-reduce:transition-none ${
+                        activeCategoryId === category.id
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                      }`}
                       onClick={() => scrollToCategory(category.id)}
                     >
                       {category.name}
@@ -1512,6 +1586,7 @@ const PublicOrder = () => {
               <div
                 id={`category-${category.id}`}
                 key={category.id}
+                data-category-id={category.id}
                 className={`space-y-3 ${isMenuV2 ? "scroll-mt-[120px] sm:scroll-mt-[140px]" : ""}`}
               >
                 <h2 className="text-lg font-semibold text-slate-900">{category.name}</h2>
@@ -1521,7 +1596,7 @@ const PublicOrder = () => {
                       key={product.id}
                       className={
                         isMenuV2
-                          ? "min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm sm:min-h-[128px]"
+                          ? "min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]"
                           : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       }
                     >
@@ -1584,7 +1659,7 @@ const PublicOrder = () => {
                           {isMenuV2 ? (
                             <div className="mt-2 flex justify-end">
                               <button
-                                className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white sm:px-6 sm:py-3 sm:text-base"
+                                className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-transform transition-colors duration-150 ease-out hover:bg-blue-700 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 motion-reduce:transform-none motion-reduce:transition-none sm:px-6 sm:py-3 sm:text-base"
                                 onClick={() => handleAddProduct(product)}
                               >
                                 {product.optionGroups && product.optionGroups.length > 0
