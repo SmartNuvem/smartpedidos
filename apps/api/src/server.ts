@@ -1495,6 +1495,7 @@ const registerRoutes = () => {
       tableId: z.string().uuid().optional(),
       paymentMethod: z.enum(["PIX", "CASH", "CARD"]).optional(),
       changeForCents: z.number().int().nonnegative().optional(),
+      clientOrderId: z.string().uuid().optional(),
       items: z
         .array(
           z.object({
@@ -1532,6 +1533,7 @@ const registerRoutes = () => {
       tableId,
       paymentMethod,
       changeForCents,
+      clientOrderId,
     } = bodySchema.parse(request.body);
 
     const normalizedOrderType = orderType ?? fulfillmentType ?? "PICKUP";
@@ -1548,6 +1550,32 @@ const registerRoutes = () => {
 
     if (!store || !store.isActive) {
       return reply.status(404).send({ message: "Store not found" });
+    }
+
+    if (clientOrderId) {
+      const existingOrder = await prisma.order.findFirst({
+        where: {
+          storeId: store.id,
+          clientOrderId,
+        },
+      });
+
+      if (existingOrder) {
+        request.log.info(
+          { storeId: store.id, clientOrderId, orderId: existingOrder.id },
+          "idempotent hit"
+        );
+        const shortCode = getOrderCode(existingOrder.id);
+        return reply.status(200).send({
+          id: existingOrder.id,
+          shortCode,
+          receiptToken: existingOrder.receiptToken,
+          status: existingOrder.status,
+          paymentMethod: existingOrder.paymentMethod,
+          orderId: existingOrder.id,
+          number: shortCode,
+        });
+      }
     }
 
     if (isDineIn && !store.salonEnabled) {
@@ -1883,6 +1911,7 @@ const registerRoutes = () => {
     const effectivePaymentMethod = isDineIn
       ? paymentMethod ?? "CASH"
       : paymentMethod!;
+
     const order = await prisma.$transaction(async (tx) => {
       const createdOrder = await tx.order.create({
         data: {
@@ -1911,6 +1940,7 @@ const registerRoutes = () => {
               ? changeForCents ?? null
               : null,
           receiptToken: randomBytes(16).toString("hex"),
+          clientOrderId: clientOrderId ?? null,
           total,
           printingClaimedAt: initialPrintingClaimedAt,
         },

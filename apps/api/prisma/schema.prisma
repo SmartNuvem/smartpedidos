@@ -226,6 +226,7 @@ model Order {
   changeForCents      Int?
   paidStatus          PaidStatus      @default(UNPAID)
   receiptToken        String?         @db.VarChar(64)
+  clientOrderId       String?
   total               Decimal         @db.Decimal(10, 2)
   items               OrderItem[]
   createdAt           DateTime        @default(now())
@@ -234,6 +235,7 @@ model Order {
   customerNotifiedAt  DateTime?
 
   @@index([tableId, tableSessionId])
+  @@unique([storeId, clientOrderId])
 }
 
 model OrderItem {

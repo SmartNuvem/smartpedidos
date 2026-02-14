@@ -4,6 +4,11 @@ import { API_URL, formatCurrency } from "../api";
 import { getOrderCode } from "../utils/orderCode";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
+import {
+  readPendingPublicOrder,
+  removePendingPublicOrder,
+  writePendingPublicOrder,
+} from "../publicOrderPending";
 
 const initialAddress = {
   line: "",
@@ -12,6 +17,8 @@ const initialAddress = {
 
 const getPublicOrderStorageKey = (storeSlug = "") =>
   `smartpedidos:public:form:${storeSlug}`;
+const RETRY_INTERVAL_MS = 5000;
+const RETRY_WINDOW_MS = 2 * 60 * 1000;
 
 const getSafeLocalStorage = () => {
   try {
@@ -354,6 +361,8 @@ const PublicOrder = () => {
   const [pixCopied, setPixCopied] = useState(false);
   const [logoLoadError, setLogoLoadError] = useState(false);
   const [bannerLoadError, setBannerLoadError] = useState(false);
+  const [pendingOrder, setPendingOrder] = useState(null);
+  const [retryingPending, setRetryingPending] = useState(false);
 
   // 🔥 DETECÇÃO DO BANNER (CLARO/ESCURO)
   const [isBannerLight, setIsBannerLight] = useState(false);
@@ -874,8 +883,173 @@ const PublicOrder = () => {
     [downloadingReceiptPng, orderResult]
   );
 
+  const resetOrderState = useCallback(
+    (shouldRememberCustomer) => {
+      setCartItems([]);
+      setNotes("");
+      setDeliveryAreaId("");
+      setPaymentMethod("");
+      setChangeFor("");
+      setFulfillmentType("PICKUP");
+      if (shouldRememberCustomer) {
+        setAddress((prev) => ({ ...prev, reference: "" }));
+        return;
+      }
+      setCustomerName("");
+      setCustomerPhone("");
+      setAddress(initialAddress);
+    },
+    [setAddress]
+  );
+
+  const buildReceiptFromContext = useCallback(
+    (data, selectedFulfillmentType, receiptContext) => ({
+      items: receiptContext.items,
+      notes: receiptContext.notes,
+      totalCents: receiptContext.totalCents,
+      paymentMethod: receiptContext.isDineInOrder ? data.paymentMethod : receiptContext.paymentMethod,
+      fulfillmentType: receiptContext.isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
+      deliveryAreaName: receiptContext.deliveryAreaName,
+      addressLine: receiptContext.addressLine,
+      addressReference: receiptContext.addressReference,
+    }),
+    []
+  );
+
+  const sendPublicOrder = useCallback(
+    async (payload) => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
+      try {
+        const response = await fetch(`${API_URL}/public/${slug}/orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const error = new Error(data.message || "Não foi possível enviar o pedido.");
+          error.retryable = false;
+          throw error;
+        }
+
+        return response.json();
+      } catch (error) {
+        if (error.name === "AbortError" || error instanceof TypeError) {
+          const retryError = new Error(
+            "Sem conexão / erro ao enviar. Vamos reenviar automaticamente."
+          );
+          retryError.retryable = true;
+          throw retryError;
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    },
+    [slug]
+  );
+
+  const handleSubmitSuccess = useCallback(
+    (data, selectedFulfillmentType, receiptContext) => {
+      removePendingPublicOrder();
+      const orderReceipt = buildReceiptFromContext(data, selectedFulfillmentType, receiptContext);
+
+      if (receiptContext.isDineInOrder && tableId) {
+        resetOrderState(rememberCustomerData);
+        setOrderResult(null);
+        navigate(`/s/${slug}/garcom/mesas`);
+        return;
+      }
+
+      setOrderResult({ ...data, receipt: orderReceipt });
+      resetOrderState(rememberCustomerData);
+    },
+    [buildReceiptFromContext, navigate, rememberCustomerData, resetOrderState, slug, tableId]
+  );
+
+  const retryPendingOrder = useCallback(
+    async ({ manual = false } = {}) => {
+      const stored = readPendingPublicOrder();
+      if (!stored || stored.storeSlug !== slug || submitting) {
+        return;
+      }
+
+      const nextPending = {
+        ...stored,
+        attempts: (stored.attempts ?? 0) + 1,
+      };
+      writePendingPublicOrder(nextPending);
+      setPendingOrder(nextPending);
+
+      if (!manual) {
+        setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+      }
+
+      try {
+        setRetryingPending(true);
+        const data = await sendPublicOrder(nextPending.payload);
+        handleSubmitSuccess(
+          data,
+          nextPending.selectedFulfillmentType || "PICKUP",
+          nextPending.receiptContext
+        );
+        setPendingOrder(null);
+        setError("");
+      } catch (err) {
+        if (!err.retryable) {
+          removePendingPublicOrder();
+          setPendingOrder(null);
+          setError(err.message || "Não foi possível enviar o pedido.");
+          return;
+        }
+        setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+      } finally {
+        setRetryingPending(false);
+      }
+    },
+    [handleSubmitSuccess, sendPublicOrder, slug, submitting]
+  );
+
+  useEffect(() => {
+    const stored = readPendingPublicOrder();
+    if (!stored || stored.storeSlug !== slug) {
+      return;
+    }
+    setPendingOrder(stored);
+    setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+    retryPendingOrder();
+  }, [retryPendingOrder, slug]);
+
+  useEffect(() => {
+    if (!pendingOrder || pendingOrder.storeSlug !== slug || orderResult) {
+      return undefined;
+    }
+
+    const onOnline = () => retryPendingOrder();
+    window.addEventListener("online", onOnline);
+
+    const elapsedMs = Date.now() - pendingOrder.createdAt;
+    if (elapsedMs >= RETRY_WINDOW_MS) {
+      return () => window.removeEventListener("online", onOnline);
+    }
+
+    const intervalId = window.setInterval(() => {
+      retryPendingOrder();
+    }, RETRY_INTERVAL_MS);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.clearInterval(intervalId);
+    };
+  }, [orderResult, pendingOrder, retryPendingOrder, slug]);
+
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submitting || retryingPending) return;
     if (!isFormValid) {
       if (!isDineInOrder && !isCustomerPhoneValid) setError("Informe um telefone válido");
       return;
@@ -886,7 +1060,9 @@ const PublicOrder = () => {
 
     try {
       const selectedFulfillmentType = isDelivery ? "DELIVERY" : "PICKUP";
+      const clientOrderId = crypto.randomUUID();
       const payload = {
+        clientOrderId,
         customerName: customerName.trim() || undefined,
         customerPhone: customerPhone.trim() || undefined,
         customerPhoneDigits: customerPhoneDigits || undefined,
@@ -916,57 +1092,39 @@ const PublicOrder = () => {
         payload.tableId = tableId;
       }
 
-      const response = await fetch(`${API_URL}/public/${slug}/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || "Não foi possível enviar o pedido.");
-      }
-
-      const data = await response.json();
-      const orderReceipt = {
-        items: cartItems,
-        notes: notes.trim() || "",
-        totalCents,
-        paymentMethod: isDineInOrder ? data.paymentMethod : paymentMethod,
-        fulfillmentType: isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
-        deliveryAreaName: selectedDeliveryArea?.name || "",
-        addressLine: isDelivery ? address.line.trim() : "",
-        addressReference: isDelivery ? address.reference.trim() : "",
+      const pendingPayload = {
+        storeSlug: slug,
+        clientOrderId,
+        payload,
+        createdAt: Date.now(),
+        attempts: 0,
+        selectedFulfillmentType,
+        receiptContext: {
+          items: cartItems,
+          notes: notes.trim() || "",
+          totalCents,
+          paymentMethod,
+          isDineInOrder,
+          deliveryAreaName: selectedDeliveryArea?.name || "",
+          addressLine: isDelivery ? address.line.trim() : "",
+          addressReference: isDelivery ? address.reference.trim() : "",
+        },
       };
 
-      const resetOrderState = (shouldRememberCustomer) => {
-        setCartItems([]);
-        setNotes("");
-        setDeliveryAreaId("");
-        setPaymentMethod("");
-        setChangeFor("");
-        setFulfillmentType("PICKUP");
-        if (shouldRememberCustomer) {
-          setAddress((prev) => ({ ...prev, reference: "" }));
-          return;
-        }
-        setCustomerName("");
-        setCustomerPhone("");
-        setAddress(initialAddress);
-      };
+      writePendingPublicOrder(pendingPayload);
+      setPendingOrder(pendingPayload);
 
-      if (isDineInOrder && tableId) {
-        resetOrderState(rememberCustomerData);
-        setOrderResult(null);
-        navigate(`/s/${slug}/garcom/mesas`);
-        return;
-      }
-
-      setOrderResult({ ...data, receipt: orderReceipt });
-      resetOrderState(rememberCustomerData);
+      const data = await sendPublicOrder(payload);
+      handleSubmitSuccess(data, selectedFulfillmentType, pendingPayload.receiptContext);
+      setPendingOrder(null);
     } catch (err) {
-      setError(err.message || "Não foi possível enviar o pedido.");
+      if (!err.retryable) {
+        removePendingPublicOrder();
+        setPendingOrder(null);
+        setError(err.message || "Não foi possível enviar o pedido.");
+      } else {
+        setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1242,6 +1400,35 @@ const PublicOrder = () => {
         {error ? (
           <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error}
+          </div>
+        ) : null}
+
+        {pendingOrder ? (
+          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p>
+              Pedido pendente de envio. Tentativas: <strong>{pendingOrder.attempts ?? 0}</strong>
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => retryPendingOrder({ manual: true })}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                disabled={retryingPending}
+              >
+                {retryingPending ? "Enviando..." : "Tentar agora"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  removePendingPublicOrder();
+                  setPendingOrder(null);
+                  setError("");
+                }}
+                className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                Cancelar pedido pendente
+              </button>
+            </div>
           </div>
         ) : null}
 
