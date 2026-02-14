@@ -311,6 +311,7 @@ const PublicOrder = () => {
   const tableId = searchParams.get("table");
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
+  const stickyRef = useRef(null);
   const categoryTabRefs = useRef({});
   const categoryHeadingRefs = useRef({});
   const categorySyncLockUntilRef = useRef(0);
@@ -934,12 +935,25 @@ const PublicOrder = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const getStickyHeight = () => {
+    const stickyElement = stickyRef.current;
+    if (!stickyElement) return 0;
+    return Math.ceil(stickyElement.getBoundingClientRect().height);
+  };
+
   const scrollToCategory = (categoryId) => {
     setActiveCategoryId(categoryId);
     categorySyncLockUntilRef.current = Date.now() + 500;
-    const target = categoryHeadingRefs.current[categoryId];
+    const target = document.getElementById(`cat-${categoryId}`);
+    if (!target) return;
+    const stickyHeight = getStickyHeight();
+    const gap = 8;
+    const scrollTop = target.getBoundingClientRect().top + window.scrollY - stickyHeight - gap;
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    target?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+    window.scrollTo({
+      top: scrollTop,
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
   };
 
   const handleDownloadReceiptPng = useCallback(
@@ -1559,7 +1573,10 @@ const PublicOrder = () => {
         <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <section className="space-y-6">
             {isMenuV2 ? (
-              <div className="sticky top-2 z-20 -mx-2 overflow-x-auto rounded-xl bg-white/95 px-2 py-2 shadow-sm backdrop-blur">
+              <div
+                ref={stickyRef}
+                className="sticky top-2 z-20 -mx-2 overflow-x-auto rounded-xl bg-white/95 px-2 py-2 shadow-sm backdrop-blur"
+              >
                 <div className="flex w-max gap-2">
                   {sortedCategories.map((category) => (
                     <button
@@ -1640,6 +1657,7 @@ const PublicOrder = () => {
                 className={`space-y-3 ${isMenuV2 ? "scroll-mt-[120px] sm:scroll-mt-[140px]" : ""}`}
               >
                 <h2
+                  id={`cat-${category.id}`}
                   ref={(node) => {
                     if (node) {
                       categoryHeadingRefs.current[category.id] = node;
