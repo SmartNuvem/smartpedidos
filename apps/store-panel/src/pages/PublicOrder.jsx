@@ -1515,23 +1515,48 @@ const PublicOrder = () => {
                   {category.products.map((product) => (
                     <div
                       key={product.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                      className={
+                        isMenuV2
+                          ? "overflow-hidden rounded-xl bg-white shadow-sm"
+                          : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                      }
                     >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex flex-1 items-center gap-3">
-                          {isMenuV2 ? (
-                            product.imageUrl ? (
+                      <div className="flex items-stretch justify-between gap-4">
+                        {isMenuV2 ? (
+                          <div className="h-28 w-28 flex-shrink-0 sm:h-32 sm:w-32">
+                            {product.imageUrl ? (
                               <img
                                 src={product.imageUrl}
                                 alt={product.name}
                                 loading="lazy"
-                                className="h-16 w-16 rounded-xl object-cover"
+                                className="h-full w-full object-cover"
                               />
                             ) : (
-                              <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-[10px] text-slate-500">
+                              <div className="flex h-full w-full items-center justify-center bg-gray-100 text-xs text-gray-400">
                                 Sem foto
                               </div>
-                            )
+                            )}
+                          </div>
+                        ) : null}
+                        <div
+                          className={
+                            isMenuV2
+                              ? "flex flex-1 flex-col justify-between p-4"
+                              : "flex flex-1 items-center gap-3"
+                          }
+                        >
+                          {!isMenuV2 && product.imageUrl ? (
+                            <img
+                              src={product.imageUrl}
+                              alt={product.name}
+                              loading="lazy"
+                              className="h-16 w-16 rounded-xl object-cover"
+                            />
+                          ) : null}
+                          {!isMenuV2 && !product.imageUrl ? (
+                            <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-[10px] text-slate-500">
+                              Sem foto
+                            </div>
                           ) : null}
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center gap-2">
@@ -1552,15 +1577,29 @@ const PublicOrder = () => {
                               {formatCurrency(product.priceCents / 100)}
                             </p>
                           </div>
+                          {isMenuV2 ? (
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                                onClick={() => handleAddProduct(product)}
+                              >
+                                {product.optionGroups && product.optionGroups.length > 0
+                                  ? "Personalizar"
+                                  : "Adicionar"}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
-                        <button
-                          className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
-                          onClick={() => handleAddProduct(product)}
-                        >
-                          {product.optionGroups && product.optionGroups.length > 0
-                            ? "Personalizar"
-                            : "Adicionar"}
-                        </button>
+                        {!isMenuV2 ? (
+                          <button
+                            className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                            onClick={() => handleAddProduct(product)}
+                          >
+                            {product.optionGroups && product.optionGroups.length > 0
+                              ? "Personalizar"
+                              : "Adicionar"}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))}
