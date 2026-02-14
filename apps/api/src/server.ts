@@ -4,6 +4,9 @@ import fastifyCookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "crypto";
+import { createReadStream } from "fs";
+import { mkdir, writeFile, stat } from "fs/promises";
+import path from "path";
 import {
   OpenOverride,
   OrderStatus,
@@ -125,6 +128,89 @@ const formatDateOnly = (date: Date) =>
   }).format(date);
 
 const reportTimeZone = "America/Sao_Paulo";
+const uploadsDir = process.env.UPLOADS_DIR?.trim() || "/data/uploads";
+const maxProductImageSizeBytes = Number(
+  process.env.PRODUCT_IMAGE_MAX_SIZE_BYTES ?? 2 * 1024 * 1024
+);
+
+const safeImageKeySchema = z
+  .string()
+  .min(1)
+  .refine(
+    (value) =>
+      !value.includes("..") &&
+      !value.includes("\\") &&
+      !value.includes("//") &&
+      !value.startsWith("/"),
+    "Invalid image key"
+  );
+
+const getProductImageUrl = (imageKey: string | null | undefined) =>
+  imageKey ? `/api/public/images/${encodeURIComponent(imageKey)}` : null;
+
+const getSafeImagePath = (imageKey: string) => {
+  const parsedImageKey = safeImageKeySchema.safeParse(imageKey);
+  if (!parsedImageKey.success) {
+    return null;
+  }
+  const resolvedBase = path.resolve(uploadsDir);
+  const resolvedTarget = path.resolve(resolvedBase, parsedImageKey.data);
+  if (!resolvedTarget.startsWith(`${resolvedBase}${path.sep}`)) {
+    return null;
+  }
+  return resolvedTarget;
+};
+
+
+
+const readRequestBodyBuffer = async (request: FastifyRequest) => {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of request.raw) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxProductImageSizeBytes * 2) {
+      throw new Error("PAYLOAD_TOO_LARGE");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+};
+
+const parseMultipartImageUpload = async (request: FastifyRequest) => {
+  const contentType = request.headers["content-type"] ?? "";
+  const boundaryMatch = String(contentType).match(/boundary=([^;]+)/i);
+  if (!boundaryMatch) {
+    return { error: "INVALID_MULTIPART" as const };
+  }
+  const boundary = boundaryMatch[1].trim();
+  const bodyBuffer = await readRequestBodyBuffer(request);
+  const bodyText = bodyBuffer.toString("latin1");
+  const marker = `--${boundary}`;
+  const parts = bodyText
+    .split(marker)
+    .filter((part) => part.includes('name="file"'));
+  if (parts.length === 0) {
+    return { error: "FILE_NOT_FOUND" as const };
+  }
+  const part = parts[0];
+  const headerEnd = part.indexOf("\r\n\r\n");
+  if (headerEnd === -1) {
+    return { error: "INVALID_MULTIPART" as const };
+  }
+  const headers = part.slice(0, headerEnd);
+  const mimeMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
+  const mimeType = mimeMatch?.[1]?.trim() ?? "";
+  const fileStart = headerEnd + 4;
+  let fileEnd = part.lastIndexOf("\r\n");
+  if (fileEnd <= fileStart) {
+    fileEnd = part.length;
+  }
+  const fileContentText = part.slice(fileStart, fileEnd);
+  const fileBuffer = Buffer.from(fileContentText, "latin1");
+  return { fileBuffer, mimeType };
+};
+
 
 const getDatePartsInTimeZone = (date: Date, timeZone: string) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -1421,6 +1507,7 @@ const registerRoutes = () => {
         showFeeOnPublicMenu: store.showFeeOnPublicMenu,
         feeLabel: store.feeLabel,
         themePreset: store.themePreset ?? "DEFAULT",
+        publicMenuLayout: store.publicMenuLayout,
       },
       categories: store.categories.map((category) => ({
         id: category.id,
@@ -1439,6 +1526,10 @@ const registerRoutes = () => {
             active: product.active,
             isPromo: product.isPromo,
             pricingRule: product.pricingRule,
+            imageUrl: getProductImageUrl(product.imageKey),
+            isFeatured: product.isFeatured,
+            isNew: product.isNew,
+            isOnSale: product.isOnSale,
             optionGroups: product.optionGroups.map((group) => ({
               id: group.id,
               name: group.name,
@@ -1466,6 +1557,37 @@ const registerRoutes = () => {
       payment: paymentSettings,
       nextRefreshAt,
     };
+  });
+
+
+
+  app.get("/public/images/*", async (request, reply) => {
+    const params = request.params as { "*": string };
+    let rawImageKey = "";
+    try {
+      rawImageKey = decodeURIComponent(params["*"] ?? "");
+    } catch {
+      return reply.status(400).send({ message: "Invalid image key" });
+    }
+    const safePath = getSafeImagePath(rawImageKey);
+
+    if (!safePath) {
+      return reply.status(400).send({ message: "Invalid image key" });
+    }
+
+    let imageStats;
+    try {
+      imageStats = await stat(safePath);
+    } catch {
+      return reply.status(404).send({ message: "Image not found" });
+    }
+
+    if (!imageStats.isFile()) {
+      return reply.status(404).send({ message: "Image not found" });
+    }
+
+    reply.header("Cache-Control", "public, max-age=604800");
+    return reply.send(createReadStream(safePath));
   });
 
   app.get("/public/:slug/menu/stream", async (request, reply) => {
@@ -3066,6 +3188,7 @@ const registerRoutes = () => {
       requireChangeForCash:
         store.paymentSettings?.requireChangeForCash ?? false,
       themePreset: store.themePreset ?? "DEFAULT",
+      publicMenuLayout: store.publicMenuLayout,
     };
   });
 
@@ -3973,6 +4096,7 @@ const registerRoutes = () => {
       logoUrl: store.logoUrl,
       bannerUrl: store.bannerUrl,
       themePreset: store.themePreset ?? "DEFAULT",
+      publicMenuLayout: store.publicMenuLayout,
     });
   });
 
@@ -4041,7 +4165,31 @@ const registerRoutes = () => {
       logoUrl: store.logoUrl,
       bannerUrl: store.bannerUrl,
       themePreset: store.themePreset ?? "DEFAULT",
+      publicMenuLayout: store.publicMenuLayout,
     });
+  });
+
+
+
+  app.patch("/store/settings/public-menu", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const bodySchema = z.object({
+      publicMenuLayout: z.enum(["CLASSIC", "V2"]),
+    });
+
+    const { publicMenuLayout } = bodySchema.parse(request.body ?? {});
+
+    const store = await prisma.store.update({
+      where: { id: storeId },
+      data: { publicMenuLayout },
+      select: { publicMenuLayout: true },
+    });
+
+    return reply.send({ publicMenuLayout: store.publicMenuLayout });
   });
 
   app.post("/store/agents", async (request, reply) => {
@@ -5437,6 +5585,11 @@ const registerRoutes = () => {
       active: product.active,
       isPromo: product.isPromo,
       pricingRule: product.pricingRule,
+      imageKey: product.imageKey,
+      imageUrl: getProductImageUrl(product.imageKey),
+      isFeatured: product.isFeatured,
+      isNew: product.isNew,
+      isOnSale: product.isOnSale,
       availableDays: product.availableDays,
       availabilityWindows: product.availabilityWindows.map((window) => ({
         id: window.id,
@@ -5465,6 +5618,10 @@ const registerRoutes = () => {
       active: z.boolean().optional(),
       isPromo: z.boolean().optional(),
       pricingRule: z.enum(["SUM", "MAX_OPTION", "HALF_SUM"]).optional(),
+      imageKey: z.string().optional().nullable(),
+      isFeatured: z.boolean().optional(),
+      isNew: z.boolean().optional(),
+      isOnSale: z.boolean().optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -5485,6 +5642,10 @@ const registerRoutes = () => {
       active,
       isPromo,
       pricingRule,
+      imageKey,
+      isFeatured,
+      isNew,
+      isOnSale,
       availableDays,
       availabilityWindows,
     } = bodySchema.parse(
@@ -5534,6 +5695,10 @@ const registerRoutes = () => {
         active: active ?? true,
         isPromo: isPromo ?? false,
         pricingRule: pricingRule ?? "SUM",
+        imageKey: imageKey ?? null,
+        isFeatured: isFeatured ?? false,
+        isNew: isNew ?? false,
+        isOnSale: isOnSale ?? false,
         categoryId,
         availableDays: normalizedAvailableDays,
         availabilityWindows:
@@ -5564,6 +5729,11 @@ const registerRoutes = () => {
       active: product.active,
       isPromo: product.isPromo,
       pricingRule: product.pricingRule,
+      imageKey: product.imageKey,
+      imageUrl: getProductImageUrl(product.imageKey),
+      isFeatured: product.isFeatured,
+      isNew: product.isNew,
+      isOnSale: product.isOnSale,
       availableDays: product.availableDays,
       availabilityWindows: product.availabilityWindows.map((window) => ({
         id: window.id,
@@ -5592,6 +5762,10 @@ const registerRoutes = () => {
       active: z.boolean().optional(),
       isPromo: z.boolean().optional(),
       pricingRule: z.enum(["SUM", "MAX_OPTION", "HALF_SUM"]).optional(),
+      imageKey: z.string().optional().nullable(),
+      isFeatured: z.boolean().optional(),
+      isNew: z.boolean().optional(),
+      isOnSale: z.boolean().optional(),
       availableDays: z.array(z.number().int().min(1).max(7)).optional(),
       availabilityWindows: z
         .array(
@@ -5613,6 +5787,10 @@ const registerRoutes = () => {
       active,
       isPromo,
       pricingRule,
+      imageKey,
+      isFeatured,
+      isNew,
+      isOnSale,
       availableDays,
       availabilityWindows,
     } = bodySchema.parse(
@@ -5654,6 +5832,10 @@ const registerRoutes = () => {
       active === undefined &&
       isPromo === undefined &&
       pricingRule === undefined &&
+      imageKey === undefined &&
+      isFeatured === undefined &&
+      isNew === undefined &&
+      isOnSale === undefined &&
       availableDays === undefined &&
       availabilityWindows === undefined
     ) {
@@ -5695,6 +5877,10 @@ const registerRoutes = () => {
           active: active ?? product.active,
           isPromo: isPromo ?? product.isPromo,
           pricingRule: pricingRule ?? product.pricingRule,
+          imageKey: imageKey === undefined ? product.imageKey : imageKey,
+          isFeatured: isFeatured ?? product.isFeatured,
+          isNew: isNew ?? product.isNew,
+          isOnSale: isOnSale ?? product.isOnSale,
           categoryId: categoryId ?? product.categoryId,
           availableDays:
             availableDays === undefined
@@ -5744,6 +5930,11 @@ const registerRoutes = () => {
       active: updated.active,
       isPromo: updated.isPromo,
       pricingRule: updated.pricingRule,
+      imageKey: updated.imageKey,
+      imageUrl: getProductImageUrl(updated.imageKey),
+      isFeatured: updated.isFeatured,
+      isNew: updated.isNew,
+      isOnSale: updated.isOnSale,
       availableDays: updated.availableDays,
       availabilityWindows: updatedWindows.map((window) => ({
         id: window.id,
@@ -5755,6 +5946,80 @@ const registerRoutes = () => {
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     };
+  });
+
+
+
+  app.post("/store/products/:id/image", async (request, reply) => {
+    const storeId = request.storeId;
+    if (!storeId) {
+      return reply.status(401).send({ message: "Unauthorized" });
+    }
+
+    const paramsSchema = z.object({ id: z.string().uuid() });
+    const { id } = paramsSchema.parse(request.params);
+
+    const product = await prisma.product.findFirst({
+      where: { id, category: { storeId } },
+      select: { id: true },
+    });
+
+    if (!product) {
+      return reply.status(404).send({ message: "Product not found" });
+    }
+
+    const parsedUpload = await parseMultipartImageUpload(request).catch((error) => {
+      if (error instanceof Error && error.message === "PAYLOAD_TOO_LARGE") {
+        return { error: "PAYLOAD_TOO_LARGE" as const };
+      }
+      return { error: "INVALID_MULTIPART" as const };
+    });
+
+    if (!parsedUpload || "error" in parsedUpload) {
+      const reason = parsedUpload?.error;
+      if (reason === "PAYLOAD_TOO_LARGE") {
+        return reply.status(400).send({ message: "Arquivo excede o limite permitido." });
+      }
+      return reply.status(400).send({ message: "Arquivo não enviado." });
+    }
+
+    const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!allowedMimeTypes.has(parsedUpload.mimeType)) {
+      return reply.status(400).send({ message: "Formato inválido. Use JPEG, PNG ou WEBP." });
+    }
+
+    const extByMime: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+    const extension = extByMime[parsedUpload.mimeType] ?? "bin";
+    const fileBuffer = parsedUpload.fileBuffer;
+
+    if (fileBuffer.length > maxProductImageSizeBytes) {
+      return reply.status(400).send({ message: "Arquivo excede o limite permitido." });
+    }
+
+    const relativeDir = path.join(storeId, id);
+    const fileName = `${Date.now()}-${randomBytes(4).toString("hex")}.${extension}`;
+    const imageKey = path.join(relativeDir, fileName).replaceAll("\\", "/");
+    const targetPath = path.resolve(uploadsDir, imageKey);
+
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, fileBuffer);
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { imageKey },
+      select: { imageKey: true },
+    });
+
+    await emitMenuUpdateByStoreId(storeId, "product_update");
+
+    return reply.send({
+      imageKey: updated.imageKey,
+      imageUrl: getProductImageUrl(updated.imageKey),
+    });
   });
 
   app.delete("/store/products/:id", async (request, reply) => {

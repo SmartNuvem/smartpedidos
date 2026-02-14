@@ -205,6 +205,15 @@ export const api = {
     });
     return handleResponse(response);
   },
+
+  updatePublicMenuLayout: async (publicMenuLayout) => {
+    const response = await request(`${API_URL}/store/settings/public-menu`, {
+      method: "PATCH",
+      headers: buildHeaders(),
+      body: JSON.stringify({ publicMenuLayout }),
+    });
+    return handleResponse(response);
+  },
   getStoreBotConfig: async () => {
     const response = await request(`${API_URL}/store/bot`, {
       headers: buildHeaders(),
@@ -473,6 +482,19 @@ export const api = {
       method: "PATCH",
       headers: buildHeaders(),
       body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
+
+  uploadProductImage: async (productId, file) => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await request(`${API_URL}/store/products/${productId}/image`, {
+      method: "POST",
+      headers,
+      body: formData,
     });
     return handleResponse(response);
   },

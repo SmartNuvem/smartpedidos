@@ -63,6 +63,11 @@ enum ThemePreset {
   SMARTPEDIDO
 }
 
+enum PublicMenuLayout {
+  CLASSIC
+  V2
+}
+
 enum PrintJobType {
   KITCHEN_ORDER
   CASHIER_TABLE_SUMMARY
@@ -110,6 +115,7 @@ model Store {
   showFeeOnPublicMenu Boolean              @default(false)
   feeLabel           String                @default("Taxa de conveniência do app")
   themePreset        ThemePreset?
+  publicMenuLayout   PublicMenuLayout      @default(CLASSIC)
   categories         Category[]
   orders             Order[]
   tables             SalonTable[]
@@ -182,6 +188,10 @@ model Product {
   price      Decimal     @db.Decimal(10, 2)
   active     Boolean     @default(true)
   isPromo    Boolean     @default(false)
+  imageKey   String?
+  isFeatured Boolean     @default(false)
+  isNew      Boolean     @default(false)
+  isOnSale   Boolean     @default(false)
   pricingRule PricingRule @default(SUM)
   availableDays Int[] @default([])
   categoryId String

@@ -399,6 +399,8 @@ const PublicOrder = () => {
     return promos;
   }, [menu]);
 
+  const isMenuV2 = menu?.store?.publicMenuLayout === "V2";
+
   const sortedCategories = useMemo(() => {
     if (!menu) return [];
     return menu.categories.map((category) => {
@@ -820,6 +822,11 @@ const PublicOrder = () => {
 
   const scrollToCart = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollToCategory = (categoryId) => {
+    const target = window.document.getElementById(`category-${categoryId}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleDownloadReceiptPng = useCallback(
@@ -1438,7 +1445,23 @@ const PublicOrder = () => {
 
         <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <section className="space-y-6">
-            {promoProducts.length > 0 ? (
+            {isMenuV2 ? (
+              <div className="sticky top-2 z-20 -mx-2 overflow-x-auto rounded-xl bg-white/95 px-2 py-2 shadow-sm backdrop-blur">
+                <div className="flex w-max gap-2">
+                  {sortedCategories.map((category) => (
+                    <button
+                      key={`tab-${category.id}`}
+                      type="button"
+                      className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700"
+                      onClick={() => scrollToCategory(category.id)}
+                    >
+                      {category.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {!isMenuV2 && promoProducts.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold text-slate-900">Promoção do dia</h2>
@@ -1486,7 +1509,7 @@ const PublicOrder = () => {
             ) : null}
 
             {sortedCategories.map((category) => (
-              <div key={category.id} className="space-y-3">
+              <div id={`category-${category.id}`} key={category.id} className="space-y-3">
                 <h2 className="text-lg font-semibold text-slate-900">{category.name}</h2>
                 <div className="grid gap-3">
                   {category.products.map((product) => (
@@ -1495,21 +1518,40 @@ const PublicOrder = () => {
                       className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                     >
                       <div className="flex items-center justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-semibold text-slate-900">{product.name}</p>
-                            {product.isPromo ? (
-                              <span className="animate-pulse rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
-                                Promoção do dia
-                              </span>
-                            ) : null}
-                          </div>
-                          {product.composition?.trim() ? (
-                            <p className="line-clamp-2 text-xs text-slate-500">{product.composition}</p>
+                        <div className="flex flex-1 items-center gap-3">
+                          {isMenuV2 ? (
+                            product.imageUrl ? (
+                              <img
+                                src={product.imageUrl}
+                                alt={product.name}
+                                loading="lazy"
+                                className="h-16 w-16 rounded-xl object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-[10px] text-slate-500">
+                                Sem foto
+                              </div>
+                            )
                           ) : null}
-                          <p className="text-sm text-slate-500">
-                            {formatCurrency(product.priceCents / 100)}
-                          </p>
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-semibold text-slate-900">{product.name}</p>
+                              {product.isPromo ? (
+                                <span className="animate-pulse rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                                  Promoção do dia
+                                </span>
+                              ) : null}
+                              {isMenuV2 && product.isFeatured ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Mais pedido</span> : null}
+                              {isMenuV2 && product.isNew ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Novo</span> : null}
+                              {isMenuV2 && product.isOnSale ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
+                            </div>
+                            {product.composition?.trim() ? (
+                              <p className="line-clamp-2 text-xs text-slate-500">{product.composition}</p>
+                            ) : null}
+                            <p className="text-sm text-slate-500">
+                              {formatCurrency(product.priceCents / 100)}
+                            </p>
+                          </div>
                         </div>
                         <button
                           className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"

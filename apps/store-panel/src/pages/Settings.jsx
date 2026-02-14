@@ -80,6 +80,8 @@ const Settings = () => {
   const [brandingError, setBrandingError] = useState("");
   const [savingAppearance, setSavingAppearance] = useState(false);
   const [appearanceError, setAppearanceError] = useState("");
+  const [savingPublicMenuLayout, setSavingPublicMenuLayout] = useState(false);
+  const [publicMenuLayoutError, setPublicMenuLayoutError] = useState("");
   const [logoPreviewError, setLogoPreviewError] = useState(false);
   const [bannerPreviewError, setBannerPreviewError] = useState(false);
   const [toast, setToast] = useState(null);
@@ -106,6 +108,7 @@ const Settings = () => {
         setStore({
           ...storeData,
           themePreset: storeData?.themePreset ?? "DEFAULT",
+          publicMenuLayout: storeData?.publicMenuLayout ?? "CLASSIC",
         });
         setDeliveryAreas(
           areasData.map((area) => ({
@@ -571,6 +574,35 @@ const Settings = () => {
     }
   };
 
+
+
+  const handleSavePublicMenuLayout = async () => {
+    if (!store) {
+      return;
+    }
+    setSavingPublicMenuLayout(true);
+    setPublicMenuLayoutError("");
+    try {
+      const updated = await api.updatePublicMenuLayout(
+        store.publicMenuLayout ?? "CLASSIC"
+      );
+      setStore((prev) =>
+        prev
+          ? {
+              ...prev,
+              publicMenuLayout: updated.publicMenuLayout ?? "CLASSIC",
+            }
+          : prev
+      );
+    } catch (err) {
+      setPublicMenuLayoutError(
+        err?.message || "Não foi possível salvar o layout do cardápio público."
+      );
+    } finally {
+      setSavingPublicMenuLayout(false);
+    }
+  };
+
   const isTokenCopyError = tokenCopyStatus.startsWith("Não");
   const isWaiterLinkError = waiterLinkStatus.startsWith("Não");
   const waiterLink = store?.slug
@@ -705,6 +737,64 @@ const Settings = () => {
             {savingAppearance ? "Salvando..." : "Salvar aparência"}
           </Button>
         </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Layout do cardápio público
+            </h3>
+            <p className="text-sm text-slate-500">
+              Escolha entre o layout clássico atual e o novo layout V2.
+            </p>
+          </div>
+          <Button onClick={handleSavePublicMenuLayout} disabled={savingPublicMenuLayout || !store}>
+            {savingPublicMenuLayout ? "Salvando..." : "Salvar layout"}
+          </Button>
+        </div>
+        {publicMenuLayoutError ? (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {publicMenuLayoutError}
+          </div>
+        ) : null}
+        {store ? (
+          <div className="mt-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="radio"
+                name="public-menu-layout"
+                value="CLASSIC"
+                checked={(store.publicMenuLayout ?? "CLASSIC") === "CLASSIC"}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev ? { ...prev, publicMenuLayout: event.target.value } : prev
+                  )
+                }
+              />
+              Menu público: Clássico
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="radio"
+                name="public-menu-layout"
+                value="V2"
+                checked={(store.publicMenuLayout ?? "CLASSIC") === "V2"}
+                onChange={(event) =>
+                  setStore((prev) =>
+                    prev ? { ...prev, publicMenuLayout: event.target.value } : prev
+                  )
+                }
+              />
+              Menu público: Novo (V2)
+            </label>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
+            {error || "Carregando..."}
+          </p>
+        )}
+      </div>
+
         {appearanceError ? (
           <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {appearanceError}
