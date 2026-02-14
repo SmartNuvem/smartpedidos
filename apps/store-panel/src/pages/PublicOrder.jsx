@@ -1509,7 +1509,11 @@ const PublicOrder = () => {
             ) : null}
 
             {sortedCategories.map((category) => (
-              <div id={`category-${category.id}`} key={category.id} className="space-y-3">
+              <div
+                id={`category-${category.id}`}
+                key={category.id}
+                className={`space-y-3 ${isMenuV2 ? "scroll-mt-[120px] sm:scroll-mt-[140px]" : ""}`}
+              >
                 <h2 className="text-lg font-semibold text-slate-900">{category.name}</h2>
                 <div className="grid gap-3">
                   {category.products.map((product) => (
