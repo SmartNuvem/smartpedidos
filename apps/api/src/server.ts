@@ -1232,6 +1232,8 @@ const requireSalonAuth = async (
 
 type MenuUpdateReason = "promo" | "product_update" | "schedule";
 
+const themePresetSchema = z.enum(["DEFAULT", "SMARTPEDIDO"]);
+
 const emitMenuUpdateByStoreId = async (
   storeId: string,
   reason: MenuUpdateReason = "product_update"
@@ -1418,6 +1420,7 @@ const registerRoutes = () => {
         perOrderFeeCents: store.perOrderFeeCents,
         showFeeOnPublicMenu: store.showFeeOnPublicMenu,
         feeLabel: store.feeLabel,
+        themePreset: store.themePreset ?? "DEFAULT",
       },
       categories: store.categories.map((category) => ({
         id: category.id,
@@ -3062,6 +3065,7 @@ const registerRoutes = () => {
       bannerUrl: store.bannerUrl,
       requireChangeForCash:
         store.paymentSettings?.requireChangeForCash ?? false,
+      themePreset: store.themePreset ?? "DEFAULT",
     };
   });
 
@@ -3968,6 +3972,7 @@ const registerRoutes = () => {
       allowDelivery: store.allowDelivery,
       logoUrl: store.logoUrl,
       bannerUrl: store.bannerUrl,
+      themePreset: store.themePreset ?? "DEFAULT",
     });
   });
 
@@ -3982,6 +3987,7 @@ const registerRoutes = () => {
       allowDelivery: z.boolean().optional(),
       logoUrl: z.string().max(500).optional().nullable(),
       bannerUrl: z.string().max(500).optional().nullable(),
+      themePreset: themePresetSchema.optional().nullable(),
     });
 
     const payload = bodySchema.parse(request.body ?? {});
@@ -4025,6 +4031,7 @@ const registerRoutes = () => {
         allowDelivery: payload.allowDelivery ?? undefined,
         logoUrl: normalizeOptionalString(payload.logoUrl),
         bannerUrl: normalizeOptionalString(payload.bannerUrl),
+        themePreset: payload.themePreset ?? undefined,
       },
     });
 
@@ -4033,6 +4040,7 @@ const registerRoutes = () => {
       allowDelivery: store.allowDelivery,
       logoUrl: store.logoUrl,
       bannerUrl: store.bannerUrl,
+      themePreset: store.themePreset ?? "DEFAULT",
     });
   });
 
