@@ -603,8 +603,18 @@ const Products = () => {
       setImageFile(null);
       await loadData();
       setToast({ message: "Foto enviada com sucesso.", variant: "success" });
-    } catch {
-      setToast({ message: "Não foi possível enviar a foto.", variant: "error" });
+    } catch (error) {
+      const maxImageMb = 5;
+      if (error?.status === 413) {
+        setToast({
+          message: `Imagem muito grande. Envie até ${maxImageMb} MB.`,
+          variant: "error",
+        });
+      } else if (error?.status === 415) {
+        setToast({ message: "Formato inválido. Use PNG/JPG/WEBP.", variant: "error" });
+      } else {
+        setToast({ message: "Não foi possível enviar a foto.", variant: "error" });
+      }
     } finally {
       setUploadingImage(false);
     }
