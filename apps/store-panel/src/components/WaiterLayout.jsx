@@ -8,7 +8,7 @@ const WaiterLayout = ({ title, subtitle, onLogout, actions, children }) => (
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-400">
-              SmartPedidos Garçom
+              SmartPedido Garçom
             </p>
             <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
             {subtitle ? (

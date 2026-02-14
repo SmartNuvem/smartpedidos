@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
         registerType: "autoUpdate",
         includeAssets: ["pwa-192.svg", "pwa-512.svg"],
         manifest: {
-          name: "SmartPedidos Garçom",
+          name: "SmartPedido Garçom",
           short_name: "Garçom",
           start_url: "/s",
           display: "standalone",

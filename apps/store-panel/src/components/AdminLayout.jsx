@@ -23,7 +23,7 @@ const AdminLayout = ({ children }) => {
       <div className="flex">
         <aside className="hidden min-h-screen w-64 flex-col gap-6 border-r border-slate-200 bg-white px-4 py-6 lg:flex">
           <div className="px-2 text-lg font-bold text-slate-900">
-            SmartPedidos Admin
+            SmartPedido Admin
           </div>
           <nav className="flex flex-col gap-1">
             <NavLink to="/admin/stores" className={linkClass}>
