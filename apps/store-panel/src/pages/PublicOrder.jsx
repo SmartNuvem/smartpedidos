@@ -23,6 +23,8 @@ const RETRY_WINDOW_MS = 2 * 60 * 1000;
 const SEND_RETRY_ERROR_MESSAGE =
   "Sem conexão / erro ao enviar. Vamos reenviar automaticamente.";
 
+const cn = (...classes) => classes.filter(Boolean).join(" ");
+
 const getSafeLocalStorage = () => {
   try {
     return typeof window !== "undefined" ? window.localStorage : null;
@@ -1623,7 +1625,7 @@ const PublicOrder = () => {
                             <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700">
                               {product.categoryName}
                             </span>
-                            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold uppercase text-amber-700">
+                            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
                               Promoção do dia
                             </span>
                           </div>
@@ -1678,11 +1680,14 @@ const PublicOrder = () => {
                       key={product.id}
                       className={
                         isMenuV2
-                          ? `min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px] ${isPromo ? "promo-ring" : ""}`.trim()
+                          ? cn(
+                              "product-card-v2 relative min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
+                              isPromo && "promo-ring"
+                            )
                           : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       }
                     >
-                      <div className={isMenuV2 ? "flex items-stretch" : "flex items-stretch justify-between gap-4"}>
+                      <div className={isMenuV2 ? "relative z-10 flex items-stretch" : "flex items-stretch justify-between gap-4"}>
                         {isMenuV2 ? (
                           <div className="flex w-28 flex-shrink-0 self-stretch sm:w-32">
                             {product.imageUrl ? (
@@ -1723,7 +1728,7 @@ const PublicOrder = () => {
                             <div className={isMenuV2 ? "flex items-start justify-between gap-2" : "flex flex-wrap items-center gap-2"}>
                               <p className={isMenuV2 ? "truncate font-semibold leading-tight text-slate-900" : "font-semibold text-slate-900"}>{product.name}</p>
                               {product.isPromo ? (
-                                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold uppercase text-amber-700">
+                                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
                                   Promoção do dia
                                 </span>
                               ) : null}
