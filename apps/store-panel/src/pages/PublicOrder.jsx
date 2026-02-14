@@ -1521,9 +1521,9 @@ const PublicOrder = () => {
                           : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       }
                     >
-                      <div className="flex items-stretch justify-between gap-4">
+                      <div className={isMenuV2 ? "flex" : "flex items-stretch justify-between gap-4"}>
                         {isMenuV2 ? (
-                          <div className="h-28 w-28 flex-shrink-0 sm:h-32 sm:w-32">
+                          <div className="h-24 w-28 flex-shrink-0 sm:h-32 sm:w-32">
                             {product.imageUrl ? (
                               <img
                                 src={product.imageUrl}
@@ -1541,7 +1541,7 @@ const PublicOrder = () => {
                         <div
                           className={
                             isMenuV2
-                              ? "flex flex-1 flex-col justify-between p-4"
+                              ? "flex min-w-0 flex-1 flex-col justify-between p-3 sm:p-4"
                               : "flex flex-1 items-center gap-3"
                           }
                         >
@@ -1558,29 +1558,29 @@ const PublicOrder = () => {
                               Sem foto
                             </div>
                           ) : null}
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-semibold text-slate-900">{product.name}</p>
+                          <div className="flex-1 min-w-0">
+                            <div className={isMenuV2 ? "flex items-start justify-between gap-2" : "flex flex-wrap items-center gap-2"}>
+                              <p className={isMenuV2 ? "truncate font-semibold leading-tight text-slate-900" : "font-semibold text-slate-900"}>{product.name}</p>
                               {product.isPromo ? (
                                 <span className="animate-pulse rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
                                   Promoção do dia
                                 </span>
                               ) : null}
-                              {isMenuV2 && product.isFeatured ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Mais pedido</span> : null}
-                              {isMenuV2 && product.isNew ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Novo</span> : null}
-                              {isMenuV2 && product.isOnSale ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
+                              {isMenuV2 && product.isFeatured ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Mais pedido</span> : null}
+                              {isMenuV2 && product.isNew ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Novo</span> : null}
+                              {isMenuV2 && product.isOnSale ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
                             </div>
                             {product.composition?.trim() ? (
-                              <p className="line-clamp-2 text-xs text-slate-500">{product.composition}</p>
+                              <p className={isMenuV2 ? "mt-1 line-clamp-1 text-xs text-slate-500 sm:line-clamp-2" : "line-clamp-2 text-xs text-slate-500"}>{product.composition}</p>
                             ) : null}
-                            <p className="text-sm text-slate-500">
+                            <p className={isMenuV2 ? "mt-1 text-sm leading-tight text-slate-500" : "text-sm text-slate-500"}>
                               {formatCurrency(product.priceCents / 100)}
                             </p>
                           </div>
                           {isMenuV2 ? (
-                            <div className="mt-3 flex justify-end">
+                            <div className="mt-2 flex justify-end">
                               <button
-                                className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                                className="shrink-0 self-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white sm:px-6 sm:py-3 sm:text-base"
                                 onClick={() => handleAddProduct(product)}
                               >
                                 {product.optionGroups && product.optionGroups.length > 0
