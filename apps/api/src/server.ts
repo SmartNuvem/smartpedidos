@@ -1431,6 +1431,7 @@ const registerRoutes = () => {
           .map((product) => ({
             id: product.id,
             name: product.name,
+            composition: product.composition,
             priceCents: Math.round(product.price.toNumber() * 100),
             active: product.active,
             isPromo: product.isPromo,
@@ -5423,6 +5424,7 @@ const registerRoutes = () => {
     return products.map((product) => ({
       id: product.id,
       name: product.name,
+      composition: product.composition,
       price: product.price.toNumber(),
       active: product.active,
       isPromo: product.isPromo,
@@ -5449,6 +5451,7 @@ const registerRoutes = () => {
 
     const bodySchema = z.object({
       name: z.string().min(1),
+      composition: z.string().optional().nullable(),
       categoryId: z.string().uuid(),
       price: z.number().nonnegative(),
       active: z.boolean().optional(),
@@ -5468,6 +5471,7 @@ const registerRoutes = () => {
 
     const {
       name,
+      composition,
       categoryId,
       price,
       active,
@@ -5478,6 +5482,19 @@ const registerRoutes = () => {
     } = bodySchema.parse(
       request.body
     );
+    const normalizedComposition =
+      composition === undefined
+        ? undefined
+        : composition === null
+          ? null
+          : composition.trim() === ""
+            ? null
+            : composition.trim();
+    if (normalizedComposition !== undefined && normalizedComposition !== null && normalizedComposition.length > 240) {
+      return reply
+        .status(400)
+        .send({ message: "Composição deve ter no máximo 240 caracteres." });
+    }
     const normalizedAvailableDays =
       availableDays && availableDays.length > 0 ? availableDays : [];
     const normalizedAvailabilityWindows =
@@ -5504,6 +5521,7 @@ const registerRoutes = () => {
     const product = await prisma.product.create({
       data: {
         name,
+        composition: normalizedComposition,
         price,
         active: active ?? true,
         isPromo: isPromo ?? false,
@@ -5533,6 +5551,7 @@ const registerRoutes = () => {
     return reply.status(201).send({
       id: product.id,
       name: product.name,
+      composition: product.composition,
       price: product.price.toNumber(),
       active: product.active,
       isPromo: product.isPromo,
@@ -5559,6 +5578,7 @@ const registerRoutes = () => {
     const paramsSchema = z.object({ id: z.string().uuid() });
     const bodySchema = z.object({
       name: z.string().min(1).optional(),
+      composition: z.string().optional().nullable(),
       price: z.number().nonnegative().optional(),
       categoryId: z.string().uuid().optional(),
       active: z.boolean().optional(),
@@ -5579,6 +5599,7 @@ const registerRoutes = () => {
     const { id } = paramsSchema.parse(request.params);
     const {
       name,
+      composition,
       price,
       categoryId,
       active,
@@ -5589,6 +5610,19 @@ const registerRoutes = () => {
     } = bodySchema.parse(
       request.body
     );
+    const normalizedComposition =
+      composition === undefined
+        ? undefined
+        : composition === null
+          ? null
+          : composition.trim() === ""
+            ? null
+            : composition.trim();
+    if (normalizedComposition !== undefined && normalizedComposition !== null && normalizedComposition.length > 240) {
+      return reply
+        .status(400)
+        .send({ message: "Composição deve ter no máximo 240 caracteres." });
+    }
     const normalizedAvailableDays =
       availableDays && availableDays.length > 0 ? availableDays : [];
     const normalizedAvailabilityWindows =
@@ -5607,6 +5641,7 @@ const registerRoutes = () => {
     if (
       !name &&
       price === undefined &&
+      composition === undefined &&
       !categoryId &&
       active === undefined &&
       isPromo === undefined &&
@@ -5644,6 +5679,10 @@ const registerRoutes = () => {
         where: { id },
         data: {
           name: name ?? product.name,
+          composition:
+            normalizedComposition === undefined
+              ? product.composition
+              : normalizedComposition,
           price: price ?? product.price,
           active: active ?? product.active,
           isPromo: isPromo ?? product.isPromo,
@@ -5692,6 +5731,7 @@ const registerRoutes = () => {
     return {
       id: updated.id,
       name: updated.name,
+      composition: updated.composition,
       price: updated.price.toNumber(),
       active: updated.active,
       isPromo: updated.isPromo,
