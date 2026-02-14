@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 
 type Product = {
   id: string | number;
@@ -43,12 +43,16 @@ export default function PublicMenuV2({
   handleAddProduct,
   formatCurrency,
 }: Props) {
-  const tabsScrollerRef = useRef<HTMLDivElement | null>(null);
+  const normalizeCategoryId = (id: string | number | null | undefined) =>
+    id === null || id === undefined ? "" : String(id);
 
   const scrollPillIntoView = (categoryId: string | number) => {
     if (typeof window === "undefined") return;
 
-    const tab = categoryTabRefs.current[categoryId];
+    const normalizedCategoryId = normalizeCategoryId(categoryId);
+    if (!normalizedCategoryId) return;
+
+    const tab = categoryTabRefs.current[normalizedCategoryId];
     if (!tab) return;
 
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
@@ -65,26 +69,29 @@ export default function PublicMenuV2({
   }, [activeCategoryId]);
 
   return (
-    <section className="space-y-6 overflow-visible">
+    <section className="public-menu-v2 space-y-6 overflow-visible" data-menu-version="v2">
       <div
         ref={stickyRef}
-        className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur supports-[backdrop-filter]:bg-white/80"
+        className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur"
       >
-        <div ref={tabsScrollerRef} className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex w-max gap-2 px-1">
             {sortedCategories.map((category) => (
               <button
                 key={`tab-${category.id}`}
                 type="button"
                 ref={(node) => {
+                  const normalizedCategoryId = normalizeCategoryId(category.id);
+                  if (!normalizedCategoryId) return;
+
                   if (node) {
-                    categoryTabRefs.current[category.id] = node;
+                    categoryTabRefs.current[normalizedCategoryId] = node;
                   } else {
-                    delete categoryTabRefs.current[category.id];
+                    delete categoryTabRefs.current[normalizedCategoryId];
                   }
                 }}
                 className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out motion-reduce:transition-none ${
-                  activeCategoryId === category.id
+                  normalizeCategoryId(activeCategoryId) === normalizeCategoryId(category.id)
                     ? "border-slate-900 bg-slate-900 text-white"
                     : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
                 }`}
@@ -105,7 +112,7 @@ export default function PublicMenuV2({
           id={`category-${category.id}`}
           key={category.id}
           data-category-id={category.id}
-          className="space-y-3 scroll-mt-[120px] sm:scroll-mt-[140px]"
+          className="space-y-3 scroll-mt-[110px]"
         >
           <h2
             id={`cat-${category.id}`}
@@ -130,7 +137,7 @@ export default function PublicMenuV2({
                 <div
                   key={product.id}
                   className={cn(
-                    "relative min-h-[96px] overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
+                    "public-menu-v2-card relative min-h-[96px] overflow-hidden rounded-xl border-[1px] border-slate-100 bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
                     isPromo && "border-2 border-amber-400 bg-amber-50/40 shadow-md shadow-amber-200/70 ring-1 ring-amber-300"
                   )}
                 >
