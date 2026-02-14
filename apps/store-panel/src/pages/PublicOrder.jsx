@@ -1448,6 +1448,9 @@ const PublicOrder = () => {
                               Promoção do dia
                             </span>
                           </div>
+                          {product.composition?.trim() ? (
+                            <p className="line-clamp-2 text-xs text-slate-500">{product.composition}</p>
+                          ) : null}
                           <p className="text-sm text-slate-500">
                             {formatCurrency(product.priceCents / 100)}
                           </p>
@@ -1486,6 +1489,9 @@ const PublicOrder = () => {
                               </span>
                             ) : null}
                           </div>
+                          {product.composition?.trim() ? (
+                            <p className="line-clamp-2 text-xs text-slate-500">{product.composition}</p>
+                          ) : null}
                           <p className="text-sm text-slate-500">
                             {formatCurrency(product.priceCents / 100)}
                           </p>

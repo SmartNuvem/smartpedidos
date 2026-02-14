@@ -121,6 +121,7 @@ const Products = () => {
   const [itemDrafts, setItemDrafts] = useState({});
   const [formState, setFormState] = useState({
     name: "",
+    composition: "",
     categoryId: "",
     price: "",
     active: true,
@@ -164,6 +165,7 @@ const Products = () => {
     setEditingProduct(null);
     setFormState({
       name: "",
+      composition: "",
       categoryId: categories[0]?.id ?? "",
       price: "",
       active: true,
@@ -183,6 +185,7 @@ const Products = () => {
     setEditingProduct(product);
     setFormState({
       name: product.name,
+      composition: product.composition ?? "",
       categoryId: product.categoryId,
       price: formatDecimal(product.price),
       active: product.active,
@@ -498,6 +501,7 @@ const Products = () => {
     try {
       const payload = {
         name: formState.name.trim(),
+        composition: formState.composition,
         categoryId: formState.categoryId,
         price: priceValue,
         active: formState.active,
@@ -704,6 +708,18 @@ const Products = () => {
             onChange={(event) => handleChange("name", event.target.value)}
             required
           />
+          <div className="grid gap-1.5">
+            <label className="text-sm font-semibold text-slate-700">
+              Composição (opcional)
+            </label>
+            <textarea
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              rows={3}
+              placeholder="Ex: Pão brioche, hambúrguer 180g, queijo, alface e tomate"
+              value={formState.composition}
+              onChange={(event) => handleChange("composition", event.target.value)}
+            />
+          </div>
           <Select
             label="Categoria"
             value={formState.categoryId}

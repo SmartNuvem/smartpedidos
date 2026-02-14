@@ -172,6 +172,7 @@ model Category {
 model Product {
   id         String      @id @default(uuid())
   name       String
+  composition String?     @db.VarChar(240)
   price      Decimal     @db.Decimal(10, 2)
   active     Boolean     @default(true)
   isPromo    Boolean     @default(false)
