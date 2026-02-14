@@ -22,12 +22,15 @@ services:
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       PORT: ${PORT:-3000}
+      UPLOADS_DIR: ${UPLOADS_DIR:-/data/uploads}
     depends_on:
       - db
     ports:
       - "3000:3000"
     working_dir: /app/apps/api
     command: ["npm", "run", "start"]
+    volumes:
+      - uploads_data:/data/uploads
 
   store-panel:
     build:
@@ -40,3 +43,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

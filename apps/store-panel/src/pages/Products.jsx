@@ -127,6 +127,11 @@ const Products = () => {
     active: true,
     isPromo: false,
     pricingRule: "SUM",
+    imageKey: null,
+    imageUrl: null,
+    isFeatured: false,
+    isNew: false,
+    isOnSale: false,
     availableEveryday: true,
     availableDays: [],
     availabilityWindows: [],
@@ -134,6 +139,8 @@ const Products = () => {
   const [toast, setToast] = useState(null);
   const [deleteProduct, setDeleteProduct] = useState(null);
   const [deletingProductId, setDeletingProductId] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -171,10 +178,16 @@ const Products = () => {
       active: true,
       isPromo: false,
       pricingRule: "SUM",
+      imageKey: null,
+      imageUrl: null,
+      isFeatured: false,
+      isNew: false,
+      isOnSale: false,
       availableEveryday: true,
       availableDays: [],
       availabilityWindows: [],
     });
+    setImageFile(null);
     setModalOpen(true);
   };
 
@@ -191,10 +204,16 @@ const Products = () => {
       active: product.active,
       isPromo: product.isPromo ?? false,
       pricingRule: product.pricingRule ?? "SUM",
+      imageKey: product.imageKey ?? null,
+      imageUrl: product.imageUrl ?? null,
+      isFeatured: product.isFeatured ?? false,
+      isNew: product.isNew ?? false,
+      isOnSale: product.isOnSale ?? false,
       availableEveryday,
       availableDays,
       availabilityWindows,
     });
+    setImageFile(null);
     setModalOpen(true);
   };
 
@@ -515,6 +534,10 @@ const Products = () => {
         })),
         isPromo: formState.isPromo,
         pricingRule: formState.pricingRule,
+        imageKey: formState.imageKey,
+        isFeatured: formState.isFeatured,
+        isNew: formState.isNew,
+        isOnSale: formState.isOnSale,
       };
       if (editingProduct) {
         await api.updateProduct(editingProduct.id, payload);
@@ -559,6 +582,45 @@ const Products = () => {
       });
     } finally {
       setDeletingProductId(null);
+    }
+  };
+
+
+
+  const handleUploadImage = async () => {
+    if (!editingProduct?.id || !imageFile) {
+      setToast({ message: "Selecione uma imagem para enviar.", variant: "error" });
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const result = await api.uploadProductImage(editingProduct.id, imageFile);
+      setFormState((prev) => ({
+        ...prev,
+        imageKey: result.imageKey ?? null,
+        imageUrl: result.imageUrl ?? null,
+      }));
+      setImageFile(null);
+      await loadData();
+      setToast({ message: "Foto enviada com sucesso.", variant: "success" });
+    } catch {
+      setToast({ message: "Não foi possível enviar a foto.", variant: "error" });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    if (!editingProduct?.id) {
+      return;
+    }
+    try {
+      await api.updateProduct(editingProduct.id, { imageKey: null });
+      setFormState((prev) => ({ ...prev, imageKey: null, imageUrl: null }));
+      await loadData();
+      setToast({ message: "Foto removida com sucesso.", variant: "success" });
+    } catch {
+      setToast({ message: "Não foi possível remover a foto.", variant: "error" });
     }
   };
 
@@ -771,6 +833,59 @@ const Products = () => {
             />
             Promoção do dia
           </label>
+
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={formState.isFeatured}
+              onChange={(event) => handleChange("isFeatured", event.target.checked)}
+            />
+            Badge "Mais pedido"
+          </label>
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={formState.isNew}
+              onChange={(event) => handleChange("isNew", event.target.checked)}
+            />
+            Badge "Novo"
+          </label>
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={formState.isOnSale}
+              onChange={(event) => handleChange("isOnSale", event.target.checked)}
+            />
+            Badge "Oferta"
+          </label>
+
+          {editingProduct ? (
+            <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-700">Foto do produto</h3>
+              {formState.imageUrl ? (
+                <img
+                  src={formState.imageUrl}
+                  alt="Preview do produto"
+                  className="h-24 w-24 rounded-xl object-cover"
+                />
+              ) : (
+                <p className="text-xs text-slate-500">Sem foto cadastrada.</p>
+              )}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={handleUploadImage} disabled={uploadingImage}>
+                  {uploadingImage ? "Enviando foto..." : "Enviar foto"}
+                </Button>
+                <Button type="button" variant="danger" onClick={handleRemoveImage}>
+                  Remover foto
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <div className="rounded-xl border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700">
               Disponibilidade
