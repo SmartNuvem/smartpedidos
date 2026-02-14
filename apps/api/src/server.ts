@@ -130,7 +130,7 @@ const formatDateOnly = (date: Date) =>
 const reportTimeZone = "America/Sao_Paulo";
 const uploadsDir = process.env.UPLOADS_DIR?.trim() || "/data/uploads";
 const maxProductImageSizeBytes = Number(
-  process.env.PRODUCT_IMAGE_MAX_SIZE_BYTES ?? 2 * 1024 * 1024
+  process.env.PRODUCT_IMAGE_MAX_SIZE_BYTES ?? 5 * 1024 * 1024
 );
 
 const safeImageKeySchema = z
@@ -159,56 +159,6 @@ const getSafeImagePath = (imageKey: string) => {
     return null;
   }
   return resolvedTarget;
-};
-
-
-
-const readRequestBodyBuffer = async (request: FastifyRequest) => {
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of request.raw) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buffer.length;
-    if (total > maxProductImageSizeBytes * 2) {
-      throw new Error("PAYLOAD_TOO_LARGE");
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-};
-
-const parseMultipartImageUpload = async (request: FastifyRequest) => {
-  const contentType = request.headers["content-type"] ?? "";
-  const boundaryMatch = String(contentType).match(/boundary=([^;]+)/i);
-  if (!boundaryMatch) {
-    return { error: "INVALID_MULTIPART" as const };
-  }
-  const boundary = boundaryMatch[1].trim();
-  const bodyBuffer = await readRequestBodyBuffer(request);
-  const bodyText = bodyBuffer.toString("latin1");
-  const marker = `--${boundary}`;
-  const parts = bodyText
-    .split(marker)
-    .filter((part) => part.includes('name="file"'));
-  if (parts.length === 0) {
-    return { error: "FILE_NOT_FOUND" as const };
-  }
-  const part = parts[0];
-  const headerEnd = part.indexOf("\r\n\r\n");
-  if (headerEnd === -1) {
-    return { error: "INVALID_MULTIPART" as const };
-  }
-  const headers = part.slice(0, headerEnd);
-  const mimeMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
-  const mimeType = mimeMatch?.[1]?.trim() ?? "";
-  const fileStart = headerEnd + 4;
-  let fileEnd = part.lastIndexOf("\r\n");
-  if (fileEnd <= fileStart) {
-    fileEnd = part.length;
-  }
-  const fileContentText = part.slice(fileStart, fileEnd);
-  const fileBuffer = Buffer.from(fileContentText, "latin1");
-  return { fileBuffer, mimeType };
 };
 
 
@@ -548,6 +498,8 @@ const applyMenuTemplateVariables = ({
 const app = Fastify({
   logger: true,
 });
+
+const fastifyMultipart = require("@fastify/multipart");
 
 const agentAuth = async (request: FastifyRequest, reply: FastifyReply) => {
   const agent = await authenticateAgent(request);
@@ -5968,24 +5920,31 @@ const registerRoutes = () => {
       return reply.status(404).send({ message: "Product not found" });
     }
 
-    const parsedUpload = await parseMultipartImageUpload(request).catch((error) => {
-      if (error instanceof Error && error.message === "PAYLOAD_TOO_LARGE") {
-        return { error: "PAYLOAD_TOO_LARGE" as const };
-      }
-      return { error: "INVALID_MULTIPART" as const };
-    });
+    const contentType = request.headers["content-type"];
+    if (!contentType || !String(contentType).toLowerCase().includes("multipart/form-data")) {
+      return reply.status(415).send({ message: "Content-Type inválido. Envie multipart/form-data." });
+    }
 
-    if (!parsedUpload || "error" in parsedUpload) {
-      const reason = parsedUpload?.error;
-      if (reason === "PAYLOAD_TOO_LARGE") {
-        return reply.status(400).send({ message: "Arquivo excede o limite permitido." });
+    let file: { mimetype: string; file: AsyncIterable<Buffer> & { truncated?: boolean } } | undefined;
+    try {
+      file = await (request as FastifyRequest & { file: () => Promise<typeof file> }).file();
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === "FST_REQ_FILE_TOO_LARGE") {
+        return reply
+          .status(413)
+          .send({ message: `Imagem muito grande. Envie até ${Math.round(maxProductImageSizeBytes / (1024 * 1024))} MB.` });
       }
+      throw error;
+    }
+
+    if (!file) {
       return reply.status(400).send({ message: "Arquivo não enviado." });
     }
 
     const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-    if (!allowedMimeTypes.has(parsedUpload.mimeType)) {
-      return reply.status(400).send({ message: "Formato inválido. Use JPEG, PNG ou WEBP." });
+    if (!allowedMimeTypes.has(file.mimetype)) {
+      return reply.status(415).send({ message: "Formato inválido. Use PNG/JPG/WEBP." });
     }
 
     const extByMime: Record<string, string> = {
@@ -5993,11 +5952,18 @@ const registerRoutes = () => {
       "image/png": "png",
       "image/webp": "webp",
     };
-    const extension = extByMime[parsedUpload.mimeType] ?? "bin";
-    const fileBuffer = parsedUpload.fileBuffer;
+    const extension = extByMime[file.mimetype] ?? "bin";
 
-    if (fileBuffer.length > maxProductImageSizeBytes) {
-      return reply.status(400).send({ message: "Arquivo excede o limite permitido." });
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.file) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const fileBuffer = Buffer.concat(chunks);
+
+    if (file.file.truncated === true || fileBuffer.length > maxProductImageSizeBytes) {
+      return reply
+        .status(413)
+        .send({ message: `Imagem muito grande. Envie até ${Math.round(maxProductImageSizeBytes / (1024 * 1024))} MB.` });
     }
 
     const relativeDir = path.join(storeId, id);
@@ -7276,6 +7242,12 @@ const start = async () => {
     secret: jwtSecret,
   });
   await app.register(fastifyCookie);
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: maxProductImageSizeBytes,
+      files: 1,
+    },
+  });
   const allowedOrigins = buildAllowedOrigins();
   await app.register(cors, {
     origin: (origin, cb) => {
