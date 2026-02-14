@@ -28,7 +28,7 @@ const Layout = ({ children }) => {
     <div className="min-h-screen bg-slate-100">
       <div className="flex">
         <aside className="hidden min-h-screen w-64 flex-col gap-6 border-r border-slate-200 bg-white px-4 py-6 lg:flex">
-          <div className="px-2 text-lg font-bold text-slate-900">SmartPedidos</div>
+          <div className="px-2 text-lg font-bold text-slate-900">SmartPedido</div>
           <nav className="flex flex-col gap-1">
             <NavLink to="/" className={linkClass} end>
               Dashboard
@@ -67,7 +67,7 @@ const Layout = ({ children }) => {
             <div>
               <p className="text-sm text-slate-500">Painel da loja</p>
               <h1 className="text-lg font-semibold text-slate-900">
-                Gestão SmartPedidos
+                Gestão SmartPedido
               </h1>
             </div>
             <div className="lg:hidden">
