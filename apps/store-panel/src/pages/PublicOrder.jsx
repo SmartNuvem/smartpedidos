@@ -19,6 +19,8 @@ const getPublicOrderStorageKey = (storeSlug = "") =>
   `smartpedidos:public:form:${storeSlug}`;
 const RETRY_INTERVAL_MS = 5000;
 const RETRY_WINDOW_MS = 2 * 60 * 1000;
+const SEND_RETRY_ERROR_MESSAGE =
+  "Sem conexão / erro ao enviar. Vamos reenviar automaticamente.";
 
 const getSafeLocalStorage = () => {
   try {
@@ -902,6 +904,13 @@ const PublicOrder = () => {
     [setAddress]
   );
 
+  const clearSendRecoveryState = useCallback(() => {
+    removePendingPublicOrder();
+    setPendingOrder(null);
+    setRetryingPending(false);
+    setError("");
+  }, []);
+
   const buildReceiptFromContext = useCallback(
     (data, selectedFulfillmentType, receiptContext) => ({
       items: receiptContext.items,
@@ -940,9 +949,7 @@ const PublicOrder = () => {
         return response.json();
       } catch (error) {
         if (error.name === "AbortError" || error instanceof TypeError) {
-          const retryError = new Error(
-            "Sem conexão / erro ao enviar. Vamos reenviar automaticamente."
-          );
+          const retryError = new Error(SEND_RETRY_ERROR_MESSAGE);
           retryError.retryable = true;
           throw retryError;
         }
@@ -956,7 +963,7 @@ const PublicOrder = () => {
 
   const handleSubmitSuccess = useCallback(
     (data, selectedFulfillmentType, receiptContext) => {
-      removePendingPublicOrder();
+      clearSendRecoveryState();
       const orderReceipt = buildReceiptFromContext(data, selectedFulfillmentType, receiptContext);
 
       if (receiptContext.isDineInOrder && tableId) {
@@ -969,7 +976,15 @@ const PublicOrder = () => {
       setOrderResult({ ...data, receipt: orderReceipt });
       resetOrderState(rememberCustomerData);
     },
-    [buildReceiptFromContext, navigate, rememberCustomerData, resetOrderState, slug, tableId]
+    [
+      buildReceiptFromContext,
+      clearSendRecoveryState,
+      navigate,
+      rememberCustomerData,
+      resetOrderState,
+      slug,
+      tableId,
+    ]
   );
 
   const retryPendingOrder = useCallback(
@@ -987,7 +1002,7 @@ const PublicOrder = () => {
       setPendingOrder(nextPending);
 
       if (!manual) {
-        setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+        setError(SEND_RETRY_ERROR_MESSAGE);
       }
 
       try {
@@ -1002,17 +1017,16 @@ const PublicOrder = () => {
         setError("");
       } catch (err) {
         if (!err.retryable) {
-          removePendingPublicOrder();
-          setPendingOrder(null);
+          clearSendRecoveryState();
           setError(err.message || "Não foi possível enviar o pedido.");
           return;
         }
-        setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+        setError(SEND_RETRY_ERROR_MESSAGE);
       } finally {
         setRetryingPending(false);
       }
     },
-    [handleSubmitSuccess, sendPublicOrder, slug, submitting]
+    [clearSendRecoveryState, handleSubmitSuccess, sendPublicOrder, slug, submitting]
   );
 
   useEffect(() => {
@@ -1021,7 +1035,7 @@ const PublicOrder = () => {
       return;
     }
     setPendingOrder(stored);
-    setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+    setError(SEND_RETRY_ERROR_MESSAGE);
     retryPendingOrder();
   }, [retryPendingOrder, slug]);
 
@@ -1119,16 +1133,17 @@ const PublicOrder = () => {
       setPendingOrder(null);
     } catch (err) {
       if (!err.retryable) {
-        removePendingPublicOrder();
-        setPendingOrder(null);
+        clearSendRecoveryState();
         setError(err.message || "Não foi possível enviar o pedido.");
       } else {
-        setError("Sem conexão / erro ao enviar. Vamos reenviar automaticamente.");
+        setError(SEND_RETRY_ERROR_MESSAGE);
       }
     } finally {
       setSubmitting(false);
     }
   };
+
+  const hasActiveSendRetryError = Boolean(pendingOrder) && error === SEND_RETRY_ERROR_MESSAGE;
 
   if (loading) {
     return (
@@ -1271,7 +1286,10 @@ const PublicOrder = () => {
             <button
               type="button"
               className="mt-6 rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700"
-              onClick={() => setOrderResult(null)}
+              onClick={() => {
+                clearSendRecoveryState();
+                setOrderResult(null);
+              }}
             >
               Fazer novo pedido
             </button>
@@ -1397,7 +1415,7 @@ const PublicOrder = () => {
 </header>
 
 
-        {error ? (
+        {error && (error !== SEND_RETRY_ERROR_MESSAGE || hasActiveSendRetryError) ? (
           <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error}
           </div>
@@ -1420,9 +1438,7 @@ const PublicOrder = () => {
               <button
                 type="button"
                 onClick={() => {
-                  removePendingPublicOrder();
-                  setPendingOrder(null);
-                  setError("");
+                  clearSendRecoveryState();
                 }}
                 className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
               >
