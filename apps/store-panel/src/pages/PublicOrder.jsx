@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { API_URL, formatCurrency } from "../api";
 import { getOrderCode } from "../utils/orderCode";
+import { formatPhoneBR, normalizePhoneDigits } from "../utils/phone";
 import AppFooter from "../components/AppFooter";
 import Modal from "../components/Modal";
 import {
@@ -46,35 +47,6 @@ const readRememberedCustomer = (storeSlug = "") => {
   }
 };
 
-const formatPhoneBR = (digits = "") => {
-  const cleaned = digits.replace(/\D/g, "").slice(0, 11);
-  const length = cleaned.length;
-
-  if (length === 0) {
-    return "";
-  }
-
-  if (length <= 9) {
-    if (length <= 4) {
-      return cleaned;
-    }
-    if (length <= 8) {
-      return `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`;
-    }
-    return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
-  }
-
-  const ddd = cleaned.slice(0, 2);
-  const rest = cleaned.slice(2);
-
-  if (rest.length <= 4) {
-    return `(${ddd}) ${rest}`;
-  }
-  if (rest.length <= 8) {
-    return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
-  }
-  return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
-};
 
 const isFlavorGroupName = (name = "") =>
   name.trim().toLowerCase() === "sabores";
@@ -534,7 +506,7 @@ const PublicOrder = () => {
     if (remembered.remember === false) return;
 
     setCustomerName(remembered.name || "");
-    setCustomerPhone(formatPhoneBR(remembered.phone || ""));
+    setCustomerPhone(formatPhoneBR(normalizePhoneDigits(remembered.phone || "")));
     setAddress((prev) => ({ ...prev, line: remembered.addressLine || "" }));
   }, [slug]);
 
@@ -545,7 +517,8 @@ const PublicOrder = () => {
 
     const storageKey = getPublicOrderStorageKey(slug);
     const name = customerName.trim();
-    const phone = customerPhone.trim();
+    const phoneDigits = normalizePhoneDigits(customerPhone);
+    const phone = formatPhoneBR(phoneDigits);
     const addressLine = address.line.trim();
     const hasRememberedData = Boolean(name || phone || addressLine);
 
@@ -796,7 +769,7 @@ const PublicOrder = () => {
   };
 
   const isDineInOrder = isDineIn;
-  const customerPhoneDigits = customerPhone.replace(/\D/g, "").slice(0, 11);
+  const customerPhoneDigits = normalizePhoneDigits(customerPhone);
   const isCustomerPhoneValid = isDineInOrder ? true : [8, 9, 10, 11].includes(customerPhoneDigits.length);
   const isDelivery = !isDineInOrder && fulfillmentType === "DELIVERY" && allowDelivery;
   const deliveryFeeCents = isDelivery && selectedDeliveryArea ? selectedDeliveryArea.feeCents : 0;
@@ -1078,7 +1051,7 @@ const PublicOrder = () => {
       const payload = {
         clientOrderId,
         customerName: customerName.trim() || undefined,
-        customerPhone: customerPhone.trim() || undefined,
+        customerPhone: (customerPhoneDigits ? formatPhoneBR(customerPhoneDigits) : "") || undefined,
         customerPhoneDigits: customerPhoneDigits || undefined,
         orderType: isDineInOrder ? "DINE_IN" : selectedFulfillmentType,
         notes: notes.trim() || undefined,
@@ -1682,7 +1655,7 @@ const PublicOrder = () => {
                   autoComplete="tel"
                   pattern="[0-9]*"
                   onChange={(event) => {
-                    const digits = event.target.value.replace(/\D/g, "");
+                    const digits = normalizePhoneDigits(event.target.value);
                     setCustomerPhone(formatPhoneBR(digits));
                   }}
                 />
