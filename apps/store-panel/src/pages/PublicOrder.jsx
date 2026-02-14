@@ -1517,22 +1517,22 @@ const PublicOrder = () => {
                       key={product.id}
                       className={
                         isMenuV2
-                          ? "overflow-hidden rounded-xl bg-white shadow-sm"
+                          ? "min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm sm:min-h-[128px]"
                           : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       }
                     >
-                      <div className={isMenuV2 ? "flex" : "flex items-stretch justify-between gap-4"}>
+                      <div className={isMenuV2 ? "flex items-stretch" : "flex items-stretch justify-between gap-4"}>
                         {isMenuV2 ? (
-                          <div className="h-24 w-28 flex-shrink-0 sm:h-32 sm:w-32">
+                          <div className="flex w-28 flex-shrink-0 self-stretch sm:w-32">
                             {product.imageUrl ? (
                               <img
                                 src={product.imageUrl}
                                 alt={product.name}
                                 loading="lazy"
-                                className="h-full w-full object-cover"
+                                className="h-full min-h-[96px] w-full object-cover sm:min-h-[128px]"
                               />
                             ) : (
-                              <div className="flex h-full w-full items-center justify-center bg-gray-100 text-xs text-gray-400">
+                              <div className="flex h-full min-h-[96px] w-full items-center justify-center bg-gray-100 text-xs text-gray-400 sm:min-h-[128px]">
                                 Sem foto
                               </div>
                             )}
