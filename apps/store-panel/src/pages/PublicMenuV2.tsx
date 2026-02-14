@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 type Product = {
   id: string | number;
@@ -31,6 +31,7 @@ type Props = {
 };
 
 const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
+const isProductPromo = (product: Product) => Boolean(product.isPromo);
 
 export default function PublicMenuV2({
   sortedCategories,
@@ -42,34 +43,52 @@ export default function PublicMenuV2({
   handleAddProduct,
   formatCurrency,
 }: Props) {
+  const tabsScrollerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!activeCategoryId || typeof window === "undefined") return;
+
+    const tab = categoryTabRefs.current[activeCategoryId];
+    const scroller = tabsScrollerRef.current;
+    if (!tab || !scroller) return;
+
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const nextLeft = tab.offsetLeft - scroller.clientWidth / 2 + tab.clientWidth / 2;
+    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+
+    scroller.scrollTo({
+      left: Math.max(0, Math.min(nextLeft, maxLeft)),
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+  }, [activeCategoryId, categoryTabRefs]);
+
   return (
     <section className="space-y-6">
-      <div
-        ref={stickyRef}
-        className="sticky top-2 z-20 -mx-2 overflow-x-auto rounded-xl bg-white/95 px-2 py-2 shadow-sm backdrop-blur"
-      >
-        <div className="flex w-max gap-2">
-          {sortedCategories.map((category) => (
-            <button
-              key={`tab-${category.id}`}
-              type="button"
-              ref={(node) => {
-                if (node) {
-                  categoryTabRefs.current[category.id] = node;
-                } else {
-                  delete categoryTabRefs.current[category.id];
-                }
-              }}
-              className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out motion-reduce:transition-none ${
-                activeCategoryId === category.id
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
-              }`}
-              onClick={() => scrollToCategory(category.id)}
-            >
-              {category.name}
-            </button>
-          ))}
+      <div ref={stickyRef} className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur">
+        <div ref={tabsScrollerRef} className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex w-max gap-2 px-1">
+            {sortedCategories.map((category) => (
+              <button
+                key={`tab-${category.id}`}
+                type="button"
+                ref={(node) => {
+                  if (node) {
+                    categoryTabRefs.current[category.id] = node;
+                  } else {
+                    delete categoryTabRefs.current[category.id];
+                  }
+                }}
+                className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out motion-reduce:transition-none ${
+                  activeCategoryId === category.id
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                }`}
+                onClick={() => scrollToCategory(category.id)}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -95,7 +114,7 @@ export default function PublicMenuV2({
           </h2>
           <div className="grid gap-3">
             {category.products.map((product) => {
-              const isPromo = Boolean(product.isPromo);
+              const isPromo = isProductPromo(product);
               const isOnSale = Boolean(product.isOnSale);
               const isNew = Boolean(product.isNew);
 
@@ -103,8 +122,8 @@ export default function PublicMenuV2({
                 <div
                   key={product.id}
                   className={cn(
-                    "relative min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
-                    isPromo && "border-2 border-amber-400 bg-amber-50 shadow-lg shadow-amber-100"
+                    "relative min-h-[96px] overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
+                    isPromo && "border-2 border-amber-500 bg-amber-50/80 shadow-lg shadow-amber-200/80 ring-1 ring-amber-300"
                   )}
                 >
                   {isPromo ? (
@@ -129,11 +148,11 @@ export default function PublicMenuV2({
                       )}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col justify-between p-3 sm:p-4">
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <p className="truncate font-semibold leading-tight text-slate-900">{product.name}</p>
                           {isPromo ? (
-                            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                               Promoção do dia
                             </span>
                           ) : null}
