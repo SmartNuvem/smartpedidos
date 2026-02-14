@@ -23,6 +23,7 @@ import WaiterLogin from "./pages/WaiterLogin";
 import WaiterStart from "./pages/WaiterStart";
 import WaiterTable from "./pages/WaiterTable";
 import WaiterTables from "./pages/WaiterTables";
+import PublicRoutesErrorBoundary from "./components/PublicRoutesErrorBoundary";
 
 const RequireAuth = ({ children }) => {
   const location = useLocation();
@@ -75,7 +76,14 @@ const RequireAdmin = ({ children }) => {
 
 const App = () => (
   <Routes>
-    <Route path="/p/:slug" element={<PublicOrder />} />
+    <Route
+      path="/p/:slug"
+      element={
+        <PublicRoutesErrorBoundary>
+          <PublicOrder />
+        </PublicRoutesErrorBoundary>
+      }
+    />
     <Route path="/s" element={<WaiterStart />} />
     <Route path="/s/:slug/garcom" element={<WaiterLogin />} />
     <Route path="/s/:slug/garcom/mesas" element={<WaiterTables />} />
