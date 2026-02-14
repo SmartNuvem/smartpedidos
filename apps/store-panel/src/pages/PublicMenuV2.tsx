@@ -62,13 +62,13 @@ export default function PublicMenuV2({
   useEffect(() => {
     if (!activeCategoryId) return;
     scrollPillIntoView(activeCategoryId);
-  }, [activeCategoryId, categoryTabRefs]);
+  }, [activeCategoryId]);
 
   return (
     <section className="space-y-6 overflow-visible">
       <div
         ref={stickyRef}
-        className="sticky top-2 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:top-3"
+        className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur supports-[backdrop-filter]:bg-white/80"
       >
         <div ref={tabsScrollerRef} className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex w-max gap-2 px-1">
