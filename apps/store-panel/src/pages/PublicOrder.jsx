@@ -1696,13 +1696,16 @@ const PublicOrder = () => {
                         isMenuV2
                           ? cn(
                               "product-card-v2 relative min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
-                              isPromo && "border border-amber-200 bg-amber-50 shadow-md"
+                              isPromo && "border-2 border-amber-400 bg-amber-50 shadow-lg shadow-amber-100"
                             )
                           : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       }
                     >
                       {isMenuV2 && isPromo ? (
-                        <div className="absolute left-0 top-0 h-full w-1 bg-amber-400/70" aria-hidden="true" />
+                        <div
+                          className="absolute left-0 top-0 h-full w-1.5 rounded-l-xl bg-gradient-to-b from-amber-400 to-amber-500"
+                          aria-hidden="true"
+                        />
                       ) : null}
                       <div className={isMenuV2 ? "relative z-10 flex items-stretch pl-1" : "flex items-stretch justify-between gap-4"}>
                         {isMenuV2 ? (
