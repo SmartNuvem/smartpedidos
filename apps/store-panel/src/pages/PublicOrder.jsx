@@ -1707,9 +1707,9 @@ const PublicOrder = () => {
                           aria-hidden="true"
                         />
                       ) : null}
-                      <div className={isMenuV2 ? "relative z-10 flex items-stretch pl-1" : "flex items-stretch justify-between gap-4"}>
+                      <div className={isMenuV2 ? "relative z-10 flex items-stretch" : "flex items-stretch justify-between gap-4"}>
                         {isMenuV2 ? (
-                          <div className="flex w-28 flex-shrink-0 self-stretch sm:w-32">
+                          <div className="flex w-28 flex-shrink-0 self-stretch overflow-hidden rounded-l-xl sm:w-32">
                             {product.imageUrl ? (
                               <img
                                 src={product.imageUrl}
