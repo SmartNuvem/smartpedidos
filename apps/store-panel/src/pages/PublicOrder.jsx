@@ -34,6 +34,8 @@ const isProductPromo = (product = {}) =>
       product.isPromo
   );
 
+const isProductPromoV2 = (product = {}) => Boolean(product.isPromo);
+
 const getSafeLocalStorage = () => {
   try {
     return typeof window !== "undefined" ? window.localStorage : null;
@@ -421,11 +423,12 @@ const PublicOrder = () => {
   const sortedCategories = useMemo(() => {
     if (!menu) return [];
     return menu.categories.map((category) => {
-      const promoItems = category.products.filter((product) => isProductPromo(product));
-      const regularItems = category.products.filter((product) => !isProductPromo(product));
+      const promoPredicate = isMenuV2 ? isProductPromoV2 : isProductPromo;
+      const promoItems = category.products.filter((product) => promoPredicate(product));
+      const regularItems = category.products.filter((product) => !promoPredicate(product));
       return { ...category, products: [...promoItems, ...regularItems] };
     });
-  }, [menu]);
+  }, [isMenuV2, menu]);
 
   useEffect(() => {
     if (!isMenuV2) {
@@ -1682,7 +1685,9 @@ const PublicOrder = () => {
                 </h2>
                 <div className="grid gap-3">
                   {category.products.map((product) => {
-                    const isPromo = isProductPromo(product);
+                    const isPromo = Boolean(product.isPromo);
+                    const isOnSale = Boolean(product.isOnSale);
+                    const isNew = Boolean(product.isNew);
 
                     return (
                     <div
@@ -1745,8 +1750,8 @@ const PublicOrder = () => {
                                 </span>
                               ) : null}
                               {isMenuV2 && product.isFeatured ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Mais pedido</span> : null}
-                              {isMenuV2 && product.isNew ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Novo</span> : null}
-                              {isMenuV2 && isPromo ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
+                              {isMenuV2 && isNew ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Novo</span> : null}
+                              {isMenuV2 && isOnSale ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
                             </div>
                             {product.composition?.trim() ? (
                               <p className={isMenuV2 ? "mt-1 line-clamp-1 text-xs text-slate-500 sm:line-clamp-2" : "line-clamp-2 text-xs text-slate-500"}>{product.composition}</p>
