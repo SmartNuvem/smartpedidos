@@ -44,6 +44,10 @@ const Billing = () => {
   });
   const [seriesByDay, setSeriesByDay] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
+  const [insights, setInsights] = useState({
+    bestRevenueDay: null,
+    bestOrdersDay: null,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -83,6 +87,10 @@ const Billing = () => {
       });
       setSeriesByDay(Array.isArray(response?.seriesByDay) ? response.seriesByDay : []);
       setTopProducts(Array.isArray(response?.topProducts) ? response.topProducts : []);
+      setInsights({
+        bestRevenueDay: response?.insights?.bestRevenueDay ?? null,
+        bestOrdersDay: response?.insights?.bestOrdersDay ?? null,
+      });
     } catch {
       setError("Não foi possível carregar o faturamento.");
     } finally {
@@ -105,7 +113,14 @@ const Billing = () => {
     window.open(pdfUrl, "_blank", "noopener,noreferrer");
   }, [pdfParams]);
 
-  const hasData = seriesByDay.some((point) => (point.orders ?? 0) > 0);
+  const hasData = summary.ordersCount > 0;
+
+  const formatDayName = (value) => {
+    if (!value) {
+      return "-";
+    }
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  };
 
   return (
     <div className="space-y-6">
@@ -200,17 +215,57 @@ const Billing = () => {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
-          <h3 className="text-lg font-semibold text-slate-900">Vendas por dia</h3>
-          {loading ? (
-            <p className="mt-4 text-sm text-slate-500">Carregando gráfico...</p>
-          ) : !hasData ? (
-            <p className="mt-4 text-sm text-slate-500">Sem pedidos PRINTED no período.</p>
-          ) : (
-            <div className="mt-4">
-              <SalesByDayChart data={seriesByDay} />
+        <div className="space-y-4 lg:col-span-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">Vendas por dia</h3>
+            {loading ? (
+              <p className="mt-4 text-sm text-slate-500">Carregando gráfico...</p>
+            ) : !hasData ? (
+              <p className="mt-4 text-sm text-slate-500">Sem pedidos PRINTED no período.</p>
+            ) : (
+              <div className="mt-4">
+                <SalesByDayChart data={seriesByDay} />
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-slate-500">📊 Melhor dia do período</p>
+              {loading ? (
+                <p className="mt-3 text-sm text-slate-500">Carregando insight...</p>
+              ) : !insights.bestRevenueDay || insights.bestRevenueDay.orders === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">Sem pedidos PRINTED no período.</p>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm text-slate-700">
+                    🥇 {formatDayName(insights.bestRevenueDay.dayName)} foi o dia com maior faturamento
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">
+                    {formatCurrency((insights.bestRevenueDay.revenueCents ?? 0) / 100)} em {insights.bestRevenueDay.orders ?? 0} pedidos
+                  </p>
+                </>
+              )}
             </div>
-          )}
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-xs font-semibold uppercase text-slate-500">📦 Dia com mais pedidos</p>
+              {loading ? (
+                <p className="mt-3 text-sm text-slate-500">Carregando insight...</p>
+              ) : !insights.bestOrdersDay || insights.bestOrdersDay.orders === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">Sem pedidos PRINTED no período.</p>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm text-slate-700">
+                    {formatDayName(insights.bestOrdersDay.dayName)} foi o dia com mais pedidos
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">
+                    {insights.bestOrdersDay.orders ?? 0} pedidos • {formatCurrency((insights.bestOrdersDay.revenueCents ?? 0) / 100)}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">

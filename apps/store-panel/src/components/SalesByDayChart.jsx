@@ -1,5 +1,13 @@
 import { formatCurrency } from "../api";
 
+const formatDayLabel = (dateInput) => {
+  const date = new Date(`${dateInput}T00:00:00`);
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(date);
+};
+
 const SalesByDayChart = ({ data = [] }) => {
   const maxRevenue = data.reduce(
     (max, point) => Math.max(max, point?.revenueCents ?? 0),
@@ -14,7 +22,7 @@ const SalesByDayChart = ({ data = [] }) => {
         return (
           <div key={point.date}>
             <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-              <span>{point.date}</span>
+              <span>{formatDayLabel(point.date)}</span>
               <span>
                 {formatCurrency(revenueCents / 100)} • {point.orders ?? 0} pedidos
               </span>

@@ -177,7 +177,33 @@ const startOfDayInTimeZone = (date: Date, timeZone: string) => {
 
 const formatDateInputLocal = (date: Date) => {
   const { year, month, day } = getDatePartsInTimeZone(date, reportTimeZone);
-  return `${year}-${month}-${day}`;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const weekdayNames = [
+  "domingo",
+  "segunda",
+  "terça",
+  "quarta",
+  "quinta",
+  "sexta",
+  "sábado",
+];
+
+const getDayMetaFromLocalDate = (value: string) => {
+  const localDate = parseLocalDateInput(value);
+  if (!localDate) {
+    return {
+      dayOfWeek: 0,
+      dayName: weekdayNames[0],
+    };
+  }
+  const dayOfWeek = localDate.getUTCDay();
+
+  return {
+    dayOfWeek,
+    dayName: weekdayNames[dayOfWeek],
+  };
 };
 
 const parseLocalDateInput = (value: string) => {
@@ -3760,7 +3786,10 @@ const registerRoutes = () => {
       Array<{ date: string; revenueCents: bigint | number; orders: bigint | number }>
     >`
       SELECT
-        to_char(date_trunc('day', timezone(${reportTimeZone}, o."createdAt")), 'YYYY-MM-DD') AS "date",
+        to_char(
+          DATE_TRUNC('day', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${reportTimeZone}),
+          'YYYY-MM-DD'
+        ) AS "date",
         COALESCE(SUM((o."total" * 100)::bigint), 0)::bigint AS "revenueCents",
         COUNT(*)::bigint AS "orders"
       FROM "Order" o
@@ -3782,16 +3811,25 @@ const registerRoutes = () => {
       ])
     );
 
-    const seriesByDay: Array<{ date: string; revenueCents: number; orders: number }> = [];
+    const seriesByDay: Array<{
+      date: string;
+      revenueCents: number;
+      orders: number;
+      dayOfWeek: number;
+      dayName: string;
+    }> = [];
     const startLocalDay = parseLocalDateInput(formatDateInputLocal(range.startUtc));
     if (startLocalDay) {
       for (let day = startLocalDay; day < range.endUtc; day = addDays(day, 1)) {
         const date = formatDateInputLocal(day);
         const point = seriesMap.get(date);
+        const dayMeta = getDayMetaFromLocalDate(date);
         seriesByDay.push({
           date,
           revenueCents: point?.revenueCents ?? 0,
           orders: point?.orders ?? 0,
+          dayOfWeek: dayMeta.dayOfWeek,
+          dayName: dayMeta.dayName,
         });
       }
     }
@@ -3826,6 +3864,59 @@ const registerRoutes = () => {
       : 0;
     const totalOrders = totalsAggregate._count?._all ?? 0;
 
+    const weekdayTotals = seriesByDay.reduce(
+      (accumulator, point) => {
+        const bucket = accumulator.get(point.dayOfWeek) ?? {
+          dayOfWeek: point.dayOfWeek,
+          dayName: point.dayName,
+          revenueCents: 0,
+          orders: 0,
+        };
+        bucket.revenueCents += point.revenueCents;
+        bucket.orders += point.orders;
+        accumulator.set(point.dayOfWeek, bucket);
+        return accumulator;
+      },
+      new Map<number, { dayOfWeek: number; dayName: string; revenueCents: number; orders: number }>()
+    );
+
+    const weekdayInsights = Array.from(weekdayTotals.values());
+    const bestRevenueDay = weekdayInsights.reduce<{
+      dayOfWeek: number;
+      dayName: string;
+      revenueCents: number;
+      orders: number;
+    } | null>((best, current) => {
+      if (!best) {
+        return current;
+      }
+      if (current.revenueCents > best.revenueCents) {
+        return current;
+      }
+      if (current.revenueCents === best.revenueCents && current.orders > best.orders) {
+        return current;
+      }
+      return best;
+    }, null);
+
+    const bestOrdersDay = weekdayInsights.reduce<{
+      dayOfWeek: number;
+      dayName: string;
+      revenueCents: number;
+      orders: number;
+    } | null>((best, current) => {
+      if (!best) {
+        return current;
+      }
+      if (current.orders > best.orders) {
+        return current;
+      }
+      if (current.orders === best.orders && current.revenueCents > best.revenueCents) {
+        return current;
+      }
+      return best;
+    }, null);
+
     return reply.send({
       totals: {
         totalRevenue: totalRevenueCents,
@@ -3833,6 +3924,10 @@ const registerRoutes = () => {
         avgTicket: totalOrders > 0 ? Math.round(totalRevenueCents / totalOrders) : 0,
       },
       seriesByDay,
+      insights: {
+        bestRevenueDay,
+        bestOrdersDay,
+      },
       topProducts: topProducts.map((item) => ({
         productId: item.productId,
         name: item.name,
