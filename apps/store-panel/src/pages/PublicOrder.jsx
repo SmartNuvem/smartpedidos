@@ -25,6 +25,15 @@ const SEND_RETRY_ERROR_MESSAGE =
 
 const cn = (...classes) => classes.filter(Boolean).join(" ");
 
+const isProductPromo = (product = {}) =>
+  Boolean(
+    product.isPromoOfDay ??
+      product.promoOfDay ??
+      product.isOnSale ??
+      product.badgePromo ??
+      product.isPromo
+  );
+
 const getSafeLocalStorage = () => {
   try {
     return typeof window !== "undefined" ? window.localStorage : null;
@@ -401,7 +410,7 @@ const PublicOrder = () => {
     const promos = [];
     menu.categories.forEach((category) => {
       category.products.forEach((product) => {
-        if (product.isPromo) promos.push({ ...product, categoryName: category.name });
+        if (isProductPromo(product)) promos.push({ ...product, categoryName: category.name });
       });
     });
     return promos;
@@ -412,8 +421,8 @@ const PublicOrder = () => {
   const sortedCategories = useMemo(() => {
     if (!menu) return [];
     return menu.categories.map((category) => {
-      const promoItems = category.products.filter((product) => product.isPromo);
-      const regularItems = category.products.filter((product) => !product.isPromo);
+      const promoItems = category.products.filter((product) => isProductPromo(product));
+      const regularItems = category.products.filter((product) => !isProductPromo(product));
       return { ...category, products: [...promoItems, ...regularItems] };
     });
   }, [menu]);
@@ -1673,7 +1682,7 @@ const PublicOrder = () => {
                 </h2>
                 <div className="grid gap-3">
                   {category.products.map((product) => {
-                    const isPromo = product.isOnSale || product.promoOfDay === true;
+                    const isPromo = isProductPromo(product);
 
                     return (
                     <div
@@ -1682,12 +1691,15 @@ const PublicOrder = () => {
                         isMenuV2
                           ? cn(
                               "product-card-v2 relative min-h-[96px] overflow-hidden rounded-xl bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
-                              isPromo && "promo-ring"
+                              isPromo && "border border-amber-200 bg-amber-50 shadow-md"
                             )
                           : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       }
                     >
-                      <div className={isMenuV2 ? "relative z-10 flex items-stretch" : "flex items-stretch justify-between gap-4"}>
+                      {isMenuV2 && isPromo ? (
+                        <div className="absolute left-0 top-0 h-full w-1 bg-amber-400/70" aria-hidden="true" />
+                      ) : null}
+                      <div className={isMenuV2 ? "relative z-10 flex items-stretch pl-1" : "flex items-stretch justify-between gap-4"}>
                         {isMenuV2 ? (
                           <div className="flex w-28 flex-shrink-0 self-stretch sm:w-32">
                             {product.imageUrl ? (
@@ -1728,13 +1740,13 @@ const PublicOrder = () => {
                             <div className={isMenuV2 ? "flex items-start justify-between gap-2" : "flex flex-wrap items-center gap-2"}>
                               <p className={isMenuV2 ? "truncate font-semibold leading-tight text-slate-900" : "font-semibold text-slate-900"}>{product.name}</p>
                               {isPromo ? (
-                                <span className="inline-flex shrink-0 animate-pulse items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 motion-reduce:animate-none">
+                                <span className="inline-flex items-center shrink-0 whitespace-nowrap rounded-full bg-amber-100 text-amber-800 font-semibold text-xs px-2 py-1">
                                   Promoção do dia
                                 </span>
                               ) : null}
                               {isMenuV2 && product.isFeatured ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Mais pedido</span> : null}
                               {isMenuV2 && product.isNew ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Novo</span> : null}
-                              {isMenuV2 && product.isOnSale ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
+                              {isMenuV2 && isPromo ? <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold">Oferta</span> : null}
                             </div>
                             {product.composition?.trim() ? (
                               <p className={isMenuV2 ? "mt-1 line-clamp-1 text-xs text-slate-500 sm:line-clamp-2" : "line-clamp-2 text-xs text-slate-500"}>{product.composition}</p>
