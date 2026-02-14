@@ -312,6 +312,9 @@ const PublicOrder = () => {
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
   const categoryTabRefs = useRef({});
+  const categoryHeadingRefs = useRef({});
+  const categorySyncLockUntilRef = useRef(0);
+  const categoryScrollRafRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -425,34 +428,74 @@ const PublicOrder = () => {
       return undefined;
     }
 
+    const getHeaderOffset = () => (window.innerWidth < 640 ? 120 : 140);
+    const limitGap = 8;
+
     const headings = sortedCategories
-      .map((category) => window.document.getElementById(`category-${category.id}`))
-      .filter(Boolean);
+      .map((category) => ({
+        id: category.id,
+        node: categoryHeadingRefs.current[category.id],
+      }))
+      .filter((heading) => Boolean(heading.node));
 
     if (headings.length === 0) {
       return undefined;
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visibleEntries = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-
-        const nextId = visibleEntries[0]?.target?.dataset?.categoryId;
-        if (nextId) {
-          setActiveCategoryId(nextId);
-        }
-      },
-      {
-        root: null,
-        rootMargin: "-140px 0px -60% 0px",
-        threshold: [0, 0.1, 0.25],
+    const syncActiveCategory = () => {
+      if (Date.now() < categorySyncLockUntilRef.current) {
+        return;
       }
-    );
 
-    headings.forEach((heading) => observer.observe(heading));
-    return () => observer.disconnect();
+      const limit = getHeaderOffset() + limitGap;
+      let closestPastId = null;
+      let closestPastTop = Number.NEGATIVE_INFINITY;
+      let closestFutureId = null;
+      let closestFutureTop = Number.POSITIVE_INFINITY;
+
+      headings.forEach((heading) => {
+        const top = heading.node.getBoundingClientRect().top;
+
+        if (top <= limit && top > closestPastTop) {
+          closestPastTop = top;
+          closestPastId = heading.id;
+        }
+
+        if (top < closestFutureTop) {
+          closestFutureTop = top;
+          closestFutureId = heading.id;
+        }
+      });
+
+      const nextId = closestPastId ?? closestFutureId;
+      if (nextId) {
+        setActiveCategoryId((currentId) => (currentId === nextId ? currentId : nextId));
+      }
+    };
+
+    const onScroll = () => {
+      if (categoryScrollRafRef.current !== null) {
+        return;
+      }
+
+      categoryScrollRafRef.current = window.requestAnimationFrame(() => {
+        categoryScrollRafRef.current = null;
+        syncActiveCategory();
+      });
+    };
+
+    syncActiveCategory();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (categoryScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(categoryScrollRafRef.current);
+        categoryScrollRafRef.current = null;
+      }
+    };
   }, [isMenuV2, sortedCategories]);
 
   useEffect(() => {
@@ -470,6 +513,12 @@ const PublicOrder = () => {
       block: "nearest",
     });
   }, [activeCategoryId, isMenuV2]);
+
+  useEffect(() => {
+    if (!isMenuV2) {
+      categorySyncLockUntilRef.current = 0;
+    }
+  }, [isMenuV2]);
 
   const fetchMenu = useCallback(
     async ({ showLoading = false } = {}) => {
@@ -887,7 +936,8 @@ const PublicOrder = () => {
 
   const scrollToCategory = (categoryId) => {
     setActiveCategoryId(categoryId);
-    const target = window.document.getElementById(`category-${categoryId}`);
+    categorySyncLockUntilRef.current = Date.now() + 500;
+    const target = categoryHeadingRefs.current[categoryId];
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     target?.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
   };
@@ -1589,7 +1639,18 @@ const PublicOrder = () => {
                 data-category-id={category.id}
                 className={`space-y-3 ${isMenuV2 ? "scroll-mt-[120px] sm:scroll-mt-[140px]" : ""}`}
               >
-                <h2 className="text-lg font-semibold text-slate-900">{category.name}</h2>
+                <h2
+                  ref={(node) => {
+                    if (node) {
+                      categoryHeadingRefs.current[category.id] = node;
+                    } else {
+                      delete categoryHeadingRefs.current[category.id];
+                    }
+                  }}
+                  className="text-lg font-semibold text-slate-900"
+                >
+                  {category.name}
+                </h2>
                 <div className="grid gap-3">
                   {category.products.map((product) => (
                     <div
