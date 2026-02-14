@@ -1625,7 +1625,7 @@ const PublicOrder = () => {
                             <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700">
                               {product.categoryName}
                             </span>
-                            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                            <span className="inline-flex shrink-0 animate-pulse items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 motion-reduce:animate-none">
                               Promoção do dia
                             </span>
                           </div>
@@ -1727,8 +1727,8 @@ const PublicOrder = () => {
                           <div className="flex-1 min-w-0">
                             <div className={isMenuV2 ? "flex items-start justify-between gap-2" : "flex flex-wrap items-center gap-2"}>
                               <p className={isMenuV2 ? "truncate font-semibold leading-tight text-slate-900" : "font-semibold text-slate-900"}>{product.name}</p>
-                              {product.isPromo ? (
-                                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                              {isPromo ? (
+                                <span className="inline-flex shrink-0 animate-pulse items-center whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 motion-reduce:animate-none">
                                   Promoção do dia
                                 </span>
                               ) : null}
