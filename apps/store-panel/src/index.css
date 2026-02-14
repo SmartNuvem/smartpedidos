@@ -30,11 +30,28 @@
   }
 
   .public-menu-root.theme-SMARTPEDIDO {
-    background-color: #f3fbf7;
+    background: radial-gradient(1200px 600px at 20% 10%, rgba(59, 130, 246, 0.2), transparent 60%),
+      linear-gradient(180deg, #0b1220 0%, #0a1630 40%, #081224 100%);
+    background-attachment: fixed;
+    color: #e5e7eb;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-900,
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-800,
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-700,
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-600,
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-500,
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-400 {
+    color: #e5e7eb;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-500,
+  .public-menu-root.theme-SMARTPEDIDO .text-slate-400 {
+    color: #cbd5e1;
   }
 
   .public-menu-root.theme-SMARTPEDIDO .border-slate-200 {
-    border-color: #bbf7d0;
+    border-color: #334155;
   }
 
   .public-menu-root.theme-SMARTPEDIDO .bg-blue-600 {
@@ -59,7 +76,55 @@
     color: #15803d;
   }
 
+  .public-menu-root.theme-SMARTPEDIDO .bg-white,
   .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 {
-    background-color: #ffffff;
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-900,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-800,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-700,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-600,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-500,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-400,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-900,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-800,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-700,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-600,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-500,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-400 {
+    color: inherit;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-900,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-900 {
+    color: #0f172a;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-800,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-700,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-800,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-700 {
+    color: #334155;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-600,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-500,
+  .public-menu-root.theme-SMARTPEDIDO .bg-white .text-slate-400,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-600,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-500,
+  .public-menu-root.theme-SMARTPEDIDO .bg-slate-50 .text-slate-400 {
+    color: #64748b;
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .rounded-2xl.border,
+  .public-menu-root.theme-SMARTPEDIDO .rounded-xl.border {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  }
+
+  .public-menu-root.theme-SMARTPEDIDO .bg-emerald-500 {
+    background-color: #16a34a;
+    color: #ffffff;
   }
 }
