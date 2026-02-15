@@ -328,8 +328,8 @@ const PublicOrder = () => {
   const categoriesRef = useRef(null);
   const categoryTabRefs = useRef({});
   const categoryHeadingRefs = useRef({});
-  const categorySyncLockUntilRef = useRef(0);
-  const categoryScrollRafRef = useRef(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -439,87 +439,13 @@ const PublicOrder = () => {
     setActiveCategoryId((prev) => prev ?? sortedCategories[0]?.id ?? null);
   }, [isMenuV2, sortedCategories]);
 
-  useEffect(() => {
-    if (!isMenuV2 || sortedCategories.length === 0 || typeof window === "undefined") {
-      return undefined;
-    }
-
-    const getHeaderOffset = () => (window.innerWidth < 640 ? 120 : 140);
-    const limitGap = 8;
-
-    const headings = sortedCategories
-      .map((category) => ({
-        id: category.id,
-        node: categoryHeadingRefs.current[category.id],
-      }))
-      .filter((heading) => Boolean(heading.node));
-
-    if (headings.length === 0) {
-      return undefined;
-    }
-
-    const syncActiveCategory = () => {
-      if (Date.now() < categorySyncLockUntilRef.current) {
-        return;
-      }
-
-      const limit = getHeaderOffset() + limitGap;
-      let closestPastId = null;
-      let closestPastTop = Number.NEGATIVE_INFINITY;
-      let closestFutureId = null;
-      let closestFutureTop = Number.POSITIVE_INFINITY;
-
-      headings.forEach((heading) => {
-        const top = heading.node.getBoundingClientRect().top;
-
-        if (top <= limit && top > closestPastTop) {
-          closestPastTop = top;
-          closestPastId = heading.id;
-        }
-
-        if (top < closestFutureTop) {
-          closestFutureTop = top;
-          closestFutureId = heading.id;
-        }
-      });
-
-      const nextId = closestPastId ?? closestFutureId;
-      if (nextId) {
-        setActiveCategoryId((currentId) => (currentId === nextId ? currentId : nextId));
-      }
-    };
-
-    const onScroll = () => {
-      if (categoryScrollRafRef.current !== null) {
-        return;
-      }
-
-      categoryScrollRafRef.current = window.requestAnimationFrame(() => {
-        categoryScrollRafRef.current = null;
-        syncActiveCategory();
-      });
-    };
-
-    syncActiveCategory();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (categoryScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(categoryScrollRafRef.current);
-        categoryScrollRafRef.current = null;
-      }
-    };
-  }, [isMenuV2, sortedCategories]);
-
-  useEffect(() => {
-    if (!isMenuV2 || !activeCategoryId || typeof window === "undefined") {
+  const ensurePillVisible = useCallback((categoryId) => {
+    if (!isMenuV2 || !categoryId || typeof window === "undefined") {
       return;
     }
+
     const categoriesContainer = categoriesRef.current;
-    const tab = categoryTabRefs.current[activeCategoryId];
+    const tab = categoryTabRefs.current[categoryId];
     if (!categoriesContainer || !tab) {
       return;
     }
@@ -540,17 +466,68 @@ const PublicOrder = () => {
     const maxScrollLeft = Math.max(0, categoriesContainer.scrollWidth - categoriesContainer.clientWidth);
     const targetLeft = Math.min(Math.max(0, centeredLeft), maxScrollLeft);
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
     categoriesContainer.scrollTo({
       left: targetLeft,
       behavior: prefersReducedMotion ? "auto" : "smooth",
     });
-  }, [activeCategoryId, isMenuV2]);
+  }, [isMenuV2]);
 
   useEffect(() => {
-    if (!isMenuV2) {
-      categorySyncLockUntilRef.current = 0;
+    if (!isMenuV2 || sortedCategories.length === 0 || typeof window === "undefined") {
+      return undefined;
     }
-  }, [isMenuV2]);
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isProgrammaticScrollRef.current) {
+          return;
+        }
+
+        const visibleEntries = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+        const nextId = visibleEntries[0]?.target?.dataset?.categoryId;
+        if (!nextId) {
+          return;
+        }
+
+        setActiveCategoryId((currentId) => {
+          if (currentId === nextId) {
+            return currentId;
+          }
+          ensurePillVisible(nextId);
+          return nextId;
+        });
+      },
+      {
+        root: null,
+        rootMargin: "-120px 0px -55% 0px",
+        threshold: [0.1, 0.35, 0.6],
+      }
+    );
+
+    sortedCategories.forEach((category) => {
+      const section = document.getElementById(`category-${category.id}`);
+      if (section) {
+        observer.observe(section);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [ensurePillVisible, isMenuV2, sortedCategories]);
+
+  useEffect(() => {
+    return () => {
+      if (programmaticScrollTimeoutRef.current && typeof window !== "undefined") {
+        window.clearTimeout(programmaticScrollTimeoutRef.current);
+        programmaticScrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const fetchMenu = useCallback(
     async ({ showLoading = false } = {}) => {
@@ -973,8 +950,6 @@ const PublicOrder = () => {
   };
 
   const scrollToCategory = (categoryId) => {
-    setActiveCategoryId(categoryId);
-    categorySyncLockUntilRef.current = Date.now() + 500;
     const target = document.getElementById(`cat-${categoryId}`);
     if (!target) return;
     const stickyHeight = getStickyHeight();
@@ -985,6 +960,20 @@ const PublicOrder = () => {
       top: scrollTop,
       behavior: prefersReducedMotion ? "auto" : "smooth",
     });
+  };
+
+  const handleCategoryClick = (categoryId) => {
+    setActiveCategoryId(categoryId);
+    ensurePillVisible(categoryId);
+    isProgrammaticScrollRef.current = true;
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+    scrollToCategory(categoryId);
+    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+      programmaticScrollTimeoutRef.current = null;
+    }, 500);
   };
 
   const handleDownloadReceiptPng = useCallback(
@@ -1606,7 +1595,7 @@ const PublicOrder = () => {
             {isMenuV2 ? (
               <div
                 ref={stickyRef}
-                className="sticky top-0 z-10 max-w-full rounded-xl bg-white/95 py-2 shadow-sm backdrop-blur"
+                className="sticky top-0 z-10 w-full max-w-full rounded-xl bg-white/95 py-2 shadow-sm backdrop-blur"
               >
                 <div
                   ref={categoriesRef}
@@ -1629,7 +1618,7 @@ const PublicOrder = () => {
                           ? "border-slate-900 bg-slate-900 text-white"
                           : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
                       }`}
-                      onClick={() => scrollToCategory(category.id)}
+                      onClick={() => handleCategoryClick(category.id)}
                     >
                       {category.name}
                     </button>
