@@ -1731,19 +1731,6 @@ const PublicOrder = () => {
                               : "flex flex-1 items-center gap-3"
                           }
                         >
-                          {!isMenuV2 && product.imageUrl ? (
-                            <img
-                              src={product.imageUrl}
-                              alt={product.name}
-                              loading="lazy"
-                              className="h-16 w-16 rounded-xl object-cover"
-                            />
-                          ) : null}
-                          {!isMenuV2 && !product.imageUrl ? (
-                            <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-[10px] text-slate-500">
-                              Sem foto
-                            </div>
-                          ) : null}
                           <div className="flex-1 min-w-0">
                             <div className={isMenuV2 ? "flex items-start justify-between gap-2" : "flex flex-wrap items-center gap-2"}>
                               <p className={isMenuV2 ? "truncate font-semibold leading-tight text-slate-900" : "font-semibold text-slate-900"}>{product.name}</p>
