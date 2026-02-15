@@ -1134,6 +1134,10 @@ const PublicOrder = () => {
   };
 
   const hasActiveSendRetryError = Boolean(pendingOrder) && error === SEND_RETRY_ERROR_MESSAGE;
+  const showSendRetryErrorBanner =
+    error && (error !== SEND_RETRY_ERROR_MESSAGE || hasActiveSendRetryError);
+  const showPendingOrderBanner = Boolean(pendingOrder);
+  const showBottomAlerts = showSendRetryErrorBanner || showPendingOrderBanner;
 
   if (loading) {
     return (
@@ -1305,7 +1309,9 @@ const PublicOrder = () => {
 
   return (
     <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col`}>
-      <div className="mx-auto w-full max-w-4xl flex-1 px-4 pb-24 pt-6">
+      <div
+        className={`mx-auto w-full max-w-4xl flex-1 px-4 pb-24 pt-6 ${showBottomAlerts ? "pb-40" : ""}`}
+      >
         <header className="mb-6">
   {/* HERO */}
   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1416,40 +1422,6 @@ const PublicOrder = () => {
     </div>
   ) : null}
 </header>
-
-
-        {error && (error !== SEND_RETRY_ERROR_MESSAGE || hasActiveSendRetryError) ? (
-          <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        ) : null}
-
-        {pendingOrder ? (
-          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <p>
-              Pedido pendente de envio. Tentativas: <strong>{pendingOrder.attempts ?? 0}</strong>
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => retryPendingOrder({ manual: true })}
-                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
-                disabled={retryingPending}
-              >
-                {retryingPending ? "Enviando..." : "Tentar agora"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  clearSendRecoveryState();
-                }}
-                className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-              >
-                Cancelar pedido pendente
-              </button>
-            </div>
-          </div>
-        ) : null}
 
         <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <section className="space-y-6">
@@ -2096,6 +2068,43 @@ const PublicOrder = () => {
           >
             Ver carrinho ({totalItems})
           </button>
+        ) : null}
+
+        {showBottomAlerts ? (
+          <div className="fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(env(safe-area-inset-bottom),12px)]">
+            {showSendRetryErrorBanner ? (
+              <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {error}
+              </div>
+            ) : null}
+
+            {showPendingOrderBanner ? (
+              <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <p>
+                  Pedido pendente de envio. Tentativas: <strong>{pendingOrder.attempts ?? 0}</strong>
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => retryPendingOrder({ manual: true })}
+                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                    disabled={retryingPending}
+                  >
+                    {retryingPending ? "Enviando..." : "Tentar agora"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSendRecoveryState();
+                    }}
+                    className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                  >
+                    Cancelar pedido pendente
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
