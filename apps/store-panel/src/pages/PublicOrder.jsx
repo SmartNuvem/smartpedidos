@@ -35,7 +35,7 @@ const isClassicProductPromo = (product = {}) =>
       product.isPromo
   );
 
-const isV2ProductPromo = (product = {}) => Boolean(product.isPromo);
+const isProductPromo = (product = {}) => Boolean(product.isPromo);
 
 const getSafeLocalStorage = () => {
   try {
@@ -409,10 +409,8 @@ const PublicOrder = () => {
   }, []);
 
   const optionGroups = optionProduct?.optionGroups ?? [];
-  const isMenuV2 = menu?.store?.publicMenuLayout === "V2";
-
   const promoProducts = useMemo(() => {
-    if (!menu || isMenuV2) return [];
+    if (!menu) return [];
     const promos = [];
     menu.categories.forEach((category) => {
       category.products.forEach((product) => {
@@ -420,12 +418,17 @@ const PublicOrder = () => {
       });
     });
     return promos;
-  }, [isMenuV2, menu]);
+  }, [menu]);
+
+  const store = {
+    menuVersion: menu?.store?.publicMenuLayout,
+  };
+  const isMenuV2 = store.menuVersion === "V2";
 
   const sortedCategories = useMemo(() => {
     if (!menu) return [];
     return menu.categories.map((category) => {
-      const promoPredicate = isMenuV2 ? isV2ProductPromo : isClassicProductPromo;
+      const promoPredicate = isMenuV2 ? isProductPromo : isClassicProductPromo;
       const promoItems = category.products.filter((product) => promoPredicate(product));
       const regularItems = category.products.filter((product) => !promoPredicate(product));
       return { ...category, products: [...promoItems, ...regularItems] };
@@ -946,7 +949,7 @@ const PublicOrder = () => {
   };
 
   const renderPublicMenu = () => {
-    if (isMenuV2) {
+    if (store.menuVersion === "V2") {
       return (
         <PublicMenuV2
           sortedCategories={sortedCategories}

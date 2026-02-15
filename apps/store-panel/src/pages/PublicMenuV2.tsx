@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 
 type Product = {
   id: string | number;
@@ -46,36 +46,26 @@ export default function PublicMenuV2({
   const normalizeCategoryId = (id: string | number | null | undefined) =>
     id === null || id === undefined ? "" : String(id);
 
-  const tabsScrollerRef = useRef<HTMLDivElement | null>(null);
-
-  const scrollPillIntoView = (
-    categoryId: string | number,
-    behaviorOverride?: ScrollBehavior
-  ) => {
+  const scrollPillIntoView = (categoryId: string | number) => {
     if (typeof window === "undefined") return;
 
     const normalizedCategoryId = normalizeCategoryId(categoryId);
     if (!normalizedCategoryId) return;
 
     const tab = categoryTabRefs.current[normalizedCategoryId];
-    const scroller = tabsScrollerRef.current;
-    if (!tab || !scroller) return;
+    if (!tab) return;
 
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    const behavior = behaviorOverride ?? (prefersReducedMotion ? "auto" : "smooth");
-    const nextLeft = tab.offsetLeft - scroller.clientWidth / 2 + tab.clientWidth / 2;
-    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-    const clampedLeft = Math.max(0, Math.min(nextLeft, maxLeft));
-
-    scroller.scrollTo({
-      left: clampedLeft,
-      behavior,
+    tab.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      inline: "center",
+      block: "nearest",
     });
   };
 
   useEffect(() => {
     if (!activeCategoryId) return;
-    scrollPillIntoView(activeCategoryId, "auto");
+    scrollPillIntoView(activeCategoryId);
   }, [activeCategoryId]);
 
   return (
@@ -84,10 +74,7 @@ export default function PublicMenuV2({
         ref={stickyRef}
         className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur"
       >
-        <div
-          ref={tabsScrollerRef}
-          className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
+        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex w-max gap-2 px-1">
             {sortedCategories.map((category) => (
               <button
