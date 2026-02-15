@@ -325,6 +325,7 @@ const PublicOrder = () => {
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
   const stickyRef = useRef(null);
+  const categoriesRef = useRef(null);
   const categoryTabRefs = useRef({});
   const categoryHeadingRefs = useRef({});
   const categorySyncLockUntilRef = useRef(0);
@@ -517,15 +518,31 @@ const PublicOrder = () => {
     if (!isMenuV2 || !activeCategoryId || typeof window === "undefined") {
       return;
     }
+    const categoriesContainer = categoriesRef.current;
     const tab = categoryTabRefs.current[activeCategoryId];
-    if (!tab) {
+    if (!categoriesContainer || !tab) {
       return;
     }
+
+    const containerRect = categoriesContainer.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    const currentScrollLeft = categoriesContainer.scrollLeft;
+    const tabLeft = tabRect.left - containerRect.left + currentScrollLeft;
+    const tabRight = tabLeft + tabRect.width;
+    const visibleLeft = currentScrollLeft;
+    const visibleRight = currentScrollLeft + categoriesContainer.clientWidth;
+
+    if (tabLeft >= visibleLeft && tabRight <= visibleRight) {
+      return;
+    }
+
+    const centeredLeft = tabLeft - (categoriesContainer.clientWidth - tabRect.width) / 2;
+    const maxScrollLeft = Math.max(0, categoriesContainer.scrollWidth - categoriesContainer.clientWidth);
+    const targetLeft = Math.min(Math.max(0, centeredLeft), maxScrollLeft);
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    tab.scrollIntoView({
+    categoriesContainer.scrollTo({
+      left: targetLeft,
       behavior: prefersReducedMotion ? "auto" : "smooth",
-      inline: "center",
-      block: "nearest",
     });
   }, [activeCategoryId, isMenuV2]);
 
@@ -1437,8 +1454,8 @@ const PublicOrder = () => {
   }
 
   return (
-    <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col`}>
-      <div className="mx-auto w-full max-w-4xl flex-1 px-4 pb-24 pt-6">
+    <div className={`public-menu-root ${menuThemeClass} flex min-h-screen flex-col ${isMenuV2 ? "overflow-x-hidden" : ""}`}>
+      <div className="mx-auto w-full max-w-4xl flex-1 overflow-x-hidden px-4 pb-24 pt-6">
         <header className="mb-6">
   {/* HERO */}
   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1589,9 +1606,13 @@ const PublicOrder = () => {
             {isMenuV2 ? (
               <div
                 ref={stickyRef}
-                className="sticky top-2 z-20 -mx-2 overflow-x-auto rounded-xl bg-white/95 px-2 py-2 shadow-sm backdrop-blur"
+                className="sticky top-2 z-20 max-w-full overflow-x-hidden rounded-xl bg-white/95 py-2 shadow-sm backdrop-blur"
               >
-                <div className="flex w-max gap-2">
+                <div
+                  ref={categoriesRef}
+                  className="max-w-full overflow-x-auto whitespace-nowrap px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  <div className="inline-flex min-w-max gap-2">
                   {sortedCategories.map((category) => (
                     <button
                       key={`tab-${category.id}`}
@@ -1613,6 +1634,7 @@ const PublicOrder = () => {
                       {category.name}
                     </button>
                   ))}
+                  </div>
                 </div>
               </div>
             ) : null}
