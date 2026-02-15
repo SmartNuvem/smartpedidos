@@ -324,11 +324,6 @@ const PublicOrder = () => {
   const tableId = searchParams.get("table");
   const isDineIn = Boolean(tableId);
   const cartRef = useRef(null);
-  const stickyRef = useRef(null);
-  const categoryTabRefs = useRef({});
-  const categoryHeadingRefs = useRef({});
-  const categorySyncLockUntilRef = useRef(0);
-  const categoryScrollRafRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -355,8 +350,6 @@ const PublicOrder = () => {
   const [bannerLoadError, setBannerLoadError] = useState(false);
   const [pendingOrder, setPendingOrder] = useState(null);
   const [retryingPending, setRetryingPending] = useState(false);
-  const [activeCategoryId, setActiveCategoryId] = useState(null);
-
   // 🔥 DETECÇÃO DO BANNER (CLARO/ESCURO)
   const [isBannerLight, setIsBannerLight] = useState(false);
 
@@ -429,111 +422,6 @@ const PublicOrder = () => {
       return { ...category, products: [...promoItems, ...regularItems] };
     });
   }, [isMenuV2, menu]);
-
-  useEffect(() => {
-    if (!isMenuV2) {
-      setActiveCategoryId(null);
-      return;
-    }
-    setActiveCategoryId((prev) => prev ?? sortedCategories[0]?.id ?? null);
-  }, [isMenuV2, sortedCategories]);
-
-  useEffect(() => {
-    if (!isMenuV2 || sortedCategories.length === 0 || typeof window === "undefined") {
-      return undefined;
-    }
-
-    const getHeaderOffset = () => (window.innerWidth < 640 ? 120 : 140);
-    const limitGap = 8;
-
-    const headings = sortedCategories
-      .map((category) => ({
-        id: category.id,
-        node: categoryHeadingRefs.current[category.id],
-      }))
-      .filter((heading) => Boolean(heading.node));
-
-    if (headings.length === 0) {
-      return undefined;
-    }
-
-    const syncActiveCategory = () => {
-      if (Date.now() < categorySyncLockUntilRef.current) {
-        return;
-      }
-
-      const limit = getHeaderOffset() + limitGap;
-      let closestPastId = null;
-      let closestPastTop = Number.NEGATIVE_INFINITY;
-      let closestFutureId = null;
-      let closestFutureTop = Number.POSITIVE_INFINITY;
-
-      headings.forEach((heading) => {
-        const top = heading.node.getBoundingClientRect().top;
-
-        if (top <= limit && top > closestPastTop) {
-          closestPastTop = top;
-          closestPastId = heading.id;
-        }
-
-        if (top < closestFutureTop) {
-          closestFutureTop = top;
-          closestFutureId = heading.id;
-        }
-      });
-
-      const nextId = closestPastId ?? closestFutureId;
-      if (nextId) {
-        setActiveCategoryId((currentId) => (currentId === nextId ? currentId : nextId));
-      }
-    };
-
-    const onScroll = () => {
-      if (categoryScrollRafRef.current !== null) {
-        return;
-      }
-
-      categoryScrollRafRef.current = window.requestAnimationFrame(() => {
-        categoryScrollRafRef.current = null;
-        syncActiveCategory();
-      });
-    };
-
-    syncActiveCategory();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (categoryScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(categoryScrollRafRef.current);
-        categoryScrollRafRef.current = null;
-      }
-    };
-  }, [isMenuV2, sortedCategories]);
-
-  useEffect(() => {
-    if (!isMenuV2 || !activeCategoryId || typeof window === "undefined") {
-      return;
-    }
-    const tab = categoryTabRefs.current[activeCategoryId];
-    if (!tab) {
-      return;
-    }
-    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    tab.scrollIntoView({
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-      inline: "center",
-      block: "nearest",
-    });
-  }, [activeCategoryId, isMenuV2]);
-
-  useEffect(() => {
-    if (!isMenuV2) {
-      categorySyncLockUntilRef.current = 0;
-    }
-  }, [isMenuV2]);
 
   const fetchMenu = useCallback(
     async ({ showLoading = false } = {}) => {
@@ -947,27 +835,6 @@ const PublicOrder = () => {
 
   const scrollToCart = () => {
     cartRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const getStickyHeight = () => {
-    const stickyElement = stickyRef.current;
-    if (!stickyElement) return 0;
-    return Math.ceil(stickyElement.getBoundingClientRect().height);
-  };
-
-  const scrollToCategory = (categoryId) => {
-    setActiveCategoryId(categoryId);
-    categorySyncLockUntilRef.current = Date.now() + 500;
-    const target = document.getElementById(`cat-${categoryId}`);
-    if (!target) return;
-    const stickyHeight = getStickyHeight();
-    const gap = 8;
-    const scrollTop = target.getBoundingClientRect().top + window.scrollY - stickyHeight - gap;
-    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    window.scrollTo({
-      top: scrollTop,
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-    });
   };
 
   const handleDownloadReceiptPng = useCallback(
@@ -1586,36 +1453,6 @@ const PublicOrder = () => {
 
         <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <section className="space-y-6">
-            {isMenuV2 ? (
-              <div
-                ref={stickyRef}
-                className="sticky top-2 z-20 -mx-2 overflow-x-auto rounded-xl bg-white/95 px-2 py-2 shadow-sm backdrop-blur"
-              >
-                <div className="flex w-max gap-2">
-                  {sortedCategories.map((category) => (
-                    <button
-                      key={`tab-${category.id}`}
-                      type="button"
-                      ref={(node) => {
-                        if (node) {
-                          categoryTabRefs.current[category.id] = node;
-                        } else {
-                          delete categoryTabRefs.current[category.id];
-                        }
-                      }}
-                      className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out motion-reduce:transition-none ${
-                        activeCategoryId === category.id
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
-                      }`}
-                      onClick={() => scrollToCategory(category.id)}
-                    >
-                      {category.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             {!isMenuV2 && promoProducts.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -1668,17 +1505,10 @@ const PublicOrder = () => {
                 id={`category-${category.id}`}
                 key={category.id}
                 data-category-id={category.id}
-                className={`space-y-3 ${isMenuV2 ? "scroll-mt-[120px] sm:scroll-mt-[140px]" : ""}`}
+                className="space-y-3"
               >
                 <h2
                   id={`cat-${category.id}`}
-                  ref={(node) => {
-                    if (node) {
-                      categoryHeadingRefs.current[category.id] = node;
-                    } else {
-                      delete categoryHeadingRefs.current[category.id];
-                    }
-                  }}
                   className="text-lg font-semibold text-slate-900"
                 >
                   {category.name}
