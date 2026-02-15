@@ -26,7 +26,7 @@ const SEND_RETRY_ERROR_MESSAGE =
   "Sem conexão / erro ao enviar. Vamos reenviar automaticamente.";
 
 
-const isClassicProductPromo = (product = {}) =>
+const isProductPromo = (product = {}) =>
   Boolean(
     product.isPromoOfDay ??
       product.promoOfDay ??
@@ -35,7 +35,7 @@ const isClassicProductPromo = (product = {}) =>
       product.isPromo
   );
 
-const isProductPromo = (product = {}) => Boolean(product.isPromo);
+const isProductPromoV2 = (product = {}) => Boolean(product.isPromo);
 
 const getSafeLocalStorage = () => {
   try {
@@ -328,8 +328,7 @@ const PublicOrder = () => {
   const stickyRef = useRef(null);
   const categoryTabRefs = useRef({});
   const categoryHeadingRefs = useRef({});
-  const isProgrammaticScrollRef = useRef(false);
-  const programmaticScrollTimeoutRef = useRef(null);
+  const categorySyncLockUntilRef = useRef(0);
   const categoryScrollRafRef = useRef(null);
   const [menu, setMenu] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -414,7 +413,7 @@ const PublicOrder = () => {
     const promos = [];
     menu.categories.forEach((category) => {
       category.products.forEach((product) => {
-        if (isClassicProductPromo(product)) promos.push({ ...product, categoryName: category.name });
+        if (isProductPromo(product)) promos.push({ ...product, categoryName: category.name });
       });
     });
     return promos;
@@ -428,7 +427,7 @@ const PublicOrder = () => {
   const sortedCategories = useMemo(() => {
     if (!menu) return [];
     return menu.categories.map((category) => {
-      const promoPredicate = isMenuV2 ? isProductPromo : isClassicProductPromo;
+      const promoPredicate = isMenuV2 ? isProductPromoV2 : isProductPromo;
       const promoItems = category.products.filter((product) => promoPredicate(product));
       const regularItems = category.products.filter((product) => !promoPredicate(product));
       return { ...category, products: [...promoItems, ...regularItems] };
@@ -463,7 +462,7 @@ const PublicOrder = () => {
     }
 
     const syncActiveCategory = () => {
-      if (isProgrammaticScrollRef.current) {
+      if (Date.now() < categorySyncLockUntilRef.current) {
         return;
       }
 
@@ -519,13 +518,25 @@ const PublicOrder = () => {
   }, [isMenuV2, sortedCategories]);
 
   useEffect(() => {
-    return () => {
-      if (programmaticScrollTimeoutRef.current) {
-        window.clearTimeout(programmaticScrollTimeoutRef.current);
-        programmaticScrollTimeoutRef.current = null;
-      }
-      isProgrammaticScrollRef.current = false;
-    };
+    if (!isMenuV2 || !activeCategoryId || typeof window === "undefined") {
+      return;
+    }
+    const tab = categoryTabRefs.current[activeCategoryId];
+    if (!tab) {
+      return;
+    }
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    tab.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+  }, [activeCategoryId, isMenuV2]);
+
+  useEffect(() => {
+    if (!isMenuV2) {
+      categorySyncLockUntilRef.current = 0;
+    }
   }, [isMenuV2]);
 
   const fetchMenu = useCallback(
@@ -976,15 +987,7 @@ const PublicOrder = () => {
 
   const scrollToCategory = (categoryId) => {
     setActiveCategoryId(categoryId);
-    isProgrammaticScrollRef.current = true;
-    if (programmaticScrollTimeoutRef.current) {
-      window.clearTimeout(programmaticScrollTimeoutRef.current);
-    }
-    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-      programmaticScrollTimeoutRef.current = null;
-    }, 450);
-
+    categorySyncLockUntilRef.current = Date.now() + 500;
     const target = document.getElementById(`cat-${categoryId}`);
     if (!target) return;
     const stickyHeight = getStickyHeight();
