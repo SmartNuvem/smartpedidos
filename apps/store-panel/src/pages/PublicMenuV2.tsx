@@ -48,7 +48,10 @@ export default function PublicMenuV2({
 
   const tabsScrollerRef = useRef<HTMLDivElement | null>(null);
 
-  const scrollPillIntoView = (categoryId: string | number) => {
+  const scrollPillIntoView = (
+    categoryId: string | number,
+    behaviorOverride?: ScrollBehavior
+  ) => {
     if (typeof window === "undefined") return;
 
     const normalizedCategoryId = normalizeCategoryId(categoryId);
@@ -59,26 +62,27 @@ export default function PublicMenuV2({
     if (!tab || !scroller) return;
 
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const behavior = behaviorOverride ?? (prefersReducedMotion ? "auto" : "smooth");
     const nextLeft = tab.offsetLeft - scroller.clientWidth / 2 + tab.clientWidth / 2;
     const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
     const clampedLeft = Math.max(0, Math.min(nextLeft, maxLeft));
 
     scroller.scrollTo({
       left: clampedLeft,
-      behavior: prefersReducedMotion ? "auto" : "smooth",
+      behavior,
     });
   };
 
   useEffect(() => {
     if (!activeCategoryId) return;
-    scrollPillIntoView(activeCategoryId);
+    scrollPillIntoView(activeCategoryId, "auto");
   }, [activeCategoryId]);
 
   return (
     <section className="public-menu-v2 space-y-6 overflow-visible" data-menu-version="v2">
       <div
         ref={stickyRef}
-        className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur supports-[backdrop-filter]:bg-white/80"
+        className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 py-2 backdrop-blur"
       >
         <div
           ref={tabsScrollerRef}
@@ -147,7 +151,7 @@ export default function PublicMenuV2({
                   key={product.id}
                   className={cn(
                     "public-menu-v2-card relative min-h-[96px] overflow-hidden rounded-xl border-[1px] border-slate-100 bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
-                    isPromo && "border-2 border-amber-400 bg-amber-50/40 shadow-lg shadow-amber-100"
+                    isPromo && "border-2 border-amber-400 bg-amber-50/40 shadow-md shadow-amber-200/70 ring-1 ring-amber-300"
                   )}
                 >
                   {isPromo ? (
