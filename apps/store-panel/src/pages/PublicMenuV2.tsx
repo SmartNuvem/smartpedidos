@@ -82,9 +82,9 @@ export default function PublicMenuV2({
       >
         <div
           ref={tabsScrollerRef}
-          className="overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <div className="flex w-max min-w-full items-center gap-2 px-1 pb-0.5">
+          <div className="flex w-max gap-2 px-1">
             {sortedCategories.map((category) => (
               <button
                 key={`tab-${category.id}`}
@@ -99,10 +99,10 @@ export default function PublicMenuV2({
                     delete categoryTabRefs.current[normalizedCategoryId];
                   }
                 }}
-                className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                className={`rounded-full border px-4 py-2 text-xs font-semibold transition-colors duration-150 ease-out motion-reduce:transition-none ${
                   normalizeCategoryId(activeCategoryId) === normalizeCategoryId(category.id)
-                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
                 }`}
                 onClick={() => {
                   scrollToCategory(category.id);
@@ -121,7 +121,7 @@ export default function PublicMenuV2({
           id={`category-${category.id}`}
           key={category.id}
           data-category-id={category.id}
-          className="space-y-3"
+          className="space-y-3 scroll-mt-[110px]"
         >
           <h2
             id={`cat-${category.id}`}
@@ -147,7 +147,7 @@ export default function PublicMenuV2({
                   key={product.id}
                   className={cn(
                     "public-menu-v2-card relative min-h-[96px] overflow-hidden rounded-xl border-[1px] border-slate-100 bg-white shadow-sm transition-transform transition-shadow duration-150 ease-out hover:-translate-y-[1px] hover:shadow-md active:-translate-y-[1px] active:shadow-md motion-reduce:transform-none motion-reduce:transition-none sm:min-h-[128px]",
-                    isPromo && "border-amber-300 ring-2 ring-amber-400 shadow-sm"
+                    isPromo && "border-2 border-amber-400 bg-amber-50/40 shadow-lg shadow-amber-100"
                   )}
                 >
                   {isPromo ? (
@@ -176,7 +176,7 @@ export default function PublicMenuV2({
                         <div className="flex items-start justify-between gap-2">
                           <p className="truncate font-semibold leading-tight text-slate-900">{product.name}</p>
                           {isPromo ? (
-                            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
                               Promoção do dia
                             </span>
                           ) : null}
